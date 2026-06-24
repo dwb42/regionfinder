@@ -1,0 +1,3 @@
+pathway_id,from_stop_id,to_stop_id,pathway_mode,is_bidirectional,length,traversal_time,stair_count,max_slope,min_width
+hbf-origin-rail,hbf,hbf-rail-1,1,1,260,240,0,0,2
+hbf-origin-bus,hbf,hbf-bus-a,1,1,320,300,0,0,2

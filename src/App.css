@@ -256,6 +256,244 @@ select,
   background: #dbe7ef;
 }
 
+.api-shell {
+  display: grid;
+  grid-template-columns: 320px minmax(420px, 1fr) minmax(360px, 480px);
+  gap: 14px;
+  min-height: 100svh;
+  padding: 14px;
+}
+
+.api-sidebar,
+.api-detail-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-height: calc(100svh - 28px);
+  min-width: 0;
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.api-map-section {
+  position: relative;
+  min-width: 0;
+  min-height: calc(100svh - 28px);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #dbe7ef;
+  box-shadow: var(--shadow);
+}
+
+.maplibre-map {
+  width: 100%;
+  height: 100%;
+  min-height: calc(100svh - 28px);
+}
+
+.api-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 8px;
+}
+
+.api-search-row button {
+  display: grid;
+  place-items: center;
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: #fff;
+  background: #0f766e;
+}
+
+.api-result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 230px;
+  overflow: auto;
+}
+
+.api-stop-result {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface-soft);
+}
+
+.api-stop-result.active {
+  border-color: #0f766e;
+  background: #ecfdf5;
+}
+
+.api-stop-result strong,
+.api-stop-result small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.api-stop-result small {
+  margin-top: 3px;
+  color: var(--muted);
+}
+
+.api-legend {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: calc(100% - 24px);
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: rgb(255 255 255 / 0.92);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.api-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.api-legend i {
+  width: 14px;
+  height: 3px;
+  border-radius: 999px;
+}
+
+.legend-rail {
+  background: #0f766e;
+}
+
+.legend-bus {
+  background: #c2410c;
+}
+
+.legend-approx {
+  border-top: 2px dashed #c2410c;
+}
+
+.api-panel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.api-panel-section p {
+  color: var(--text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.api-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.api-metric {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.api-metric span,
+.api-metric strong {
+  display: block;
+}
+
+.api-metric span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.api-metric strong {
+  margin-top: 4px;
+  color: var(--heading);
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+
+.api-itinerary-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.api-itinerary-summary span {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  font-size: 12px;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+
+.api-leg-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.api-leg-list li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.api-leg-list strong {
+  display: block;
+  color: var(--heading);
+}
+
+.api-route-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.api-route-list span {
+  padding: 6px 8px;
+  border-radius: 7px;
+  color: #fff;
+  background: #0f766e;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .map-loading {
   display: grid;
   place-items: center;

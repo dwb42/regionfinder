@@ -26,6 +26,7 @@ import { findDefaultStartStopPlace, stopPlaceLabel } from './domain/stopPlaces'
 import type { AutoRadiusOption, HvvLayerId, HvvRoute, ReachabilityResult, StopPlace, TimeWindow } from './domain/types'
 import { distanceKm, roundDistance } from './utils/geo'
 import { formatClockTime, formatDuration } from './utils/time'
+import ApiApp from './ApiApp'
 import './App.css'
 
 type MapBaseLayer = 'street' | 'satellite'
@@ -208,7 +209,7 @@ function ClearSelectionOnMapClick({ onClear }: { onClear: () => void }) {
   return null
 }
 
-function App() {
+function LegacyApp() {
   const hvvData = useHvvData()
   const [startStopPlaceId, setStartStopPlaceId] = useState<string | null>(null)
   const [stationInput, setStationInput] = useState<string | null>(null)
@@ -820,6 +821,10 @@ function App() {
       </section>
     </main>
   )
+}
+
+function App() {
+  return import.meta.env.VITE_REGIONFINDER_DATA_MODE === 'api' ? <ApiApp /> : <LegacyApp />
 }
 
 export default App

@@ -1,0 +1,9 @@
+shape_id,shape_pt_lat,shape_pt_lon,shape_pt_sequence,shape_dist_traveled
+shape-re1-full,53.552733,10.006909,1,0
+shape-re1-full,53.489700,10.203900,2,12000
+shape-re1-full,53.529000,10.314000,3,19800
+shape-re1-short,53.552733,10.006909,1,0
+shape-re1-short,53.489700,10.203900,2,12000
+shape-re1-reverse,53.529000,10.314000,1,0
+shape-re1-reverse,53.489700,10.203900,2,7800
+shape-re1-reverse,53.552733,10.006909,3,19800

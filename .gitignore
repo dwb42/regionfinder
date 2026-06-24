@@ -14,7 +14,17 @@ dist-ssr
 
 # Generated/raw transit data that is too large for GitHub.
 data/raw/
+data/processed/
+data/reports/
+data/routing/
 public/data/hvv/stop-times.json
+data/r5/
+data/osm/
+data/delfi/
+data/zhv/
+*.osm.pbf
+*.parquet
+.venv/
 
 # Editor directories and files
 .vscode/*

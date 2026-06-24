@@ -1,0 +1,6 @@
+route_id,service_id,trip_id,trip_headsign,direction_id,block_id,shape_id,wheelchair_accessible,bikes_allowed
+re1,weekday,re1-direct-0810,Aumuehle,0,,shape-re1-full,1,1
+re1,weekday,re1-short-0830,Bergedorf,0,,shape-re1-short,1,1
+re1,weekday,re1-reverse-0910,Hamburg Hbf,1,,shape-re1-reverse,1,1
+b7,weekday,b7-0845,Busdorf,0,,,1,1
+b7,special,b7-2515,Busdorf Nacht,0,,,1,1

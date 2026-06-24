@@ -1,0 +1,38 @@
+version: 1
+canonical_timetable:
+  source_key: delfi_gtfs
+  name: DELFI-Timetable
+  provider: DELFI e.V.
+  format: GTFS
+  role: canonical_timetable
+  env_path: DELFI_GTFS_PATH
+  license: unknown_until_source_file_provided
+  attribution: DELFI attribution must be copied from the supplied snapshot metadata.
+  download: null
+enrichment_sources:
+  - source_key: hvv_gtfs
+    name: HVV GTFS
+    provider: Hamburger Verkehrsverbund
+    format: GTFS
+    role: regional_enrichment
+    env_path: HVV_GTFS_PATH
+    license: see source metadata
+    attribution: see source metadata
+  - source_key: zhv
+    name: Zentrale Haltestellenverzeichnis-Daten
+    provider: DELFI/ZHV
+    format: csv
+    role: stop_identity
+    env_path: ZHV_STOPS_PATH
+    license: see source metadata
+    attribution: see source metadata
+geodata:
+  osm:
+    source_key: osm_pbf
+    env_path: OSM_PBF_PATH
+    required_for: [walking, access, transfers, r5, motis]
+  admin_boundaries:
+    source_key: admin_boundaries
+    env_path: ADMIN_BOUNDARIES_PATH
+    target_states: [DE-HH, DE-SH, DE-MV, DE-NI]
+    optional_states: [DE-HB]

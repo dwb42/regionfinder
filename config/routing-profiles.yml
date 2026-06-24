@@ -1,0 +1,41 @@
+version: 1
+timezone: Europe/Berlin
+profiles:
+  - id: regular_tue_thu
+    name: Regulärer Dienstag bis Donnerstag
+    dates:
+      - "2026-07-07"
+      - "2026-07-08"
+      - "2026-07-09"
+    sample_start: "05:00:00"
+    sample_end: "25:00:00"
+    sample_interval_seconds: 300
+    max_trip_duration_seconds: 43200
+    max_walk_distance_meters: 1500
+    walk_speed_meters_per_second: 1.2
+    max_transfers: 4
+    modes: [ICE, IC, EC, RE, RB, S, U, TRAM, BUS, FERRY]
+  - id: saturday
+    name: Samstag
+    dates:
+      - "2026-07-11"
+    sample_start: "05:00:00"
+    sample_end: "25:00:00"
+    sample_interval_seconds: 300
+    max_trip_duration_seconds: 43200
+    max_walk_distance_meters: 1500
+    walk_speed_meters_per_second: 1.2
+    max_transfers: 4
+    modes: [ICE, IC, EC, RE, RB, S, U, TRAM, BUS, FERRY]
+  - id: school_holiday_manual
+    name: Werktag während manuell konfigurierter Schulferien
+    dates:
+      - "2026-07-14"
+    sample_start: "05:00:00"
+    sample_end: "25:00:00"
+    sample_interval_seconds: 300
+    max_trip_duration_seconds: 43200
+    max_walk_distance_meters: 1500
+    walk_speed_meters_per_second: 1.2
+    max_transfers: 4
+    modes: [ICE, IC, EC, RE, RB, S, U, TRAM, BUS, FERRY]

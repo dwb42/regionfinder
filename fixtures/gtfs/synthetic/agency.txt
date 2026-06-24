@@ -1,0 +1,3 @@
+agency_id,agency_name,agency_url,agency_timezone
+rail,Fixture Rail,https://example.invalid/rail,Europe/Berlin
+bus,Fixture Bus,https://example.invalid/bus,Europe/Berlin

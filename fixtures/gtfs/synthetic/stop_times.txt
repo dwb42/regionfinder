@@ -1,0 +1,13 @@
+trip_id,arrival_time,departure_time,stop_id,stop_sequence,pickup_type,drop_off_type,shape_dist_traveled,timepoint
+re1-direct-0810,08:10:00,08:10:00,hbf-rail-1,1,0,0,0,1
+re1-direct-0810,08:25:00,08:26:00,berg-rail-1,2,0,0,12000,1
+re1-direct-0810,08:40:00,08:40:00,aum-rail-1,3,0,0,19800,1
+re1-short-0830,08:30:00,08:30:00,hbf-rail-1,1,0,0,0,1
+re1-short-0830,08:47:00,08:47:00,berg-rail-1,2,0,0,12000,1
+re1-reverse-0910,09:10:00,09:10:00,aum-rail-1,1,0,0,0,1
+re1-reverse-0910,09:25:00,09:26:00,berg-rail-1,2,0,0,7800,1
+re1-reverse-0910,09:42:00,09:42:00,hbf-rail-1,3,0,0,19800,1
+b7-0845,08:45:00,08:45:00,aum-rail-1,1,0,0,,1
+b7-0845,08:58:00,08:58:00,busdorf-a,2,0,0,,1
+b7-2515,25:15:00,25:15:00,aum-rail-1,1,0,0,,1
+b7-2515,25:30:00,25:30:00,busdorf-a,2,0,0,,1

@@ -1,0 +1,4 @@
+from_stop_id,to_stop_id,transfer_type,min_transfer_time
+hbf-bus-a,hbf-rail-1,2,300
+hbf-rail-1,hbf-bus-a,2,300
+aum-rail-1,busdorf-a,2,180

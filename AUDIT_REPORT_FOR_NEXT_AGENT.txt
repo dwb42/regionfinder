@@ -1,0 +1,1110 @@
+# Auditbericht Regionfinder - Ist-Zustand fuer Folge-Agenten
+
+Datum der Untersuchung: 2026-06-24
+Repository: /Users/dw/Projects/regionfinder
+Git-Status vor und nach der Untersuchung: ## main...origin/main
+Hinweis: Dieser Bericht dokumentiert den aktuellen Ist-Zustand. Es wurde in der Audit-Runde kein Anwendungscode umgebaut.
+
+
+# 1. Executive Summary
+
+- BELEGT: Die Anwendung ist aktuell eine reine Vite/React/TypeScript-SPA mit Leaflet, React-Leaflet und einem Browser-Worker. Es gibt kein Backend, keine API-Schicht und keine Datenbank.
+  Belege: package.json:6-19, src/main.tsx:1-11, src/App.tsx:1-29.
+
+- BELEGT: Primaere Verkehrsdatenquelle ist ein statischer HVV-GTFS-Feed aus dem Hamburger Transparenzportal. Daraus werden JSON-Artefakte unter public/data/hvv/ erzeugt.
+  Belege: scripts/import-hvv-gtfs.mjs:9-19, scripts/import-hvv-gtfs.mjs:954-1006, src/data/hvv.ts:42-49, public/data/hvv/manifest.json.
+
+- BELEGT: Kartenbasis ist OpenStreetMap. Optional werden Esri-Satellitenkacheln und OpenRailwayMap-Tiles angezeigt. Diese Quellen liefern keine Fahrplan-, Linien- oder Haltestellendaten.
+  Belege: src/App.tsx:42-57, src/App.tsx:568-573.
+
+- BELEGT: Geografische Abdeckung wird nicht ueber Bundeslandgrenzen, Polygone oder amtliche Schluessel modelliert, sondern ueber eine feste Bounding Box: lat 52.85..54.35, lon 8.75..11.35.
+  Beleg: scripts/import-hvv-gtfs.mjs:21-28.
+
+- BELEGT: Aktives fachliches UI-Modell ist StopPlace. Ein StopPlace gruppiert mehrere technische GTFS-Stops.
+  Belege: src/domain/types.ts:10-20, scripts/import-hvv-gtfs.mjs:430-537.
+
+- BELEGT: Liniengeometrien kommen bevorzugt aus GTFS-shapes.txt. Wenn Shapes fehlen, nutzt der Importer die Stopfolge einer repraesentativen Fahrt als Polyline-Fallback.
+  Belege: scripts/import-hvv-gtfs.mjs:402-428, scripts/import-hvv-gtfs.mjs:796-847.
+
+- BELEGT: Aktives Routing ist ein eigener clientseitiger Earliest-Arrival-Algorithmus im Browser-Worker. Er laedt reachability-index.json, rechnet ab fest 08:00, nutzt nur generische Werktags-Services und schliesst Bus/Faehre als Fahrten aus.
+  Belege: src/workers/reachabilityWorker.ts:45-73, src/domain/gtfsReachability.ts:68-76, src/App.tsx:39, src/App.tsx:231.
+
+- WIDERSPRUeCHLICH: README und docs beschreiben teils noch Seed-Router/HVV-Schaetzung als aktiven Hauptpfad und behaupten teilweise, es gebe kein Git-Repository. Der Code nutzt inzwischen StopPlaces plus Worker, und Git ist vorhanden.
+  Belege: README.md:93-108, docs/CURRENT_STATE.md:48-62, docs/CURRENT_STATE.md:97-99 versus src/App.tsx:23-26, src/data/reachabilityWorker.ts:31-74, Git-Status.
+
+- BELEGT: Die aktuell angezeigte "schnellste Fahrzeit" ist semantisch eingeschraenkt. Der Algorithmus optimiert pro Ziel auf frueheste Ankunft nach 08:00, zeigt aber travelTimeMinutes = arrivalMinutes - firstDepartureMinutes. Die anfaengliche Wartezeit ab 08:00 ist nicht enthalten.
+  Belege: src/domain/gtfsReachability.ts:78-88, src/domain/gtfsReachability.ts:129-246.
+
+- BELEGT: Durchschnittliche, mediane und P90-Fahrzeiten sind im aktiven Code nicht implementiert. Es gibt keine Statistik- oder Quantilberechnung.
+  Belege: Suche nach average/mean/median/percentile/quantile/p90; src/domain/gtfsReachability.ts:238-243.
+
+- Wichtigste Luecken: keine vollstaendige Vier-Bundeslaender-Abdeckung, keine DB, keine echte Bahnhofshierarchie, keine calendar_dates-Auswertung im Routing, keine GTFS-transfers/pathways, keine sichtbaren Fussweg-Legs, keine Durchschnitts-/P90-Metriken, keine Linienvarianten, kein Backend/API.
+
+
+# 2. Repository- und Systemarchitektur
+
+Getrackte Hauptdateien:
+
+- package.json, vite.config.ts, tsconfig*.json, eslint.config.js
+- src/App.tsx, src/main.tsx, src/App.css
+- src/data/hvv.ts
+- src/data/reachabilityWorker.ts
+- src/workers/reachabilityWorker.ts
+- src/domain/gtfsReachability.ts
+- src/domain/types.ts
+- src/domain/stopPlaces.ts
+- scripts/import-hvv-gtfs.mjs
+- public/data/hvv/*.json
+- Legacy/Tests: src/domain/reachability.ts, src/domain/hvvTravelEstimate.ts, src/data/stations.ts, src/data/railway.ts
+
+Komponenten:
+
+- Frontend: React 19 + Vite + TypeScript.
+- Karte: Leaflet/React-Leaflet.
+- Routing: Browser-Worker mit eigenem Algorithmus.
+- Import: Node.js-ESM-Skript, systemweites unzip, eigener CSV-Parser.
+- Persistenz: statische JSON-Artefakte.
+- Tests: Vitest.
+- Kein Backend, keine Datenbank, keine Migrationen, keine Docker-/Compose-Konfiguration, keine Queue, kein Cronjob.
+
+Mermaid-Architektur:
+
+flowchart LR
+  GTFS[HVV GTFS ZIP] --> Importer[scripts/import-hvv-gtfs.mjs]
+  Importer --> Artifacts[public/data/hvv/*.json]
+  Artifacts --> React[src/data/hvv.ts]
+  Artifacts --> Worker[src/workers/reachabilityWorker.ts]
+  Worker --> Reachability[src/domain/gtfsReachability.ts]
+  Reachability --> React
+  React --> Leaflet[React-Leaflet Karte]
+  OSM[OSM/Esri/OpenRailwayMap Tiles] --> Leaflet
+
+
+# 3. Datenquelleninventar
+
+Aktive Verkehrsdatenquelle:
+
+- Name: hvv Fahrplandaten (GTFS)
+- Anbieter: Hamburger Verkehrsverbund GmbH / Transparenzportal Hamburg
+- Zugriff: URL im Importer/Manifest oder HVV_GTFS_URL
+- URL: https://daten.transparenz.hamburg.de/Dataport.HmbTG.ZS.Webservice.GetRessource100/GetRessource100.svc/f0073555-962c-4d55-870e-b94bb676ad9d/Upload__hvv_Rohdaten_GTFS_Fpl_20260408.ZIP
+- Format: GTFS Static ZIP/CSV, danach JSON
+- Statisch/Echtzeit: statisch
+- Abdeckung: durch Import-Bounding-Box Hamburg/Umland begrenzt
+- Verarbeitete Dateien: agency.txt, stops.txt, routes.txt, trips.txt, stop_times.txt, calendar.txt; optional calendar_dates.txt und shapes.txt
+- Nicht verarbeitet: transfers.txt, pathways.txt, frequencies.txt, feed_info.txt, fare-Dateien
+- Aktiv genutzt: ja, fuer StopPlaces, Linien, Shapes, Routingindex
+- Belege: scripts/import-hvv-gtfs.mjs:9-19, scripts/import-hvv-gtfs.mjs:982-992, public/data/hvv/manifest.json
+
+Kartenquellen:
+
+- OpenStreetMap Rastertiles, aktiv als Basiskarte: src/App.tsx:42-46
+- Esri World Imagery/Reference, optional: src/App.tsx:47-57
+- OpenRailwayMap Rastertiles, optionales Infrastruktur-Overlay: src/App.tsx:568-573
+- Diese Quellen werden nicht fuer Haltestellen, Liniengeometrien oder Fahrzeiten verwendet.
+
+Legacy-Daten im Repo:
+
+- src/data/stations.ts: manuelle Seed-Stationen, nicht im aktuellen UI importiert.
+- src/data/railway.ts: manuelle Seed-Linien und Service-Patterns, nicht im aktuellen UI importiert.
+- src/domain/reachability.ts: alter Seed-Router, getestet, aber nicht aktiv im App-Pfad.
+- src/domain/hvvTravelEstimate.ts: alte HVV-Schaetzung, getestet, aber nicht aktiv im App-Pfad.
+
+Explizit nicht gefunden:
+
+- DELFI-Timetable
+- DELFI-Stops/ZHV/DHID als eigene Quelle
+- DB Timetables API
+- HAFAS/bahn.de-Scraping
+- Geofox-Codepfad
+- VBN/Connect
+- NeTEx
+- OSM/PBF/Geofabrik-Import
+- PostGIS
+- OpenTripPlanner/MOTIS/R5/RAPTOR-Bibliothek
+
+
+# 4. Datenbestand und Abdeckung
+
+Manifest public/data/hvv/manifest.json:
+
+- schemaVersion: 1
+- sourceName: hvv Fahrplandaten (GTFS)
+- attribution: Hamburger Verkehrsverbund GmbH
+- license: Datenlizenz Deutschland Namensnennung 2.0
+- importedAt: 2026-06-24T07:00:05.246Z
+- sourceGtfsDate: 20260408
+- generatedFrom: hvv.zip
+- serviceDateRange: 20260408 bis 20261212
+- agencies: 20
+- stops: 9577
+- stopPlaces: 7122
+- routes: 872
+- trips: 118251
+- stopTimes: 2520591
+- shapes: 4308718
+- services: 2150
+- calendarDates: 45078
+
+Artefaktgroessen:
+
+- manifest.json: 666 B
+- stop-places.json: ca. 1.9 MB
+- stations.json: ca. 2.7 MB
+- routes.json: ca. 14 MB
+- trips-index.json: ca. 11 MB
+- reachability-index.json: ca. 15 MB
+- calendar.json: ca. 314 KB
+- calendar-dates.json: ca. 2.4 MB
+- stop-times.json: ca. 301 MB, ignoriert und nicht direkt im Frontend geladen
+
+Verteilung:
+
+- Stationsartefakt: 9577 Stations, davon 9299 bus, 64 u-bahn, 181 regional, 33 s-bahn.
+- Routenlayer: 806 bus, 5 u-bahn, 15 s-bahn, 46 regional.
+- StopPlace-Mode-Praesenz: BUS 7000, U 59, RE 76, RB 79, S 60, AKN 35.
+- Fehlende Koordinaten: 0.
+- locationType: alle 9577 Stations haben 0.
+- parentStationId im Artefakt: 0 Stations.
+- reachability-index: 75917 kompakte Trips, 412 Transferkanten.
+
+Bekannte Auffaelligkeiten:
+
+- stop-times.json ist gross und per .gitignore ausgeschlossen: .gitignore:15-17.
+- React laedt stop-times.json nicht: src/data/hvv.ts:42-49.
+- Der Worker laedt nur reachability-index.json: src/workers/reachabilityWorker.ts:52.
+- In den gerenderten Routendaten wurden 61 orphan route stop references gemessen.
+- calendar-dates.json wird erzeugt, aber nicht im Routing verarbeitet.
+
+
+# 5. Import- und Datenpipeline
+
+Einstieg:
+
+- npm run import:hvv: package.json:9
+- Script: scripts/import-hvv-gtfs.mjs
+- Optionen: --input, --url, --download, --output; Environment-Variable HVV_GTFS_URL.
+  Belege: scripts/import-hvv-gtfs.mjs:33-70.
+
+Pipeline:
+
+1. Quelle bestimmen: --input, --download oder lokales ZIP in data/raw/hvv.
+   Belege: scripts/import-hvv-gtfs.mjs:954-969.
+
+2. ZIP lesen mit systemweitem unzip.
+   Belege: scripts/import-hvv-gtfs.mjs:105-119.
+
+3. Pflichtdateien pruefen: agency.txt, stops.txt, routes.txt, trips.txt, stop_times.txt, calendar.txt.
+   Belege: scripts/import-hvv-gtfs.mjs:12-19, scripts/import-hvv-gtfs.mjs:975-980.
+
+4. CSV mit eigenem Parser lesen.
+   Belege: scripts/import-hvv-gtfs.mjs:121-174.
+
+5. Optionale Dateien lesen: calendar_dates.txt und shapes.txt.
+   Belege: scripts/import-hvv-gtfs.mjs:982-992.
+
+6. Stops normalisieren:
+   - interne ID hvv-stop-*
+   - sourceStopId bleibt erhalten
+   - parentStationId/platformCode/locationType werden gelesen
+   - city/region aus Namen heuristisch abgeleitet
+   Belege: scripts/import-hvv-gtfs.mjs:726-750.
+
+7. Routen klassifizieren:
+   - Namen und route_type werden auf mode/layer gemappt
+   - U, S, AKN, RE, RB, ICE/IC, BUS, FERRY, TRAM
+   Belege: scripts/import-hvv-gtfs.mjs:276-349.
+
+8. Shapes bauen:
+   - group by shape_id
+   - sort by shape_pt_sequence
+   - map auf {lat, lon}
+   Belege: scripts/import-hvv-gtfs.mjs:402-428.
+   - shape_dist_traveled wird nicht verwendet.
+
+9. Routenartefakt:
+   - pro GTFS-Route wird eine representativeTrip gesucht
+   - Geometrie ist shapeGeometry oder stopGeometry
+   - Route wird verworfen, wenn keine Geometrie mit mindestens einem Punkt in Bounds existiert
+   Belege: scripts/import-hvv-gtfs.mjs:796-847.
+
+10. Stationsartefakt:
+    - nur Stations in Bounding Box
+    - nur mit Routenusage oder locationType == 1
+    Belege: scripts/import-hvv-gtfs.mjs:850-860.
+
+11. StopPlace-Gruppierung:
+    - normalizePlaceKey entfernt u.a. Bf., A/S/U-Prefixe, Klammern, ZOB
+    - Hbf/Hauptbahnhof wird auf hamburg hbf gemappt
+    - Gruppierung nach normalisiertem Namen und Distanz <= 0.45 km, Hamburg Hbf <= 0.75 km
+    - Koordinate ist Mittelwert der enthaltenen Stops
+    Belege: scripts/import-hvv-gtfs.mjs:194-212, scripts/import-hvv-gtfs.mjs:430-537.
+
+12. Reachability-Index:
+    - stopPlaceIds
+    - routes meta
+    - kompakte trips
+    - transferEdges
+    - weekday/weekend stop counts
+    - synthetische Reverse-Trips fuer rail-like Routen, nicht fuer Bus/Faehre
+    Belege: scripts/import-hvv-gtfs.mjs:616-713.
+
+13. Schreiben:
+    - manifest.json
+    - stop-places.json
+    - stations.json
+    - routes.json
+    - trips-index.json
+    - stop-times.json
+    - reachability-index.json
+    - calendar.json
+    - calendar-dates.json
+    Belege: scripts/import-hvv-gtfs.mjs:997-1006.
+
+Fehlerbehandlung:
+
+- Download-Fehler -> Error.
+- Fehlende Pflichtdateien -> Error.
+- Keine Transaktionen, kein Staging, keine atomaren Dateiswaps, keine Retry-Mechanik, kein Validierungsbericht.
+
+
+# 6. Datenbank- und Domain-Modell
+
+Persistenz:
+
+- BELEGT: Keine Datenbank.
+- BELEGT: Keine ORM-Modelle, Migrationen, SQL-Schemata, PostGIS, GeoJSON-DB oder raeumliche Indizes.
+- BELEGT: Persistente Daten sind JSON-Dateien in public/data/hvv/.
+
+Wichtige Domain-Typen:
+
+- Coordinates: src/domain/types.ts:1-4
+- StopPlace: src/domain/types.ts:10-20
+- Station: src/domain/types.ts:22-35
+- RailwayLine/HvvRoute: src/domain/types.ts:59-72, src/domain/types.ts:177-183
+- ConnectionLeg: src/domain/types.ts:78-87
+- ReachabilityResult: src/domain/types.ts:91-102
+- HvvReachabilityIndex: src/domain/types.ts:211-244
+
+Kerndatenmodell:
+
+- StopPlace
+  - id
+  - name
+  - coordinates
+  - modes
+  - stopIds
+  - city/state/region
+  - layerIds
+
+- Station
+  - id
+  - name
+  - coordinates
+  - type
+  - sourceStopId
+  - parentStationId
+  - platformCode
+  - locationType
+  - wheelchairBoarding
+
+- HvvRoute
+  - id
+  - sourceRouteId
+  - name
+  - routeShortName/routeLongName
+  - agencyId
+  - routeType
+  - color/textColor
+  - mode
+  - layer
+  - stopIds/stationIds
+  - geometry
+
+- ReachabilityResult
+  - originStopPlaceId
+  - targetStopPlaceId
+  - departureMinutes
+  - arrivalMinutes
+  - travelTimeMinutes
+  - transfers
+  - connectionType
+  - legs
+  - weekdayConnectionCount
+  - weekendConnectionCount
+
+
+# 7. Haltestellen- und ID-Modell
+
+Interne IDs:
+
+- Technischer Stop: normalizeId('hvv-stop', stop.stop_id)
+  Beleg: scripts/import-hvv-gtfs.mjs:735-739.
+- StopPlace: stop-place-${slugify(name)} plus Suffix bei Mehrfachgruppen.
+  Beleg: scripts/import-hvv-gtfs.mjs:509-512.
+- Route: normalizeId('hvv-route', route.route_id)
+  Beleg: scripts/import-hvv-gtfs.mjs:831-833.
+
+Quell-IDs:
+
+- sourceStopId wird aus GTFS stop_id uebernommen.
+- Feed-/Source-Name ist nicht als Composite-Key modelliert.
+- DHID ist teilweise im sourceStopId-String enthalten, wird aber nicht fachlich validiert oder als deutschlandweite ID-Strategie genutzt.
+
+Parent-Station:
+
+- Importer liest parent_station, platform_code, location_type: scripts/import-hvv-gtfs.mjs:735-741.
+- Aktuelles Artefakt hat 0 parentStationId-Werte und nur locationType 0.
+- Fachliche Bahnhofshierarchie wird damit faktisch nicht modelliert.
+
+Hamburg Hbf:
+
+- Default-Startname: Hamburg Hbf.
+  Beleg: src/domain/stopPlaces.ts:3-10.
+- App sucht Default-StopPlace aus HVV-StopPlaces.
+  Beleg: src/App.tsx:226-231.
+- Artefakt stop-place-hamburg-hbf:
+  - 16 GTFS-Stop-IDs
+  - Modi RE, RB, S, U, BUS
+  - Layer bus, regional, s-bahn, u-bahn
+  - Koordinate ca. 53.552444, 10.007943
+  - weekdayConnectionCount 4457, weekendConnectionCount 5418
+- Interne Wege innerhalb Hamburg Hbf werden nicht aus GTFS Pathways modelliert. Durch Gruppierung in einen StopPlace sind Wechsel innerhalb des Clusters implizit kostenlos.
+- ZOB ist einbezogen ueber Stops wie Hauptbahnhof/ZOB.
+
+
+# 8. Linien-, Fahrten- und Geometriemodell
+
+Linien/Routes:
+
+- HvvRoute entspricht einer importierten GTFS-Route.
+- Name kommt aus route_short_name || route_long_name || route_id.
+  Beleg: scripts/import-hvv-gtfs.mjs:834.
+- mode/layer kommt aus classifyRoute.
+  Beleg: scripts/import-hvv-gtfs.mjs:276-349.
+
+Trips:
+
+- trips-index.json speichert tripId, routeId, serviceId, shapeId, directionId.
+  Beleg: scripts/import-hvv-gtfs.mjs:752-769.
+- reachability-index.json speichert kompakte Trip-Tupel:
+  [routeIndex, serviceMask, stopPlaceIndexes, departureMinutes, arrivalMinutes].
+  Belege: src/domain/types.ts:220-226, scripts/import-hvv-gtfs.mjs:681-682.
+
+Linienvarianten:
+
+- BELEGT: Kein explizites Route-Pattern-Modell.
+- BELEGT: Fuer Kartengeometrie wird pro GTFS-Route eine representativeTrip genutzt.
+  Belege: scripts/import-hvv-gtfs.mjs:796-819.
+- Im Routing koennen unterschiedliche Trip-Stopfolgen vorkommen, aber sie werden nicht als Pattern benannt oder aggregiert.
+
+Geometrien:
+
+- GTFS-Shapes werden nach shape_pt_sequence sortiert.
+  Beleg: scripts/import-hvv-gtfs.mjs:402-428.
+- shape_dist_traveled wird nicht verwendet.
+- Fallback: Stopkoordinaten der repraesentativen Fahrt.
+  Beleg: scripts/import-hvv-gtfs.mjs:815-819.
+- Keine OSM-/OpenRailwayMap-Geometrien fuer Linien.
+- Keine externen Routingdienste.
+- Keine Richtung/Variante pro Shape im Frontend.
+- Streckenlaengen entlang Shape werden nicht berechnet.
+- UI zeigt nur Luftliniendistanz zwischen Start und Ziel.
+  Belege: src/App.tsx:310-313, src/utils/geo.ts:9-23.
+
+
+# 9. Fahrplankalender und zeitliche Semantik
+
+Importer:
+
+- calendar.txt ist Pflicht.
+  Belege: scripts/import-hvv-gtfs.mjs:12-19, scripts/import-hvv-gtfs.mjs:862-873.
+- calendar_dates.txt wird optional gelesen und geschrieben.
+  Belege: scripts/import-hvv-gtfs.mjs:875-879, scripts/import-hvv-gtfs.mjs:990.
+- serviceDateRange kommt aus calendar.start_date/end_date.
+  Beleg: scripts/import-hvv-gtfs.mjs:389-400.
+
+Routing:
+
+- serviceMaskForCalendar erzeugt nur weekday/weekend-Masken.
+  Beleg: scripts/import-hvv-gtfs.mjs:602-613.
+- Aktiver Worker nutzt nur weekdayMask = 1.
+  Belege: src/domain/gtfsReachability.ts:31, src/domain/gtfsReachability.ts:68-76.
+- calendar_dates-Ausnahmen werden im Routing nicht beruecksichtigt.
+- Kein konkretes Datum; feste Referenzzeit 08:00.
+  Belege: src/App.tsx:39, src/App.tsx:231.
+- Zeiten >24:00 koennen als Minuten >1440 geparst werden.
+  Beleg: scripts/import-hvv-gtfs.mjs:597-600.
+- UI formatiert Zeiten modulo 24h.
+  Beleg: src/utils/time.ts:18-23.
+
+Nicht modelliert:
+
+- Feiertage
+- Ferienfahrplaene
+- Sommer-/Winterzeit
+- konkrete Service-Dates
+- frequencies.txt
+- transfers.txt
+- pathways.txt
+
+
+# 10. Routing- und Verbindungsermittlung
+
+Aktiver Call-Flow:
+
+1. App bestimmt effectiveStartStopPlaceId und fixedDepartureMinutes = 480.
+   Belege: src/App.tsx:226-231.
+
+2. useReachabilityWorker startet Browser-Worker und postet calculate.
+   Beleg: src/data/reachabilityWorker.ts:31-74.
+
+3. Worker laedt /data/hvv/reachability-index.json.
+   Beleg: src/workers/reachabilityWorker.ts:45-53.
+
+4. Worker ruft prepareReachabilityIndex und calculateGtfsReachability.
+   Beleg: src/workers/reachabilityWorker.ts:68-73.
+
+5. App mapped Ergebnisse nach targetStopPlaceId und rendert Marker/Detailpanel.
+   Belege: src/App.tsx:237-242, src/App.tsx:670-702, src/App.tsx:719-815.
+
+Algorithmus:
+
+- Eigene zeitabhaengige Suche mit Queue, sortiert nach arrivalMinutes.
+  Beleg: src/domain/gtfsReachability.ts:148-150.
+- Boardings werden pro StopPlace vorbereitet.
+  Beleg: src/domain/gtfsReachability.ts:90-116.
+- Nur weekday, nicht Bus/Faehre.
+  Beleg: src/domain/gtfsReachability.ts:68-76.
+- Boarding nur, wenn departure >= current.arrival.
+  Beleg: src/domain/gtfsReachability.ts:190-193.
+- Nach Boarding werden alle spaeteren Stops derselben Fahrt relaxiert.
+  Beleg: src/domain/gtfsReachability.ts:196-223.
+- Best-State: fruehere Ankunft gewinnt; bei gleicher Ankunft gewinnt spaetere erste Abfahrt.
+  Beleg: src/domain/gtfsReachability.ts:78-88.
+- Ergebnis sortiert nach travelTimeMinutes.
+  Beleg: src/domain/gtfsReachability.ts:246.
+
+Transfers:
+
+- Eigene Transferkanten werden im Importer erzeugt:
+  - nur wenn mindestens einer der StopPlaces rail-like ist
+  - Distanz <= 0.35 km
+  - Transferzeit max(3, min(8, ceil(distanceMeters / 80)))
+  Belege: scripts/import-hvv-gtfs.mjs:540-577.
+- Transferkanten erzeugen keine sichtbaren ConnectionLegs.
+  Beleg: src/domain/gtfsReachability.ts:165-181.
+- Umstiege werden nur als Linienwechsel zwischen Legs gezaehlt.
+  Beleg: src/domain/gtfsReachability.ts:33-47.
+
+Caching:
+
+- Worker cached preparedIndex/indexPromise im Speicher.
+  Beleg: src/workers/reachabilityWorker.ts:28-59.
+- Keine persistente Cache-Schicht.
+
+
+# 11. Fahrtzeitmetriken
+
+## 11.1 Schnellste Fahrzeit
+
+Status: BELEGT implementiert, aber fachlich eingeschraenkt.
+
+Grundmenge:
+
+- kompakte Trips im reachability-index.json
+- nur weekdayMask
+- mindestens 2 StopPlaces
+- nicht bus, nicht faehre
+- eigene raeumliche Transferkanten
+- Start: StopPlace, default Hamburg Hbf
+- Referenzzeit: 08:00
+- kein konkretes Datum
+
+Formel:
+
+state(origin) = { arrival = referenceDeparture, firstDeparture = null, legs = [] }
+
+Fuer jeden Zustand s an StopPlace i:
+
+- Transfer:
+  arrival' = s.arrival + transferMinutes
+  firstDeparture' = s.firstDeparture
+  legs' = s.legs
+
+- Boarding:
+  fuer jede Fahrt t mit Stop i an Position k:
+    wenn departure[t,k] >= s.arrival:
+      fuer jedes spaetere Ziel j:
+        arrival' = arrival[t,j]
+        firstDeparture' = s.firstDeparture ?? departure[t,k]
+        legs' = s.legs + leg(t,i,j)
+
+Best-State wird ersetzt, wenn:
+
+- arrival' < existing.arrival
+- oder arrival' == existing.arrival und firstDeparture' spaeter ist
+
+Result:
+
+- departureMinutes = firstDeparture ?? referenceDeparture
+- arrivalMinutes = best.arrival
+- travelTimeMinutes = arrivalMinutes - departureMinutes
+
+Belege:
+
+- src/domain/gtfsReachability.ts:68-76
+- src/domain/gtfsReachability.ts:78-88
+- src/domain/gtfsReachability.ts:129-246
+
+Wartezeit:
+
+- Anfaengliche Wartezeit zwischen 08:00 und erster tatsaechlicher Abfahrt ist NICHT in travelTimeMinutes enthalten.
+- Umstiegswartezeit ist indirekt enthalten, wenn sie zwischen zwei Legs liegt.
+- Transferkantenzeit ist in arrivalMinutes enthalten, aber nicht als Leg sichtbar.
+
+## 11.2 Durchschnittliche Fahrzeit
+
+Status: BELEGT nicht implementiert.
+
+- Keine Durchschnittsfunktion.
+- Kein arithmetischer Mittelwert.
+- Kein Sampling ueber Abfahrtswunschzeitpunkte.
+- Keine Gewichtung.
+- Keine Statistikbibliothek.
+- Keine UI-Anzeige.
+
+## 11.3 Median / typische Fahrzeit
+
+Status: BELEGT nicht implementiert.
+
+- Keine Median-/P50-Berechnung.
+- Keine typische Fahrzeit.
+
+## 11.4 P90-Fahrzeit
+
+Status: BELEGT nicht implementiert.
+
+- Keine Quantil-/Perzentilberechnung.
+- Keine Interpolation.
+- Keine Stichprobe.
+- Keine Datenbank-/Frontend-Felder.
+
+## 11.5 Weitere Kennzahlen
+
+Implementiert:
+
+- weekdayConnectionCount/weekendConnectionCount: Importer zaehlt je StopPlace, wie viele Trips mit jeweiliger ServiceMask diesen StopPlace enthalten.
+  Belege: scripts/import-hvv-gtfs.mjs:636-699, src/domain/gtfsReachability.ts:242-243.
+- transfers: Anzahl der Linienwechsel in sichtbaren Legs.
+  Beleg: src/domain/gtfsReachability.ts:33-47.
+- Luftliniendistanz im UI.
+  Belege: src/App.tsx:310-313, src/utils/geo.ts:9-23.
+- Wohnregion-Radius: autoRadiusMinutes * 0.75 km/min als Kreis, kein Strassenrouting.
+  Belege: src/App.tsx:35-36, src/App.tsx:314, src/App.tsx:576-599.
+
+Nicht implementiert:
+
+- P75/P95
+- maximale Fahrzeit
+- Direktverbindungsanteil
+- Verbindungen pro Stunde
+- durchschnittliche Umstiege
+- Bedienungsluecken
+- erste/letzte Verbindung
+- Streckendistanz entlang Geometrie
+- Zuverlaessigkeit/Verspaetungen
+- Scores
+
+
+# 12. End-to-End-Beispieltraces
+
+Alle Traces wurden lokal anhand desselben Datenmodells wie der Worker nachvollzogen:
+
+- Origin: stop-place-hamburg-hbf
+- Referenzzeit: 08:00
+- Daten: public/data/hvv/reachability-index.json
+- Algorithmus: src/domain/gtfsReachability.ts
+
+## 12.1 Elmshorn
+
+- Ziel: stop-place-elmshorn
+- Name: Elmshorn
+- StopPlace enthaelt 8 GTFS-Stops
+- Modi: RE, RB, AKN, BUS
+- Abfahrt: 08:02
+- Ankunft: 08:32
+- anfaengliche Wartezeit: 2 min
+- travelTimeMinutes: 30
+- Formel: 512 - 482 = 30
+- Umstiege: 0
+- Legs: RB61 Hamburg Hbf -> Elmshorn
+- weekdayConnectionCount: 882
+- weekendConnectionCount: 931
+- Bewertung: Anzeige entspricht arrival - firstDeparture; Anfangswarten 2 min ist nicht enthalten.
+
+## 12.2 Kaltenkirchen
+
+- Ziel: stop-place-kaltenkirchen
+- Name: Kaltenkirchen
+- StopPlace enthaelt 4 GTFS-Stops
+- Modi: AKN, BUS
+- Abfahrt: 08:08
+- Ankunft: 09:20
+- anfaengliche Wartezeit: 8 min
+- travelTimeMinutes: 72
+- Formel: 560 - 488 = 72
+- Umstiege: 2
+- Legs:
+  - S5 Hamburg Hbf 08:08 -> S Eidelstedt 08:25
+  - A1 S Eidelstedt 08:34 -> Ulzburg Sued 09:06
+  - A2 Ulzburg Sued 09:11 -> Kaltenkirchen 09:20
+- weekdayConnectionCount: 387
+- weekendConnectionCount: 253
+
+## 12.3 Wrist
+
+- Ziel: stop-place-wrist
+- Name: Wrist
+- StopPlace enthaelt 4 GTFS-Stops
+- Modi: RE, BUS
+- Abfahrt: 08:02
+- Ankunft: 09:00
+- anfaengliche Wartezeit: 2 min
+- travelTimeMinutes: 58
+- Formel: 540 - 482 = 58
+- Umstiege: 1
+- Legs:
+  - RB61 Hamburg Hbf 08:02 -> Elmshorn 08:32
+  - RE70 Elmshorn 08:47 -> Wrist 09:00
+- Umstiegswartezeit Elmshorn: 15 min, indirekt enthalten
+- weekdayConnectionCount: 140
+- weekendConnectionCount: 65
+
+## 12.4 Auffaelligkeit Ratzeburg/Moelln
+
+Ratzeburg:
+
+- Abfahrt: 18:35
+- Ankunft: 20:28
+- travelTimeMinutes: 113
+- anfaengliche Wartezeit ab 08:00: 635 min
+- Legs: RB81 -> RE80 -> RE83
+
+Moelln:
+
+- Abfahrt: 18:35
+- Ankunft: 20:36
+- travelTimeMinutes: 121
+- anfaengliche Wartezeit ab 08:00: 635 min
+- Legs: RB81 -> RE80 -> RE83
+
+Bewertung:
+
+- Das belegt die semantische Luecke: Die Verbindung wird nach fruehester Ankunft nach 08:00 gefunden, die Anzeige blendet aber die anfaengliche Wartezeit aus.
+
+
+# 13. Backend und API
+
+Es gibt kein Backend und keine API im klassischen Sinn. Die App laedt statische Dateien:
+
+- GET /data/hvv/manifest.json -> HvvManifest
+- GET /data/hvv/stop-places.json -> StopPlace[]
+- GET /data/hvv/stations.json -> HvvStation[]
+- GET /data/hvv/routes.json -> HvvRoute[]
+- GET /data/hvv/reachability-index.json -> HvvReachabilityIndex, nur Worker
+
+Belege:
+
+- src/data/hvv.ts:22-33
+- src/data/hvv.ts:42-65
+- src/workers/reachabilityWorker.ts:35-53
+
+Nicht vorhanden:
+
+- Authentifizierung
+- Pagination
+- API-Filter
+- serverseitige Bounding Box
+- Zoom-Level-Abfragen
+- serverseitige Aggregation
+- API-Caching
+- Datenbankabfragen
+
+
+# 14. Frontend- und Kartenlogik
+
+Framework:
+
+- React 19, Vite, TypeScript.
+- Leaflet/React-Leaflet.
+
+Layer:
+
+- Basiskarte: OSM oder Esri.
+  Belege: src/App.tsx:42-57.
+- Optional OpenRailwayMap.
+  Belege: src/App.tsx:568-573.
+- Routen: Leaflet Polyline aus route.geometry.
+  Belege: src/App.tsx:92-95, src/App.tsx:601-623.
+- Ausgewaehlte StopPlace-Routen: dickere Polylines.
+  Belege: src/App.tsx:625-645.
+- Reiseverbindungsrouten: gestrichelt.
+  Belege: src/App.tsx:647-668.
+- StopPlaces: CircleMarker.
+  Belege: src/App.tsx:670-702.
+- Wohnregion: Circle.
+  Belege: src/App.tsx:576-599.
+
+Interaktion:
+
+- Startstation per Datalist aus allen StopPlaces.
+  Belege: src/App.tsx:379-400.
+- Default Hamburg Hbf.
+  Belege: src/domain/stopPlaces.ts:3-10, src/App.tsx:226-231.
+- Klick auf StopPlace setzt Auswahl, ohne Pan/Zoom.
+  Beleg: src/App.tsx:689-693.
+- Detailpanel zeigt Reisezeit, Direkt/Umstieg, Luftlinie, Abfahrt, Ankunft, Linienfolge, Counts und GTFS-Stop-Anzahl.
+  Belege: src/App.tsx:719-815.
+
+Filter:
+
+- Reisezeitfenster: 30, 45, 60, 75, 90, >90.
+  Belege: src/App.tsx:31-35, src/App.tsx:80-90.
+- Umstiege: 0, 1, 2 max.
+  Beleg: src/App.tsx:421-429.
+- Unerreichbare anzeigen.
+  Beleg: src/App.tsx:450-457.
+- Layer: Regional/Fern, S-Bahn/AKN, U-Bahn, Bus, Faehre.
+  Belege: src/App.tsx:37, src/App.tsx:59-69.
+
+Performance:
+
+- React laedt stop-times.json nicht.
+- Bus/Faehre sind default deaktiviert.
+- Keine Marker-Clustering-Strategie.
+- Keine Vector Tiles.
+- Bei aktivem Bus/Faehre-Layer werden viele Leaflet-Features direkt gerendert.
+
+
+# 15. Tests und Qualitaetssicherung
+
+Vorhandene Tests:
+
+- src/domain/gtfsReachability.test.ts
+  - StopPlace-Gruppierung Ratzeburg
+  - wichtige StopPlace-Namen
+  - Ratzeburg via RE83
+  - direkte Verbindungen mit 0 Umstiegen
+  - Elmshorn/Kaltenkirchen/Moelln/Ratzeburg erreichbar
+
+- src/domain/reachability.test.ts
+  - Legacy Seed-Router
+  - Seed-Datenvalidierung
+
+- src/domain/hvvTravelEstimate.test.ts
+  - Legacy HVV-Schaetzung
+
+Ausgefuehrte Pruefungen:
+
+- npm run build: erfolgreich
+- npm run test: 3 Test Files, 11 Tests, alle bestanden
+- npm run lint: erfolgreich
+
+Fehlende Testabdeckung:
+
+- calendar_dates
+- Wochenendrouting
+- Feiertage/Ferien
+- Nachtfahrten und Zeiten >24:00
+- echte Transfers/pathways
+- Fussweg-Legs
+- Durchschnitt/P90/Median
+- Anfangswarten
+- Linienvarianten
+- fehlende Shapes
+- nicht erreichbare Haltestellen
+- Bus-/Faehre-Routing
+- Kartenperformance
+
+
+# 16. Performance und Betrieb
+
+Gemessene lokale Werte:
+
+- public/data/hvv: ca. 348 MB
+- stop-times.json: ca. 301 MB
+- routes.json: ca. 14 MB
+- reachability-index.json: ca. 15 MB
+- Worker-Index-Prepare im Node-Nachbau: ca. 4.9 ms
+- Reachability-Berechnung Hamburg Hbf 08:00 im Node-Nachbau: ca. 34.1 ms
+- Erreichbare StopPlaces ab Hamburg Hbf 08:00: 383
+- Build: erfolgreich, Vite build ca. 616 ms
+- Vitest: erfolgreich, ca. 629 ms
+
+Betrieb:
+
+- Kein Cronjob.
+- Keine Queue.
+- Kein Monitoring.
+- Kein Error Tracking.
+- Kein Datenbankindex.
+- Kein raeumlicher Index.
+- Caching nur im Worker-Speicher.
+
+Risiken:
+
+- grosse JSON-Fetches im Browser
+- Leaflet rendert viele Features direkt
+- Bus/Faehre-Layer koennen UI und Lesbarkeit stark belasten
+- Importer liest grosse GTFS-Dateien vollstaendig in Memory
+
+
+# 17. Aktiver Code versus Legacy-Code
+
+Sicher aktiv:
+
+- src/App.tsx
+- src/data/hvv.ts
+- src/data/reachabilityWorker.ts
+- src/workers/reachabilityWorker.ts
+- src/domain/gtfsReachability.ts
+- src/domain/stopPlaces.ts
+- src/domain/types.ts
+- src/utils/time.ts
+- src/utils/geo.ts
+- public/data/hvv/manifest.json
+- public/data/hvv/stop-places.json
+- public/data/hvv/stations.json
+- public/data/hvv/routes.json
+- public/data/hvv/reachability-index.json
+
+Wahrscheinlich aktiv/operativ:
+
+- scripts/import-hvv-gtfs.mjs
+- public/data/hvv/trips-index.json
+- public/data/hvv/calendar.json
+- public/data/hvv/calendar-dates.json
+
+Legacy/getestet, aber nicht im UI-Pfad:
+
+- src/domain/reachability.ts
+- src/domain/hvvTravelEstimate.ts
+- src/data/stations.ts
+- src/data/railway.ts
+
+Dokumentation teils veraltet:
+
+- README.md:93-108 beschreibt noch Seed/HVV-Schaetzung.
+- docs/CURRENT_STATE.md:97-99 behauptet, es sei kein Git-Repo.
+- docs/ARCHITECTURE.md:90-95 beschreibt veraltete Frontend-Ladepfade.
+
+Generiert/ignoriert:
+
+- dist/
+- node_modules/
+- public/data/hvv/stop-times.json
+- data/raw/
+
+
+# 18. Gap-Matrix zum Zielzustand
+
+Anforderung | aktueller Status | Belegstatus | aktuelles Verhalten | fehlende Faehigkeit | Risiko
+--- | --- | --- | --- | --- | ---
+vollstaendige Haltestellenabdeckung HH/SH/MV/NI | nicht erfuellt | BELEGT | HVV-GTFS + Bounding Box | laenderweite Stops/DB/DELFI | viele Bahnoefe fehlen
+alle relevanten Verkehrsmittel | teilweise | BELEGT | Import vieler Modi, Routing ohne Bus/Faehre | ICE/IC/EC vollstaendig, Busrouting | falsche Erreichbarkeit
+eindeutige Haltestellen-IDs | teilweise | BELEGT | hvv-stop-* und stop-place-* | feeduebergreifende IDs/DHID | Kollisionen bei neuen Quellen
+Bahnhofshierarchie | nicht erfuellt | BELEGT | keine parentStationId im Artefakt | Parent/Quay/Platform | falsche Umstiege
+vollstaendige Fahrten/Verkehrstage | teilweise | BELEGT | Trips, aber nur weekday mask | konkrete Daten/Ausnahmen | falsche Tagesprofile
+tatsaechliche Streckengeometrien | teilweise | BELEGT | GTFS-Shapes, eine repr. Route | Varianten/Richtungen | falsche Darstellung
+Linienvarianten | nicht erfuellt | BELEGT | kein Pattern-Modell | Route Patterns | falsche Aggregation
+Routing Hamburg Hbf zu jeder Zielhaltestelle | teilweise | BELEGT | 383 StopPlaces erreichbar | alle Stops, Bus, Fusswege | Ziele fehlen
+Umstiege | teilweise | BELEGT | Linienwechsel in Legs | echte Transferstationen/-zeiten | versteckte Transfers
+Fusswege | stark eingeschraenkt | BELEGT | raeumliche Transferkanten ohne Leg | Pathways/Footpaths | nicht nachvollziehbar
+Wartezeit | teilweise | BELEGT | Anfangswarten ausgeschlossen | separate Anfangs-/Gesamtzeit | missverstaendliche Fahrzeit
+Fahrplanabhaengigkeit | teilweise | BELEGT | echte Trip-Zeiten, generischer Werktag | Datum/Uhrzeit/Profile | falsche Ergebnisse
+Tagesprofile | nicht erfuellt | BELEGT | nur weekday routing | Wochenende/Feiertag/Tageszeiten | falsche Planung
+schnellste Fahrzeit | eingeschraenkt | BELEGT | frueheste Ankunft, Anzeige ohne Anfangswarten | klare Definition | irrefuehrende Werte
+durchschnittliche Fahrzeit | nicht erfuellt | BELEGT | keine Berechnung | Mittelwert/Sampling | Zielkennzahl fehlt
+Median | nicht erfuellt | BELEGT | keine Berechnung | typische Fahrzeit | Zielkennzahl fehlt
+P90-Fahrzeit | nicht erfuellt | BELEGT | keine Berechnung | Quantil/Sampling | Zielkennzahl fehlt
+Verbindungshaeufigkeit | rudimentaer | BELEGT | Stop-Trip-Counts | echte Verbindungen pro Zeitraum | irrefuehrende Counts
+Direktverbindungen | teilweise | BELEGT | transfers==0 | Direktanteil/Haeufigkeit | unvollstaendig
+reproduzierbare Snapshots | teilweise | BELEGT | Manifest-Version/Date/Importzeit | Rohdaten-Hash/Feedversion | schwer reproduzierbar
+Offline-Berechnung | teilweise | BELEGT | Browser rechnet statischen Index | robuste Precompute-Pipeline | Browserlast
+Kartenperformance | begrenzt | BELEGT | Leaflet direkte Features | Clustering/Vector Tiles | UI-Ueberladung
+
+
+# 19. Offene Punkte
+
+- UNGEKLAeRT: Ist der Remote-HVV-ZIP-Inhalt identisch zu den aktuellen JSON-Artefakten?
+  Grund: Roh-ZIP liegt nicht im Arbeitsbaum und wurde in dieser Runde nicht neu importiert.
+  Benoetigt: Roh-ZIP oder erneuter Download plus Hashvergleich.
+
+- UNGEKLAeRT: Welche Agenturnamen stehen hinter numerischen agencyId-Werten im aktuellen Routingmeta?
+  Grund: agency.txt wird nicht als Namensmapping in den aktiven Artefakten bereitgestellt.
+  Benoetigt: Roh-agency.txt oder erweitertes Artefakt.
+
+- UNGEKLAeRT: Ursache der 61 orphan route stop references.
+  Grund: Es wurde kein Import-Diagnosebericht erzeugt.
+  Benoetigt: gezielte Importvalidierung gegen Rohdaten.
+
+- UNGEKLAeRT: Ob die berechneten Verbindungen fachlich schnellste Verbindungen im echten Fahrplan sind.
+  Grund: Keine externe Gegenprobe mit DB/HAFAS/db.transport.rest oder vollstaendigem GTFS-Router.
+  Benoetigt: Verprobung pro Ziel und Datum.
+
+- UNGEKLAeRT: Browser-Performance auf schwachen Geraeten, insbesondere bei Bus/Faehre aktiv.
+  Grund: Kein Playwright-/Browser-Profiling in dieser Audit-Runde.
+
+
+# 20. Kompakte Faktenbasis fuer Umbauprompt
+
+- Aktive Datenquelle: HVV GTFS Static aus Transparenzportal Hamburg.
+- Aktive Datenformate: GTFS ZIP/CSV -> JSON-Artefakte.
+- Import-Einstiegspunkt: npm run import:hvv, scripts/import-hvv-gtfs.mjs.
+- Datenbank: keine.
+- Backend/API: keine; nur statische JSON-Fetches.
+- Zentrale JSONs: manifest, stop-places, stations, routes, reachability-index, trips-index, calendar, calendar-dates, stop-times.
+- stop-times.json: vorhanden, gross, ignoriert, nicht im Browser geladen.
+- Zentrale IDs: hvv-stop-*, hvv-route-*, stop-place-*.
+- Haltestellenhierarchie: keine echte Parent-/Platform-Hierarchie im aktuellen Artefakt.
+- StopPlace-Gruppierung: Name + raeumliche Naehe.
+- Geometriequelle: GTFS shapes.txt, Fallback Stopfolge.
+- Routing: eigener Browser-Worker, Earliest Arrival, generischer Werktag, rail-like Trips, eigene Transferkanten.
+- Origin Hamburg Hbf: stop-place-hamburg-hbf, 16 GTFS-Stops, implizit kostenlose interne Wechsel.
+- Sampling: keines; feste Referenzzeit 08:00.
+- Schnellste Fahrzeit: arrival - first actual departure aus fruehester Ankunft nach 08:00.
+- Anfangswarten: nicht in travelTimeMinutes enthalten.
+- Durchschnitt: nicht implementiert.
+- Median: nicht implementiert.
+- P90: nicht implementiert.
+- Kalender: calendar.txt grob zu weekday/weekend, calendar_dates nicht im Routing.
+- Frontend-Komponenten: App.tsx, useHvvData, useReachabilityWorker, reachabilityWorker.
+- Tests: Vitest, 3 Dateien, 11 Tests, Build/Test/Lint erfolgreich.
+- Hauptluecken: Abdeckung, Bahnhofshierarchie, konkrete Verkehrstage, echte Transfers/Fusswege, Busrouting, Metriken Durchschnitt/P90, Linienvarianten, Kartenperformance.
+
+
+# 21. Maschinenlesbarer Kurzanhang
+
+{
+  "audit_status": {
+    "repository_unchanged_before_report_file": true,
+    "database_access": "unavailable",
+    "application_started": true,
+    "tests_executed": true
+  },
+  "stack": {
+    "frontend": ["React 19", "TypeScript", "Vite"],
+    "backend": [],
+    "database": [],
+    "mapping": ["Leaflet", "React-Leaflet", "OpenStreetMap tiles", "Esri tiles", "OpenRailwayMap tiles"],
+    "routing": ["custom browser worker earliest-arrival algorithm"],
+    "statistics": [],
+    "infrastructure": ["Node.js import script", "Vitest", "ESLint"]
+  },
+  "data_sources": [
+    {
+      "name": "hvv Fahrplandaten (GTFS)",
+      "provider": "Hamburger Verkehrsverbund GmbH",
+      "format": "GTFS static ZIP",
+      "active": true
+    },
+    {
+      "name": "OpenStreetMap tiles",
+      "format": "raster tiles",
+      "active": true
+    },
+    {
+      "name": "OpenRailwayMap tiles",
+      "format": "raster tiles",
+      "active": true
+    }
+  ],
+  "data_snapshots": [
+    {
+      "schemaVersion": 1,
+      "sourceGtfsDate": "20260408",
+      "importedAt": "2026-06-24T07:00:05.246Z",
+      "serviceDateRange": {
+        "start": "20260408",
+        "end": "20261212"
+      },
+      "counts": {
+        "agencies": 20,
+        "stops": 9577,
+        "stopPlaces": 7122,
+        "routes": 872,
+        "trips": 118251,
+        "stopTimes": 2520591,
+        "shapes": 4308718,
+        "services": 2150,
+        "calendarDates": 45078
+      }
+    }
+  ],
+  "routing": {
+    "engine": "custom earliest-arrival worker",
+    "origin": {
+      "defaultStopPlaceName": "Hamburg Hbf",
+      "defaultStopPlaceId": "stop-place-hamburg-hbf",
+      "referenceDepartureMinutes": 480
+    },
+    "precomputed": false,
+    "cached": true
+  },
+  "travel_time_metrics": {
+    "fastest": {
+      "implemented": true,
+      "definition": "earliest arrival after reference time, reported as arrival minus first actual departure",
+      "includes_initial_wait": false,
+      "formula": "travelTimeMinutes = arrivalMinutes - (firstDepartureMinutes ?? referenceDepartureMinutes)"
+    },
+    "average": {
+      "implemented": false
+    },
+    "median": {
+      "implemented": false
+    },
+    "p90": {
+      "implemented": false
+    }
+  },
+  "verified_gaps": [
+    "no backend",
+    "no database",
+    "no full four-state coverage model",
+    "no calendar_dates in routing",
+    "no average travel time",
+    "no median travel time",
+    "no p90 travel time",
+    "no GTFS transfers/pathways",
+    "no route pattern model"
+  ],
+  "critical_file_references": [
+    "scripts/import-hvv-gtfs.mjs",
+    "src/domain/gtfsReachability.ts",
+    "src/workers/reachabilityWorker.ts",
+    "src/data/reachabilityWorker.ts",
+    "src/data/hvv.ts",
+    "src/App.tsx",
+    "src/domain/types.ts",
+    "public/data/hvv/manifest.json"
+  ]
+}
+
+
+# 22. Abschluss
+
+Standardpruefung in der Audit-Runde:
+
+- npm run build: erfolgreich
+- npm run test: erfolgreich, 3 Test Files, 11 Tests
+- npm run lint: erfolgreich
+
+Git-Status am Ende der Audit-Runde vor Erstellung dieser Datei:
+
+## main...origin/main
+
+Hinweis fuer den Folge-Agenten:
+
+Diese Datei selbst ist ein neu hinzugefuegtes Uebergabeartefakt und war nicht Teil der urspruenglichen Audit-Runde.

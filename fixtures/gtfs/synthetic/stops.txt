@@ -1,0 +1,9 @@
+stop_id,stop_name,stop_lat,stop_lon,location_type,parent_station,platform_code,wheelchair_boarding
+hbf,Hamburg Hbf,53.552733,10.006909,1,,,
+hbf-rail-1,Hamburg Hbf Gleis 1,53.552733,10.006909,0,hbf,1,1
+hbf-bus-a,Hamburg Hbf Bus A,53.553200,10.007800,0,hbf,A,1
+berg,Bergedorf Fixture,53.489700,10.203900,1,,,
+berg-rail-1,Bergedorf Fixture Gleis 1,53.489700,10.203900,0,berg,1,1
+aum,Aumuehle Testbahnhof,53.529000,10.314000,1,,,
+aum-rail-1,Aumuehle Gleis 1,53.529000,10.314000,0,aum,1,1
+busdorf-a,Busdorf Mitte Mast A,53.545000,10.390000,0,,A,1

@@ -1,143 +1,166 @@
-# Regionfinder Bahn
+# Regionfinder
 
-Web-MVP zur Analyse von Bahn- und ÖPNV-Erreichbarkeit ab einem frei wählbaren Startbahnhof. Die App ist auf Hamburg und Umland optimiert und kombiniert:
+Regionfinder ist inzwischen eine zweigleisige Anwendung:
 
-- einen kleinen, schnellen Seed-Router für Bahn-Reisezeiten,
-- importierte HVV-GTFS-Static-Daten für Haltestellen, Linien und Shapes,
-- eine Leaflet/OpenStreetMap-Karte mit zuschaltbaren ÖPNV-Layern.
+- **API-/Produktionsmodus**: React 19, Vite, TypeScript, MapLibre, Fastify, PostgreSQL/PostGIS, MOTIS-Metriken und Mapbox Vector Tiles.
+- **Legacy-Modus**: die ursprüngliche Leaflet/HVV-JSON-Anwendung bleibt als Vergleichs- und Fallbackpfad erhalten.
 
-Der Standard-Startbahnhof ist `Hamburg Hbf`. Beim Laden zentriert die Karte explizit auf den aktuellen Startbahnhof.
+Der produktive Pfad nutzt den aktiven DELFI-Snapshot `delfi-bb69c7e2c8d5` aus PostGIS. Der alte Browser-Worker ist nicht mehr die kanonische Routing- oder Metriklogik.
 
 ## Setup
 
 ```bash
 npm install
-npm run dev
+docker compose up -d postgis
+npm run db:migrate
+```
+
+Produktiver API-/Frontend-Modus mit lokalem PostGIS:
+
+```bash
+DATABASE_URL=postgres://regionfinder:regionfinder@localhost:55432/regionfinder \
+REGIONFINDER_API_PORT=4001 \
+npm run dev:api
+
+VITE_REGIONFINDER_DATA_MODE=api \
+VITE_REGIONFINDER_API_BASE_URL=http://127.0.0.1:4001 \
+npm run dev -- --host 127.0.0.1 --port 5176
+```
+
+Frontend-URL in der lokalen Entwicklungsumgebung: `http://localhost:5176/`.
+
+Fixture-API für Tests:
+
+```bash
+REGIONFINDER_USE_FIXTURE_API=1 npm run dev:api
+VITE_REGIONFINDER_DATA_MODE=api npm run dev
+```
+
+Legacy-Modus:
+
+```bash
+VITE_REGIONFINDER_DATA_MODE=legacy npm run dev
 ```
 
 ## Befehle
 
 ```bash
-npm run dev        # lokale Entwicklung
-npm run import:hvv # HVV-GTFS nach public/data/hvv importieren
-npm run build      # TypeScript- und Produktionsbuild
-npm run test       # Validierung der Seed-Daten und Routinglogik
-npm run lint       # ESLint
-npm run preview    # gebaute App lokal ansehen
+npm run dev                         # Vite-Frontend
+npm run dev:api                     # Fastify-API
+npm run build                       # TypeScript- und Produktionsbuild
+npm run test                        # Vitest
+npm run lint                        # ESLint
+npm run check                       # Build, Tests und Lint
+npm run db:migrate                  # PostGIS-Migrationen
+npm run import:hvv                  # Legacy-HVV-JSON-Artefakte
+npm run pipeline:import:synthetic   # synthetischen GTFS-Fixture-Snapshot importieren
+npm run pipeline:compute            # Fixture-Metriken berechnen
+npm run metrics:compute:production  # Produktionsmetriken mit MOTIS one-to-all
+npm run verify:production           # Produktionssnapshot verifizieren
 ```
 
-## Datenquellen
+## Aktueller Produktionsstand
 
-Das Projekt trennt bewusst Seed-Daten, importierte Fahrplandaten und Kartenbasis:
+Aktiver Snapshot:
 
-- `src/data/stations.ts`: Seed-Bahnhöfe und Haltepunkte im Raum Hamburg mit Koordinaten, Ort, Bundesland und Region.
-- `src/data/railway.ts`: vereinfachte Bahnachsen als Liniengeometrie sowie taktähnliche Service-Patterns für RE/RB/S-Bahn/AKN.
-- `public/data/hvv/*.json`: normalisierte Artefakte aus HVV GTFS Static.
-- Kartenbasis: OpenStreetMap-Kacheln über Leaflet.
-- Optionales Overlay: OpenRailwayMap-Standardtiles als Infrastruktur-Layer, keine Fahrplandatenquelle.
+- Snapshot-ID: `delfi-bb69c7e2c8d5`
+- Quelle: DELFI deutschlandweite Sollfahrplandaten GTFS
+- GTFS-Gültigkeit: 2026-06-06 bis 2026-12-12
+- GTFS-SHA-256: `bb69c7e2c8d50e6f923e397f5d39a17c4e514cb6e4e258473cff65798b5b902e`
+- OSM-SHA-256: `d957290fe75a9f599ff3abd2a883328c58e0c67a1db332f15a11647e86d0e74d`
+- BKG-Grenzen-SHA-256: `0a3c106a7537e1b47e97077d923c660e22510f73031463a420e7718c6f129e42`
+- Status: aktiv in PostGIS
 
-Die Seed-Daten sind für schnelle Entwicklung und stabile Tests da. HVV-GTFS ist die primäre Quelle für vollständige ÖPNV-Haltestellen, Linien und Geometrien, aber noch nicht die primäre exakte Routingquelle.
+Importumfang:
 
-## HVV-GTFS-Import
+- 533.066 StopPlaces
+- 545.533 technische Stops
+- 2.267.786 Trips
+- 45.880.781 Stop-Times
+- 303.549 Route Patterns
+- Bundeslandgrenzen: `DE-HH`, `DE-SH`, `DE-MV`, `DE-NI`, `DE-HB`
 
-Der Importer liest GTFS Static aus einer ZIP-Datei und schreibt normalisierte Artefakte nach `public/data/hvv/`. Die App lädt beim Start nur `manifest.json`, `stations.json` und `routes.json`. Große Fahrplanartefakte wie `stop-times.json` bleiben für den späteren GTFS-Router vorhanden, werden aber nicht im Browser geladen.
+Aktive Produktionsmetriken:
 
-```bash
-mkdir -p data/raw/hvv
-# ZIP aus dem Transparenzportal nach data/raw/hvv/ legen, dann:
-npm run import:hvv
+- Engine: `motis_one_to_all`
+- MOTIS-Version: `v2.10.2`
+- Metric Run: `c63c2468-e7c8-4260-9ac7-abc2f75d7e02`
+- Profil: `regular_tue_thu`
+- Sample-Basis: 2026-07-07, 05:00 bis GTFS 25:00, alle 5 Minuten
+- Ziel-StopPlaces: 95.870
 
-# alternativ direkter Download der aktuell konfigurierten Transparenzportal-Ressource:
-npm run import:hvv -- --download
+Hinweis: Der lokale Produktionslauf nutzt einen MOTIS-Reisehorizont von 240 Minuten. Das fachliche Zielprofil bleibt 12 Stunden; der vollständige 12-Stunden-Lauf ist als Performance-Restarbeit dokumentiert.
 
-# oder explizit:
-npm run import:hvv -- --input data/raw/hvv/hvv_Rohdaten_GTFS.zip
-HVV_GTFS_URL=https://example.org/hvv.zip npm run import:hvv -- --download
-```
+## API
 
-Der Importer verarbeitet:
+Implementierte Endpunkte:
 
-- Pflichtdateien: `agency.txt`, `stops.txt`, `routes.txt`, `trips.txt`, `stop_times.txt`, `calendar.txt`
-- optionale Dateien: `calendar_dates.txt`, `shapes.txt`
+- `GET /health`
+- `GET /ready`
+- `GET /api/v1/snapshots/current`
+- `GET /api/v1/stops/search?q=...&states=...&modes=...`
+- `GET /api/v1/stops/:publicId`
+- `GET /api/v1/stops/:publicId/metrics?profile=...`
+- `GET /api/v1/stops/:publicId/itineraries?date=YYYY-MM-DD&time=HH:mm&profile=...`
+- `GET /api/v1/route-patterns/:id`
+- `GET /api/v1/tiles/stops/{z}/{x}/{y}.mvt?modes=...`
+- `GET /api/v1/tiles/routes/{z}/{x}/{y}.mvt?modes=...`
 
-Liniengeometrien nutzen bevorzugt `shapes.txt`; falls Shapes fehlen, nutzt die Karte die Haltestellenfolge einer repräsentativen Fahrt als Polyline-Fallback. Der Import begrenzt dargestellte Stops/Routen auf Hamburg/Umland-Bounds, um die Karte performant und relevant zu halten.
+Die Tile-Endpunkte filtern serverseitig nach Verkehrsmitteln. Der Client entfernt und erneuert die MapLibre-Vector-Tile-Sources beim Umschalten der Layer, damit keine alten ungefilterten Tiles aus dem MapLibre-Cache sichtbar bleiben.
 
-Aktuell importierter Datensatz:
+## Frontend
 
-- Datensatz: `hvv Fahrplandaten (GTFS) April 2026 bis Dezember 2026`, Transparenzportal Hamburg.
-- Veröffentlichende Stelle und Namensnennung: `Hamburger Verkehrsverbund GmbH`.
-- Lizenz: `Datenlizenz Deutschland Namensnennung 2.0`.
-- Inhalt laut Datensatz: AKN, Bus, Fähre, Regional-Express, Regionalbahn, S-Bahn und U-Bahn.
-- Importumfang im aktuellen Arbeitsstand: 872 Routen, 9.577 Haltestellen, 118.251 Trips, 2.520.591 Stop-Times, Shapes vorhanden.
+`src/ApiApp.tsx` ist der produktive API-Modus.
 
-Geofox wird in diesem MVP nicht genutzt, weil der HVV den Zugang zur Schnittstelle als beschränkt beschreibt.
+Wichtige UX-Entscheidungen:
 
-## UI-Verhalten
-
-- Startbahnhof-Auswahl per Suche/Autocomplete.
-- Default und Initialfokus: `Hamburg Hbf`.
-- Karte wird beim Laden und Startbahnhofwechsel auf den Startbahnhof gesetzt.
-- Klick auf eine HVV-Haltestelle verschiebt oder zoomt die Karte nicht. Er aktualisiert nur Auswahl, Marker-Highlight und Detailpanel.
-- HVV-Karten-Popups sind deaktiviert; Details stehen rechts im Panel.
-- Bei ausgewählter HVV-Haltestelle werden alle dort haltenden Linien auf der Karte hervorgehoben.
-- Layer-Toggles:
+- MapLibre statt Leaflet im API-Modus.
+- Basiskarten-Umschalter:
+  - OpenStreetMap-Straßenkarte
+  - Esri World Imagery Satellit mit Esri-Label-Overlay
+- StopPlaces und Route Patterns werden als MVTs geladen, nicht als vollständige JSON-Dateien.
+- Stationen aus Vektor-Tiles sind anklickbar und öffnen rechts StopPlace-Details, Metriken, Verbindung und Linien.
+- Verkehrsmittel-Layer:
   - `Regional/Fern`
   - `S-Bahn/AKN`
   - `U-Bahn`
   - `Bus`
   - `Fähre`
-  - `Bahninfrastruktur`
-- Default-Layer: Schiene sichtbar (`Regional/Fern`, `S-Bahn/AKN`, `U-Bahn`), Bus/Fähre aus.
-- Wenn eine HVV-Haltestelle per Suche ausgewählt wird, aktiviert die App automatisch den passenden Layer.
+- Default: Schienenlayer sichtbar, Bus/Fähre aus.
+- Route Patterns werden farbig dargestellt:
+  - bevorzugt echte GTFS-Route-Farbe aus PostGIS/MVT (`route_color`)
+  - Fallbackfarbe nach Modus
+- Stopfolgen-Approximationen sind gestrichelt, transparenter und standardmäßig ausgeblendet.
+- Reisezeitfenster, Umstiegsfilter, unerreichbare Ziele und Wohnregion-Radius sind im API-Modus wieder verfügbar.
 
-## Routing und Reisezeiten
+## Legacy-HVV-Pfad
 
-Der exakte Router in `src/domain/reachability.ts` arbeitet weiterhin auf Seed-Service-Patterns. Er berechnet erreichbare Seed-Bahnhöfe inklusive Wartezeit, Fahrzeit, Umstiegen und Beispielverbindung.
+Der Legacy-Modus nutzt weiterhin:
 
-Für HVV-Haltestellen gibt es aktuell zwei Fälle:
+- `src/App.tsx`
+- Leaflet/React-Leaflet
+- `src/data/hvv.ts`
+- statische Artefakte unter `public/data/hvv/`
+- den alten Browser-Worker/Seed-Router
 
-1. **HVV-Haltestelle entspricht Seed-Station**
-   - Die Detailkarte zeigt die Seed-Reisezeit, Umstiege und Verbindung.
-   - Beispiel: Hittfeld ist als Seed-Station ergänzt und über `RB41` erreichbar.
+`public/data/hvv/stop-times.json` ist groß und darf nicht direkt im React-Frontend geladen werden.
 
-2. **HVV-Haltestelle ist nicht im Seed-Router**
-   - Die Detailkarte zeigt einen `ca.`-Wert.
-   - Der Wert wird aus Seed-Router plus importiertem HVV-Linienverlauf geschätzt:
-     `Startbahnhof -> erreichbarer Seed-Anschlussbahnhof -> HVV-Linie -> Zielhaltestelle`.
-   - Diese Schätzung lädt keine `stop_times.json` und ist nicht fahrplanexakt.
-   - Die Detailkarte benennt den Anschluss und weist auf den späteren GTFS-Router hin.
+HVV-Artefakte regenerieren:
 
-## MVP-Funktionen
+```bash
+npm run import:hvv -- --download
+```
 
-- OpenStreetMap-basierte, zoombare und verschiebbare Karte.
-- Seed-Erreichbarkeit ab Startbahnhof für 30, 45, 60, 75 und 90 Minuten.
-- Maximaler Umstiegsfilter.
-- Sortierbare Ergebnisliste nach Reisezeit, Name, Umstiegen und Entfernung.
-- Farbige Markierung erreichbarer Seed-Ziele auf der Karte.
-- HVV-GTFS-Layer für Linien und Haltestellen.
-- Hervorhebung der ausgewählten HVV-Linien.
-- Optionales OpenRailwayMap-Infrastruktur-Overlay.
-- Wohnregion-Radius für alle aktuell sichtbaren erreichbaren Seed-Zielbahnhöfe.
+## Daten und Artefakte
 
-## Bekannte Einschränkungen
+Große Rohdaten, Routinggraphen, Reports und generierte Metriken liegen unter `data/` und sind über `.gitignore` geschützt. Versionierbar sind nur kleine Manifeste wie `data/source-manifest.json` und `data/runtime-capabilities.json`, falls sie bewusst als Laufdokumentation benötigt werden.
 
-- Noch kein exakter zeitabhängiger GTFS-Router im Browser oder Backend.
-- `stop-times.json` ist groß und wird bewusst nicht im Frontend geladen.
-- HVV-Reisezeiten für Nicht-Seed-Haltestellen sind Näherungen.
-- Keine Echtzeitdaten, Störungen, Gleiswechsel oder Verkehrstage außerhalb des Seed-Werktagsmodells.
-- GTFS-Stop-Koordinaten und Shape-Geometrien können wenige Meter auseinanderliegen; ausgewählte Linien werden deshalb deutlich hervorgehoben.
-- Wohnregion-Radius nutzt aktuell konservative Luftlinienkreise, keine Straßenrouting-Berechnung.
-- Das lokale Arbeitsverzeichnis ist derzeit kein Git-Repository.
+## Dokumentation
 
-## Nächste Ausbauschritte
-
-1. Zeitabhängigen GTFS-Router bauen: Servicekalender, `calendar_dates`, `trips`, `stop_times`, Umstiege über gleiche Station/Parent-Station/kurze Fußwege.
-2. `stop-times.json` in ein performanteres Format überführen, z. B. kompakte Indizes oder serverseitige Query-Schicht.
-3. Wohnregion-Funktion entwickeln:
-   - Bahnlimit wählen, z. B. 60 Minuten.
-   - erreichbare Bahnhöfe bestimmen.
-   - Auto-Anschlusszeit wählen, z. B. 15 Minuten.
-   - zunächst geschätzte Isochronen/Kreise oder Raster anzeigen.
-   - später echtes Straßenrouting über OSRM, Valhalla oder OpenRouteService.
-4. Gemeinde-/Ortsteil-Datensatz ergänzen, um erreichbare Wohnorte namentlich auszugeben.
-5. Persistente Szenarien für Wohnortvergleiche ergänzen.
+- `docs/CURRENT_STATE.md`: aktueller technischer Stand
+- `docs/TARGET_ARCHITECTURE.md`: Zielarchitektur und aktive V2-Architektur
+- `docs/PRODUCTION_DATA_INTEGRATION_REPORT.md`: Produktionsdaten, Hashes, Metriklauf
+- `docs/TRAVEL_TIME_SEMANTICS.md`: Fahrzeitdefinitionen
+- `docs/IMPORT_RUNBOOK.md`: Import-, API- und Metrikbefehle
+- `docs/MIGRATION.md`: Legacy zu API-Modus
+- `AGENTS.md`: Hinweise für zukünftige Coding-Sessions

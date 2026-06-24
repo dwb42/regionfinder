@@ -1,0 +1,28 @@
+services:
+  postgis:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: regionfinder
+      POSTGRES_USER: regionfinder
+      POSTGRES_PASSWORD: regionfinder
+    ports:
+      - "${REGIONFINDER_POSTGIS_PORT:-55432}:5432"
+    volumes:
+      - regionfinder-postgis:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U regionfinder -d regionfinder"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+
+  motis:
+    image: ghcr.io/motis-project/motis:v0.11.2
+    profiles: ["motis"]
+    command: ["--help"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./infra/motis:/data:ro
+
+volumes:
+  regionfinder-postgis:

@@ -1,0 +1,3 @@
+route_id,agency_id,route_short_name,route_long_name,route_type,route_color,route_text_color
+re1,rail,RE1,Hamburg - Aumuehle,2,0f766e,ffffff
+b7,bus,B7,Aumuehle - Busdorf,3,c2410c,ffffff

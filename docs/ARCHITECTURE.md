@@ -1,5 +1,34 @@
 # Architecture
 
+Hinweis: Diese Datei beschreibt den Legacy-MVP und bleibt als Referenz erhalten. Der aktive Produktpfad ist inzwischen der API-/PostGIS-/MapLibre-Modus aus `docs/TARGET_ARCHITECTURE.md`, `server/`, `db/`, `pipeline/` und `src/ApiApp.tsx`.
+
+## Aktiver API-/MapLibre-Pfad
+
+Der aktuelle V2-Pfad besteht aus:
+
+- `server/`: Fastify-API für Snapshots, StopPlaces, Metriken, Itineraries, Route Patterns und MVT-Kacheln.
+- `db/migrations/`: PostGIS-Schema, Admin-Grenzen, Snapshot-Aktivierung.
+- `pipeline/`: Produktionsquellen, DELFI-Import, MOTIS/R5-Orchestrierung und Metrikberechnung.
+- `src/ApiApp.tsx`: MapLibre-Frontend.
+- `src/data/api.ts`: API-Client.
+- `src/api/contracts.ts`: gemeinsame Antworttypen.
+
+Die Karte lädt im API-Modus StopPlaces und Route Patterns ausschließlich als Vector Tiles:
+
+- `GET /api/v1/tiles/stops/{z}/{x}/{y}.mvt?modes=...`
+- `GET /api/v1/tiles/routes/{z}/{x}/{y}.mvt?modes=...`
+
+Die Modusfilter werden serverseitig in PostGIS angewendet. Der Client entfernt und erneuert die MapLibre-Vector-Tile-Sources beim Umschalten der Modi, weil `setTiles()` allein bereits geladene ungefilterte Tiles nicht zuverlässig aus dem Cache entfernt.
+
+Route-Pattern-Tiles liefern `route_color`, falls eine echte GTFS-Farbe existiert. MapLibre nutzt diese Farbe bevorzugt und fällt sonst auf Modusfarben zurück. `stop_sequence_approximation` wird gestrichelt, transparenter und standardmäßig ausgeblendet dargestellt.
+
+Basiskarten im API-Modus:
+
+- OpenStreetMap-Straßenkarte.
+- Esri World Imagery als Satellit, plus Esri Reference Labels.
+
+StopPlaces aus MVTs sind anklickbar; der Klick lädt Details über `GET /api/v1/stops/:publicId` und zeigt sie im rechten Panel.
+
 ## Überblick
 
 Die App ist ein Vite/React/TypeScript-Projekt mit Leaflet-Karte. Sie trennt drei Ebenen:

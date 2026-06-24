@@ -1,0 +1,19 @@
+version: 1
+origins:
+  - id: hamburg-hbf
+    name: Hamburg Hauptbahnhof
+    preferred_dhid: de:02000:8002549
+    fallback_names:
+      - Hamburg Hbf
+      - Hamburg Hauptbahnhof
+    coordinate:
+      lat: 53.552733
+      lon: 10.006909
+    access_policy:
+      use_pathways: true
+      use_osm: true
+      fallback_transfer_seconds: 300
+      fallback_quality: configured_fallback
+    notes: >
+      Der Origin ist ein Superknoten. Transfers zu technischen Stops dürfen nicht
+      stillschweigend null Sekunden kosten.

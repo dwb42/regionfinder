@@ -1,0 +1,87 @@
+{
+  "captured_at": "2026-06-24T11:15:29Z",
+  "os": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit",
+    "machine": "arm64"
+  },
+  "cpu": {
+    "cores": 8
+  },
+  "memory": {
+    "ok": true,
+    "code": 0,
+    "output": "17179869184"
+  },
+  "disk": {
+    "ok": true,
+    "code": 0,
+    "output": "Filesystem   1024-blocks      Used Available Capacity iused      ifree %iused  Mounted on\n/dev/disk3s5   971350180 614426972 330126452    66% 1884926 3301264520    0%   /System/Volumes/Data"
+  },
+  "docker": {
+    "ok": true,
+    "code": 0,
+    "output": "Docker version 29.4.3, build 055a478"
+  },
+  "docker_compose": {
+    "ok": true,
+    "code": 0,
+    "output": "Docker Compose version v5.1.3"
+  },
+  "java": {
+    "ok": false,
+    "code": 1,
+    "output": "The operation couldn\u2019t be completed. Unable to locate a Java Runtime.\nPlease visit http://www.java.com for information on installing Java."
+  },
+  "python": {
+    "ok": true,
+    "code": 0,
+    "output": "Python 3.9.6"
+  },
+  "node": {
+    "ok": true,
+    "code": 0,
+    "output": "v25.8.1"
+  },
+  "npm": {
+    "ok": true,
+    "code": 0,
+    "output": "11.11.0"
+  },
+  "postgres": {
+    "ok": true,
+    "code": 0,
+    "output": "psql (PostgreSQL) 16.13 (Homebrew)"
+  },
+  "tools": {
+    "ogrinfo": {
+      "path": null,
+      "version": null
+    },
+    "ogr2ogr": {
+      "path": null,
+      "version": null
+    },
+    "osmium": {
+      "path": null,
+      "version": null
+    },
+    "gdalinfo": {
+      "path": null,
+      "version": null
+    }
+  },
+  "listening_ports": {
+    "ok": true,
+    "code": 0,
+    "output": "COMMAND     PID USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME\nrapportd    813   dw    4u  IPv4 0x80979fe9dd98764e      0t0  TCP *:49993 (LISTEN)\nrapportd    813   dw    5u  IPv6 0xd4af223aaa834a17      0t0  TCP *:49993 (LISTEN)\nrapportd    813   dw   21u  IPv6 0xa42138792de9a627      0t0  TCP *:63024 (LISTEN)\nrapportd    813   dw   23u  IPv6 0x4fdc71f16ca82ea9      0t0  TCP *:63025 (LISTEN)\nControlCe   831   dw   10u  IPv4 0xddb4d81cc89ac5ef      0t0  TCP *:7000 (LISTEN)\nControlCe   831   dw   11u  IPv6 0x147a6947052e3834      0t0  TCP *:7000 (LISTEN)\nControlCe   831   dw   12u  IPv4 0xef561587c231cacb      0t0  TCP *:5000 (LISTEN)\nControlCe   831   dw   13u  IPv6 0x592944cfa5a1055e      0t0  TCP *:5000 (LISTEN)\nDropbox     941   dw  125u  IPv4 0xf09000e0d88553a3      0t0  TCP *:17500 (LISTEN)\nDropbox     941   dw  278u  IPv4 0x7948ea59f8ef197f      0t0  TCP 127.0.0.1:17600 (LISTEN)\nDropbox     941   dw  285u  IPv4 0x4a8528a1a7120acb      0t0  TCP 127.0.0.1:17603 (LISTEN)\nDropbox     941   dw  289u  IPv4 0x1935fdbd2299a79c      0t0  TCP *:17501 (LISTEN)\nredis-ser   958   dw    6u  IPv4 0xf1bcf442b73b2794      0t0  TCP 127.0.0.1:6379 (LISTEN)\nredis-ser   958   dw    7u  IPv6 0x82ece9b94a15df50      0t0  TCP [::1]:6379 (LISTEN)\npostgres    969   dw    7u  IPv6 0x4bbb2c8976603deb      0t0  TCP [::1]:5432 (LISTEN)\npostgres    969   dw    8u  IPv4 0x54a798cef8407a13      0t0  TCP 127.0.0.1:5432 (LISTEN)\nOneDrive   1387   dw   24u  IPv6 0x25e9371d66091783      0t0  TCP [::1]:42050 (LISTEN)\nnode       6821   dw   18u  IPv4 0xf15d973f2e2e133e      0t0  TCP *:5173 (LISTEN)\nnode      10687   dw   29u  IPv6 0xa0b2eadbf972cc37      0t0  TCP *:3088 (LISTEN)\nnode      11344   dw   18u  IPv4 0x49fde730c264b7e6      0t0  TCP 127.0.0.1:18789 (LISTEN)\nnode      11344   dw   19u  IPv6 0x74360f02b66ed5af      0t0  TCP [::1]:18789 (LISTEN)\nnode      11344   dw   22u  IPv4 0xb77ce1697ae9d541      0t0  TCP 127.0.0.1:18791 (LISTEN)\nnode      85948   dw   28u  IPv4 0xc44b62103e7598ea      0t0  TCP 127.0.0.1:4000 (LISTEN)\nnode      85970   dw   17u  IPv4 0xc163bf6410a2927f      0t0  TCP 127.0.0.1:5175 (LISTEN)"
+  },
+  "project_processes": {
+    "ok": true,
+    "code": 0,
+    "output": "725     1 /Library/PrivilegedHelperTools/com.docker.vmnetd\n  969     1 /opt/homebrew/opt/postgresql@16/bin/postgres -D /opt/homebrew/var/postgresql@16\n 1077   969 postgres: checkpointer   \n 1078   969 postgres: background writer   \n 1084   969 postgres: walwriter   \n 1085   969 postgres: autovacuum launcher   \n 1086   969 postgres: logical replication launcher   \n 6820  6753 node /Users/dw/Projects/d-max/node_modules/.bin/tsx src/voice/livekit-agent.ts --watch\n 6821  6741 node /Users/dw/Projects/d-max/node_modules/.bin/vite --host 0.0.0.0\n 6822  6729 node /Users/dw/Projects/d-max/node_modules/.bin/tsx watch src/api/server.ts\n 6823  6820 /opt/homebrew/Cellar/node/25.8.1/bin/node --require /Users/dw/Projects/d-max/node_modules/tsx/dist/preflight.cjs --import file:///Users/dw/Projects/d-max/node_modules/tsx/dist/loader.mjs src/voice/livekit-agent.ts --watch\n 6824  6821 /Users/dw/Projects/d-max/node_modules/@esbuild/darwin-arm64/bin/esbuild --service=0.27.7 --ping\n 6826  6823 /Users/dw/Projects/d-max/node_modules/@esbuild/darwin-arm64/bin/esbuild --service=0.27.7 --ping\n10687  6822 /opt/homebrew/Cellar/node/25.8.1/bin/node --require /Users/dw/Projects/d-max/node_modules/tsx/dist/preflight.cjs --import file:///Users/dw/Projects/d-max/node_modules/tsx/dist/loader.mjs src/api/server.ts\n10688 10687 /Users/dw/Projects/d-max/node_modules/@esbuild/darwin-arm64/bin/esbuild --service=0.27.7 --ping\n87000 86976 sh -c tsc -b && vite build\n87002 87000 node /Users/dw/Projects/regionfinder/node_modules/.bin/tsc -b\n87015 86952 bash -lc ps -axo pid,ppid,command | rg 'regionfinder|vite|tsx|node|postgres|motis|docker' || true\n87019 87015 rg regionfinder|vite|tsx|node|postgres|motis|docker\n37657  6199 node /opt/homebrew/bin/codex --yolo -m gpt-5.5 -c model_reasoning_effort=high\n37658 37657 /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex --yolo -m gpt-5.5 -c model_reasoning_effort=high\n 6242  6215 node /opt/homebrew/bin/codex --yolo -m gpt-5.5 -c model_reasoning_effort=high\n 6243  6242 /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex --yolo -m gpt-5.5 -c model_reasoning_effort=high\n 6554  6537 node /Users/dw/Projects/d-max/node_modules/.bin/tsx src/main.ts\n 6555  6554 /opt/homebrew/Cellar/node/25.8.1/bin/node --require /Users/dw/Projects/d-max/node_modules/tsx/dist/preflight.cjs --import file:///Users/dw/Projects/d-max/node_modules/tsx/dist/loader.mjs src/main.ts\n 6556  6555 /Users/dw/Projects/d-max/node_modules/@esbuild/darwin-arm64/bin/esbuild --service=0.27.7 --ping\n85947 85930 node /Users/dw/Projects/regionfinder/node_modules/.bin/tsx server/index.ts\n85948 85947 /opt/homebrew/Cellar/node/25.8.1/bin/node --require /Users/dw/Projects/regionfinder/node_modules/tsx/dist/preflight.cjs --import file:///Users/dw/Projects/regionfinder/node_modules/tsx/dist/loader.mjs server/index.ts\n85949 85948 /Users/dw/Projects/regionfinder/node_modules/@esbuild/darwin-arm64/bin/esbuild --service=0.28.1 --ping\n85970 85953 node /Users/dw/Projects/regionfinder/node_modules/.bin/vite --host 127.0.0.1"
+  },
+  "resource_decision": {
+    "osm_preference": "germany-latest.osm.pbf",
+    "reason": "315 GiB free disk is enough for downloads and extracted artifacts; 16 GiB RAM may be tight for full national R5/MOTIS builds, so the build phase must prove feasibility before activation."
+  }
+}
