@@ -166,12 +166,13 @@ def to_float(value: Any) -> float | None:
 def school_category_for_label(label: str) -> str | None:
     text = normalize_text(label)
     compact = "".join(text.split())
+    tokens = set(text.split())
 
-    if compact in {"gym", "gy"}:
+    if compact in {"gym", "gy"} or tokens & {"gym", "gy", "gymnasium"}:
         return "gymnasium"
-    if compact in {"igs", "kgs"}:
+    if compact in {"igs", "kgs"} or tokens & {"igs", "kgs", "gesamtschule", "gemeinschaftsschule"}:
         return "comprehensive"
-    if compact in {"abg", "kol"}:
+    if compact in {"abg", "kol"} or tokens & {"abg", "kol", "oberstufe", "oberstufenzentrum", "abendgymnasium", "kolleg"}:
         return "upper_secondary"
 
     if "waldorf" in text:
