@@ -516,6 +516,46 @@ select,
   overflow-wrap: anywhere;
 }
 
+.api-disclosure summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--heading);
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  list-style: none;
+}
+
+.api-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+
+.api-disclosure summary::after {
+  content: '+';
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--muted);
+  background: #fff;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.api-disclosure[open] summary::after {
+  content: '-';
+}
+
+.api-disclosure-content {
+  display: grid;
+  gap: 8px;
+}
+
 .api-metric-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -549,7 +589,7 @@ select,
 
 .api-itinerary-summary {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -570,19 +610,45 @@ select,
   font-size: 14px;
 }
 
-.api-itinerary-alternatives {
+.api-realtime-controls {
   display: grid;
-  gap: 12px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
+  gap: 7px;
 }
 
-.api-itinerary-alternatives h4 {
-  margin: 0 0 8px;
+.api-realtime-controls label {
   color: var(--muted);
   font-size: 12px;
   font-weight: 750;
+}
+
+.api-realtime-time-row {
+  display: grid;
+  grid-template-columns: minmax(86px, auto) minmax(112px, 1fr) minmax(86px, auto);
+  gap: 8px;
+  align-items: center;
+}
+
+.api-time-step-button {
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--heading);
+  background: #fff;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.api-time-step-button:hover {
+  background: var(--surface-soft);
+}
+
+.api-itinerary-alternatives {
+  display: grid;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .api-inline-status,
@@ -619,7 +685,7 @@ select,
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin: 0;
+  margin: 7px 0 0;
   padding: 0;
   list-style: none;
 }
@@ -914,6 +980,8 @@ select,
   }
 
   .control-row,
+  .api-itinerary-summary,
+  .api-realtime-time-row,
   .detail-metrics {
     grid-template-columns: 1fr;
   }

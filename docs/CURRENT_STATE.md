@@ -1,6 +1,6 @@
 # Current State
 
-Stand: 2026-06-25 nach Regionfinder V2 Produktionsintegration, API-/MapLibre-UX-Nachzug und DB-Echtzeitintegration.
+Stand: 2026-06-25 nach Regionfinder V2 Produktionsintegration, API-/MapLibre-UX-Nachzug, DB-Echtzeitintegration und erstem OSM-Schienenkorridor-Matching.
 
 ## Produktstand
 
@@ -76,7 +76,9 @@ Aktuelle UI-Funktionen im API-Modus:
 - StopPlace-Suche über API.
 - Klick auf StopPlaces aus MapLibre-Vektor-Tiles lädt Detaildaten in das rechte Panel.
 - Detailpanel zeigt Metriken, DB-Echtzeitverbindungen, bedienende Linien, Datenstand und StopPlace-Details.
+- Datenstand und technische StopPlace-Details sind einklappbare Abschnitte, damit der Normalzustand mehr Raum fuer die Karte und die Verbindungsauskunft laesst.
 - Die Überschrift für Verbindungsauskunft lautet `DB Echtzeit`; der frühere lokale Block `Konkrete Verbindung`/`Unser System` wird im API-Detailpanel nicht mehr gerendert.
+- Die Startzeit fuer `DB Echtzeit` sitzt im Detailpanel. `Frühere` und `Spätere` setzen die Startzeit relativ zu den aktuell geladenen Alternativen; die linke Sidebar enthält keine separate Abfahrtszeitsteuerung mehr.
 - Basiskarten-Umschalter:
   - CARTO/OSM-Straßenkarte ohne Labels plus CARTO-Ortslabel-Overlay.
   - Esri-Satellit plus dasselbe CARTO-Ortslabel-Overlay.
@@ -92,14 +94,16 @@ Aktuelle UI-Funktionen im API-Modus:
 - Stop-MVTs enthalten zusätzlich Reisezeitmetrik, Stop-Priorität und kompakte Linienlabels für Hover/Styling; sie werden mit dem aktiven Routingprofil angefragt.
 - Beim Umschalten der Modi entfernt der Client die MapLibre-Vector-Tile-Sources und legt sie neu an, damit keine alten ungefilterten Tiles aus dem Cache sichtbar bleiben.
 - Route Patterns verwenden echte GTFS-Farben aus `routes.color`, falls vorhanden; sonst Modus-Fallbackfarben.
-- Route-Pattern-Geometrien kommen über die View `route_pattern_display_geometries`. Hochkonfidente OSM-Rekonstruktionen ersetzen GTFS-Fallbacks; niedrigkonfidente Rekonstruktionen werden gestrichelt/transparenter dargestellt.
-- `stop_sequence_approximation` ist gestrichelt, transparent und standardmäßig ausgeblendet.
+- Route-Pattern-Geometrien kommen über die View `route_pattern_display_geometries`. Hochkonfidente OSM-Rekonstruktionen ersetzen GTFS-Fallbacks.
+- Niedrigkonfidente OSM-Rekonstruktionen und `stop_sequence_approximation` werden im Standardlayer ausgeblendet. Sie bleiben als Qualitätszustände in den Daten erhalten, werden aber nicht als präzise Strecke dargestellt, weil sie noch sichtbare Fehlkorridore erzeugen können.
 - Reisezeitfenster, maximaler Umstiegsfilter, unerreichbare Ziele und Wohnregion-Radius sind im API-Modus verfügbar.
 - Reisezeitfenster und Stationskreise nutzen dieselbe Farbskala: 30 min grün, 45 min teal, 60 min ocker, 75 min orange, 90 min rot.
 
-## DB-Echtzeitverbindungen
+## DB-Echtzeitverbindungen und Direktverbindungen
 
 Der Endpunkt `GET /api/v1/stops/:publicId/realtime-itineraries?date=YYYY-MM-DD&time=HH:mm&profile=...` liefert bis zu drei Live-Alternativen ab Hamburg Hbf zur ausgewählten Station. Die Abfrage verwendet die UI-Abfahrtszeit, nicht `now`.
+
+Der Metrikendpunkt `GET /api/v1/stops/:publicId/metrics?profile=...&date=YYYY-MM-DD` liefert zusätzlich `directConnectionCount`: die fahrplanmäßige Anzahl direkter Trips ohne Umstieg am gewählten repräsentativen Datum. Das ersetzt im Detailpanel die frühere Hochrechnung aus `directConnectionRatio * reachableSampleCount`.
 
 Technische Entscheidungen:
 
@@ -113,7 +117,37 @@ Technische Entscheidungen:
 - Nicht auflösbare Ziele liefern `404 db_stop_unmapped`; Upstream-/Timeoutfehler liefern `502 realtime_unavailable`.
 - Für alte DHID-ähnliche PublicIds wird serverseitig ein Alias unterstützt: `de:01060:37985:18000526` kann auf `de:01060:37985:1:8000526` aufgelöst werden.
 
-Die API-Typen in `src/api/contracts.ts` enthalten optionale Live-Felder auf Legs: Planzeiten, Verspätungen, Ausfallstatus und Remarks. `ApiItinerary` enthält optional `refreshToken`, `realtimeSource` und `realtimeFetchedAt`.
+Die API-Typen in `src/api/contracts.ts` enthalten optionale Live-Felder auf Legs: Planzeiten, Verspätungen, Ausfallstatus und Remarks. `ApiItinerary` enthält optional `refreshToken`, `realtimeSource` und `realtimeFetchedAt`; `ApiMetrics` enthält optional `directConnectionCount`.
+
+## OSM-Schienenrekonstruktion
+
+Die Schienenrekonstruktion ist produktiv nutzbar, aber bewusst konservativ in der Standardkarte.
+
+Datenmodell und Pipeline:
+
+- `db/migrations/004_rail_network.sql` aktiviert `pgrouting` und `hstore`.
+- Tabellen: `rail_edges`, `rail_vertices`, `stop_rail_snaps`, `route_pattern_rail_matches`.
+- `route_pattern_display_geometries` wählt hochkonfidente OSM-Rekonstruktionen als Anzeigegeometrie und fällt sonst auf `route_patterns.geometry` zurück.
+- `route_pattern_rail_matches.geometry` erlaubt generische Liniengeometrie, weil rekonstruierte Routen häufig als `MULTILINESTRING` entstehen.
+- `npm run rail:reconstruct` filtert die große Geofabrik-PBF zuerst mit osmium auf `railway=rail|light_rail|subway|tram`; der volle osm2pgsql-Import der ungefilterten Deutschland-PBF ist lokal zu langsam.
+- `match-patterns` unterstützt `--bbox`, `--corridor`, `--modes` und `--routes`. Korridor- und Linienfilter sind der bevorzugte Weg fuer lokale Nachläufe.
+
+Benannte Korridore: `hamburg-core`, `hamburg-altona-elmshorn`, `hamburg-luebeck`, `hamburg-lueneburg`, `hamburg-buchholz-bremen`, `hamburg-kiel`, `hamburg-buechen`.
+
+Aktueller lokaler Matching-Stand nach den ersten Korridorläufen:
+
+- `159` high-confidence `osm_reconstructed`
+- `545` `osm_reconstructed_low_confidence`
+- `192` Fallbacks
+
+Bereits stückweise gerechnet:
+
+- U-Bahn: `U1,U2,U3,U4`
+- S-Bahn: `S1,S2,S3,S5,S7`
+- AKN im DELFI-Snapshot als `RAIL`: `A1,A2,A3`
+- Regional-Korridore: `RE8/RB81`, `RE3/RB31`, `RE7/RE70/RB71`, `RE4/RB41`, `RE1`, `RE6/RB61`
+
+Wichtige Einschränkung: Viele S-/Regional-Patterns sind zwar OSM-geroutet, erreichen aber wegen Snap-, Umweg- oder Shape-Abweichungen nur Low-Confidence. Diese Daten sind Diagnosematerial und noch nicht Standardanzeige.
 
 ## Aktuelle technische Entscheidungen
 
@@ -122,8 +156,10 @@ Die API-Typen in `src/api/contracts.ts` enthalten optionale Live-Felder auf Legs
 - Fastify validiert Requests mit Zod-Schemas.
 - Gemeinsame API-Antworttypen liegen in `src/api/contracts.ts`.
 - Stop- und Route-Tiles akzeptieren `?modes=...`; Stop-Tiles akzeptieren zusätzlich `?profile=...`.
+- Stop-Metriken akzeptieren zusätzlich `?date=YYYY-MM-DD`, wenn eine tagesgenaue Direktverbindungszahl gebraucht wird.
 - Route-Tiles liefern `route_color`, normalisiert auf `#RRGGBB`, wenn eine echte GTFS-Farbe existiert.
 - `npm run rail:reconstruct` filtert OSM-Schienen, lädt sie mit osm2pgsql in `staging_osm_rail_*`, baut `rail_edges`/`rail_vertices`, snappt StopPlaces und erzeugt `route_pattern_rail_matches`.
+- Match-Nachläufe werden bevorzugt mit `--corridor`/`--routes` gefahren; große `RAIL`- oder Norddeutschland-Komplettläufe sind lokal weiterhin zu teuer.
 - Der API-Modus darf nicht stillschweigend auf Fixture-Daten zurückfallen.
 - Fixtures bleiben für Tests und lokale isolierte Entwicklung verfügbar.
 - Playwright ist als Dev-Dependency verfügbar; lokale Browser-Smoke-Tests benötigen einmalig `npx playwright install chromium`.

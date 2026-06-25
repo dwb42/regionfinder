@@ -46,6 +46,16 @@ curl 'http://127.0.0.1:4001/api/v1/stops/de%3A01060%3A37985%3A1%3A8000526/realti
 
 Erwartung: `alternatives` enthält bis zu drei normalisierte Verbindungen ab Hamburg Hbf. Nicht gemappte DB-Ziele liefern `404` mit `error: "db_stop_unmapped"`; Upstream-Probleme liefern `502` mit `error: "realtime_unavailable"`.
 
+Der Standardpfad kann bahn.de-Web-Location-IDs im Format `A=...` verwenden. Der Provider akzeptiert sowohl reine EVA-/DB-IDs als auch solche vollständigen Web-Location-Referenzen.
+
+Tagesgenaue Direktverbindungen werden über den normalen Metrikendpunkt geprüft:
+
+```bash
+curl 'http://127.0.0.1:4001/api/v1/stops/de%3A01060%3A37985%3A1%3A8000526/metrics?profile=regular_tue_thu&date=2026-07-07'
+```
+
+`directConnectionCount` zählt direkte fahrplanmäßige Trips am angegebenen Datum zwischen Hamburg Hbf und dem Ziel-StopPlace.
+
 ## Health Checks
 
 - `GET /health`: Prozess lebt.
@@ -93,5 +103,7 @@ Secrets liegen nur in Environment-Variablen. `.env.example` enthält Beispielwer
 - Vite-HMR kann bei Änderungen an MapLibre-Quellen oder Hook-Dependency-Strukturen alte Browserzustände halten. In diesem Fall Browser hart neu laden oder den Vite-Prozess neu starten.
 - Bei Kartenfilter-Problemen prüfen, ob Tile-Requests `?modes=...` enthalten.
 - Bei Reisezeitfarben/Hover-Metriken prüfen, ob Stop-Tile-Requests zusätzlich `?profile=regular_tue_thu` oder das aktive Profil enthalten.
+- Bei Direktverbindungszahlen prüfen, ob der Metrics-Request `?date=YYYY-MM-DD` enthält; ohne Datum bleibt `directConnectionCount` leer.
 - MapLibre-Sources werden im API-Modus bei Moduswechsel entfernt und neu angelegt, damit keine alten ungefilterten Tiles aus dem Cache sichtbar bleiben.
 - Ortsnamen kommen in Straßen- und Satellitenmodus aus `voyager_only_labels`; bei fehlenden Ortsnamen Label-Tile-Requests prüfen.
+- Niedrigkonfidente OSM-Schienenmatches sind Diagnosematerial. Wenn in der Karte wieder blaue Diagonalen oder falsche Korridore erscheinen, zuerst prüfen, ob `osm_reconstructed_low_confidence` oder `official_gtfs` versehentlich im Standardlayer sichtbar sind.

@@ -80,6 +80,7 @@ export type ApiMetrics = {
   unreachableSampleCount: number
   reachabilityRatio: number
   directConnectionRatio: number | null
+  directConnectionCount: number | null
   minimumTransfers: number | null
   medianTransfers: number | null
   averageInitialWaitSeconds: number | null

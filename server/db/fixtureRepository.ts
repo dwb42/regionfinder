@@ -169,6 +169,7 @@ const metricsByStop = new Map<string, ApiMetrics>([
       unreachableSampleCount: 0,
       reachabilityRatio: 1,
       directConnectionRatio: 0.75,
+      directConnectionCount: 18,
       minimumTransfers: 0,
       medianTransfers: 0,
       averageInitialWaitSeconds: 7 * 60,
@@ -197,6 +198,7 @@ const metricsByStop = new Map<string, ApiMetrics>([
       unreachableSampleCount: 0,
       reachabilityRatio: 1,
       directConnectionRatio: 1,
+      directConnectionCount: 24,
       minimumTransfers: 0,
       medianTransfers: 0,
       averageInitialWaitSeconds: 6 * 60,
@@ -225,6 +227,7 @@ const metricsByStop = new Map<string, ApiMetrics>([
       unreachableSampleCount: 12,
       reachabilityRatio: 0.95,
       directConnectionRatio: 0,
+      directConnectionCount: 0,
       minimumTransfers: 1,
       medianTransfers: 1,
       averageInitialWaitSeconds: 9 * 60,
@@ -271,7 +274,10 @@ export class FixtureRepository implements RegionfinderRepository {
     return stops.find((stop) => stop.publicId === publicId) ?? null
   }
 
-  async stopMetrics(publicId: string, profile: string): Promise<ApiMetrics | null> {
+  async stopMetrics(publicId: string, profile: string, _snapshot?: string, _date?: string): Promise<ApiMetrics | null> {
+    void _snapshot
+    void _date
+
     const metrics = metricsByStop.get(publicId)
 
     return metrics && metrics.profileId === profile ? metrics : null

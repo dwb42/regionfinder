@@ -234,7 +234,7 @@ Nachgezogene UI-/Kartenfunktionen:
 - Route Patterns verwenden echte GTFS-Farben aus `routes.color`, falls vorhanden; die Route-MVTs liefern dafür `route_color`.
 - Fehlt eine echte Farbe, nutzt das Frontend Modus-Fallbackfarben.
 - Route Pattern-Anzeigegeometrien kommen über `route_pattern_display_geometries`, sodass hochkonfidente OSM-Rekonstruktionen sichtbar werden können.
-- `osm_reconstructed_low_confidence` und `stop_sequence_approximation` sind gestrichelt/transparenter; `stop_sequence_approximation` ist standardmäßig ausgeschaltet.
+- `osm_reconstructed_low_confidence` und `stop_sequence_approximation` bleiben im Standardlayer ausgeblendet; niedrigkonfidente OSM-Rekonstruktionen sind Diagnosematerial fuer gezielte Korridorarbeit.
 - Das Detailpanel zeigt `DB Echtzeit` als Verbindungsabschnitt und rendert bis zu drei Live-Alternativen mit Plattformen, Verspätungen, Ausfallstatus und Remarks.
 - Reisezeitfenster und Stop-Kreise nutzen dieselbe 30/45/60/75/90-Farbskala.
 - Playwright ist als Dev-Dependency verfügbar und wurde für einen lokalen UI-Smoke-Test gegen API `4001` und Frontend `5176` genutzt.

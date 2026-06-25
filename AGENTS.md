@@ -70,6 +70,15 @@ npm run rail:reconstruct
 
 Das Script filtert OSM-Schienen, lädt sie per Docker/osm2pgsql in `staging_osm_rail_*`, baut `rail_edges`/`rail_vertices`, snappt StopPlaces und schreibt `route_pattern_rail_matches`. Standard-PBF: `data/raw/osm/germany-latest.osm.pbf`; bei Bedarf `OSM_PBF_PATH`, `OSM_RAIL_PBF_PATH`, `OSM2PGSQL_DATABASE_URL`, `OSMIUM_IMAGE` oder `OSM2PGSQL_IMAGE` setzen.
 
+Für Match-Nachläufe keine großen Deutschland-/Norddeutschland-Batches starten. Bevorzugt Korridor und Linienlabel kombinieren:
+
+```bash
+npm run rail:reconstruct -- match-patterns --corridor=hamburg-luebeck --modes=RE,RB --routes=RE8,RB81
+npm run rail:reconstruct -- match-patterns --bbox=8.3,52.9,11.6,54.4 --modes=S --routes=S1,S2,S3,S5,S7
+```
+
+Benannte Korridore stehen in `pipeline/rail_network.py`. Aktuell sind viele S-/Regional-Patterns noch `osm_reconstructed_low_confidence`; diese nicht als Standardkarte freischalten, bevor der jeweilige Korridor visuell geprüft ist.
+
 ## Architekturregeln
 
 - API-Modus ist der aktuelle Hauptpfad; Legacy bleibt erhalten.
@@ -79,7 +88,8 @@ Das Script filtert OSM-Schienen, lädt sie per Docker/osm2pgsql in `staging_osm_
 - Tile-Endpunkte mit `?modes=...` filtern, wenn UI-Layer aktiv/deaktiv sind. Stop-Tiles zusätzlich mit `?profile=...` anfragen, damit Reisezeitfarben und Hover-Metriken zum Routingprofil passen.
 - Bei Moduswechseln MapLibre-Vector-Tile-Sources entfernen und neu anlegen; `setTiles()` allein kann alte ungefilterte Tiles sichtbar lassen.
 - Route-MVTs sollen `route_color` liefern. Das Frontend nutzt echte GTFS-Farben bevorzugt und Fallbackfarben nach Modus.
-- Route-MVTs nutzen `route_pattern_display_geometries`. Hochkonfidente `osm_reconstructed`-Geometrien dürfen als Anzeigegeometrie verwendet werden; `osm_reconstructed_low_confidence` und `stop_sequence_approximation` nicht als präzise Strecke darstellen: gestrichelt/transparenter, `stop_sequence_approximation` standardmäßig ausgeschaltet.
+- Route-MVTs nutzen `route_pattern_display_geometries`. Hochkonfidente `osm_reconstructed`-Geometrien dürfen als Anzeigegeometrie verwendet werden; `osm_reconstructed_low_confidence` und `stop_sequence_approximation` nicht als präzise Strecke darstellen. Im aktuellen Standardlayer sind beide ausgeblendet, weil Low-Confidence noch Fehlkorridore erzeugen kann.
+- Stop-Metriken können `?date=YYYY-MM-DD` erhalten; dann liefert die API `directConnectionCount` als tagesgenaue Anzahl direkter Trips ohne Umstieg.
 - DB-Echtzeitverbindungen laufen ausschließlich serverseitig über `server/realtime/dbTransportRestProvider.ts`; keine direkten DB-/bahn.de-Requests aus React.
 - Standard-Realtime-Backend ist `bahn-web`; `REGIONFINDER_REALTIME_PROVIDER=db-transport-rest` erzwingt den Wrapper `v6.db.transport.rest`. Ursprung bleibt Hamburg Hbf (`REGIONFINDER_ORIGIN_DB_STOP_ID=8002549`).
 - Realtime-Fehlercodes im UI freundlich behandeln: `db_stop_unmapped` und `realtime_unavailable` dürfen das Detailpanel nicht zerstören.
@@ -95,6 +105,8 @@ API-Modus:
 - Klick auf StopPlace aus MVT oder Suchliste aktualisiert das rechte Detailpanel.
 - Basiskarten-Umschalter: CARTO/OSM-Straßenkarte und Esri-Satellit; beide mit CARTO-Ortslabel-Overlay.
 - Detailpanel-Überschrift für Verbindungen ist `DB Echtzeit`, nicht `Konkrete Verbindung`; der alte lokale `Unser System`-Block ist im API-Detailpanel entfernt.
+- Die DB-Echtzeit-Startzeit sitzt im Detailpanel mit `Frühere`-/`Spätere`-Buttons. Die Sidebar enthält keine separate Abfahrtszeitsteuerung mehr.
+- Datenstand und technische StopPlace-Details sind einklappbar.
 - DB-Echtzeit zeigt bis zu drei Alternativen mit Wunschzeit, erster Abfahrt, Ankunft, Dauer, Legs, Plattform, Verspätung, Ausfall und Remarks.
 - Reisezeitfenster und Station-Kreise nutzen dieselbe Farbskala: 30 grün, 45 teal, 60 ocker, 75 orange, 90 rot.
 - Zoom-Control sitzt links oben in der Map-Card; Zoomstufe sichtbar anzeigen.

@@ -78,8 +78,12 @@ export function fetchStopDetails(publicId: string): Promise<ApiStopDetails> {
   return fetchApi<ApiStopDetails>(`/api/v1/stops/${encodeURIComponent(publicId)}`)
 }
 
-export function fetchStopMetrics(publicId: string, profile: string): Promise<ApiMetrics> {
+export function fetchStopMetrics(publicId: string, profile: string, date?: string): Promise<ApiMetrics> {
   const params = new URLSearchParams({ profile })
+
+  if (date) {
+    params.set('date', date)
+  }
 
   return fetchApi<ApiMetrics>(`/api/v1/stops/${encodeURIComponent(publicId)}/metrics?${params}`)
 }

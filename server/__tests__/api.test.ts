@@ -3,14 +3,14 @@ import { buildApp } from '../app'
 import { FixtureRepository } from '../db/fixtureRepository'
 import { DbTransportRestProvider } from '../realtime/dbTransportRestProvider'
 
-async function withApp(fetchImpl?: typeof fetch) {
+async function withApp(fetchImpl?: typeof fetch, backend: 'bahn-web' | 'db-transport-rest' = 'db-transport-rest') {
   const app = await buildApp({
     repository: new FixtureRepository(),
     realtimeItineraryProvider: fetchImpl
       ? new DbTransportRestProvider({
           baseUrl: 'https://db.test',
           fetchImpl,
-          backend: 'db-transport-rest',
+          backend,
           now: () => Date.parse('2026-07-07T07:59:00.000Z'),
         })
       : undefined,
@@ -84,6 +84,17 @@ describe('Regionfinder API', () => {
     const response = await app.inject('/api/v1/stops/unknown/metrics?profile=regular_tue_thu')
 
     expect(response.statusCode).toBe(404)
+  })
+
+  it('returns scheduled direct connection counts for a service date', async () => {
+    const app = await withApp()
+    const response = await app.inject('/api/v1/stops/de:01056:9001/metrics?profile=regular_tue_thu&date=2026-07-07')
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      directConnectionCount: 18,
+      directConnectionRatio: 0.75,
+    })
   })
 
   it('returns itinerary details with total duration from requested departure', async () => {
@@ -170,6 +181,59 @@ describe('Regionfinder API', () => {
       platformFrom: '7',
       departureDelaySeconds: 180,
       remarks: ['Verspätung wegen Bauarbeiten'],
+    })
+  })
+
+  it('uses full bahn.de location references for bus stop and address destinations', async () => {
+    const destinationReference = 'A=2@O=Busdorf Mitte@X=10314000@Y=53529000@U=91@b=981412821@p=1706613073@'
+    const fetchImpl = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = new URL(String(input))
+
+      if (url.pathname === '/locations/nearby' || url.pathname === '/locations') {
+        return jsonResponse([])
+      }
+
+      if (url.pathname === '/web/api/reiseloesung/orte') {
+        return jsonResponse([
+          {
+            id: destinationReference,
+            lat: 53.529,
+            lon: 10.314,
+            name: 'Busdorf Mitte',
+            products: [],
+            type: 'ADR',
+          },
+        ])
+      }
+
+      expect(url.pathname).toBe('/web/api/angebote/fahrplan')
+      const body = JSON.parse(String(init?.body))
+      expect(body.ankunftsHalt).toBe(destinationReference)
+      return jsonResponse({
+        verbindungen: [
+          {
+            verbindungsAbschnitte: [
+              {
+                startHalt: { name: 'Hamburg Hbf', abfahrt: { sollzeit: '2026-07-07T08:00:00' } },
+                zielHalt: { name: 'Busdorf Mitte', ankunft: { sollzeit: '2026-07-07T08:45:00' } },
+                abschnittsDauer: 2700,
+                verkehrsmittel: { produktGattung: 'BUS', kategorie: 'Bus', name: '120', richtung: 'Busdorf' },
+              },
+            ],
+          },
+        ],
+      })
+    }) as typeof fetch
+    const app = await withApp(fetchImpl, 'bahn-web')
+    const response = await app.inject(
+      '/api/v1/stops/de:01056:9100/realtime-itineraries?date=2026-07-07&time=08:00&profile=regular_tue_thu',
+    )
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json().alternatives[0]).toMatchObject({
+      provider: 'bahn-web',
+      actualFirstDepartureAt: '2026-07-07T08:00:00+02:00',
+      arrivalAt: '2026-07-07T08:45:00+02:00',
     })
   })
 

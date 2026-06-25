@@ -111,9 +111,20 @@ Optionen:
 npm run rail:reconstruct -- --skip-osm-import
 npm run rail:reconstruct -- --snapshot delfi-bb69c7e2c8d5 --modes RE,RB,S --bbox 9.0,53.0,11.0,54.2
 npm run rail:reconstruct -- match-patterns --limit-patterns 100
+npm run rail:reconstruct -- match-patterns --corridor=hamburg-luebeck --modes=RE,RB --routes=RE8,RB81
+npm run rail:reconstruct -- match-patterns --bbox=8.3,52.9,11.6,54.4 --modes=S --routes=S1,S2,S3,S5,S7
 ```
 
-Die Anzeige verwendet danach `route_pattern_display_geometries`: Konfidenz `>= 0.70` ersetzt die GTFS-/Fallback-Geometrie als `osm_reconstructed`, Konfidenz `>= 0.45` wird als `osm_reconstructed_low_confidence` markiert, darunter bleibt die ursprüngliche Route-Pattern-Geometrie aktiv.
+Filter und Korridore:
+
+- `--modes`: CSV der Verkehrsmittelmodi, z.B. `U`, `S`, `RE,RB` oder `RAIL`.
+- `--routes`: CSV der Linienlabels aus `routes.short_name`/`long_name`/`source_route_id`, z.B. `U1,U2`, `A1,A2,A3`, `RE8,RB81`.
+- `--bbox`: freie Bounding Box `minLon,minLat,maxLon,maxLat`.
+- `--corridor`: benannte Bounding Box. Aktuell verfügbar: `hamburg-core`, `hamburg-altona-elmshorn`, `hamburg-luebeck`, `hamburg-lueneburg`, `hamburg-buchholz-bremen`, `hamburg-kiel`, `hamburg-buechen`.
+
+Die bevorzugte lokale Arbeitsweise ist ein Korridor plus wenige Linienlabels. Große Komplettläufe ueber `RAIL` oder Norddeutschland sind lokal sehr langsam und schwer zu beurteilen.
+
+Die Anzeige verwendet danach `route_pattern_display_geometries`: Konfidenz `>= 0.70` ersetzt die GTFS-/Fallback-Geometrie als `osm_reconstructed`, Konfidenz `>= 0.45` wird als `osm_reconstructed_low_confidence` markiert, darunter bleibt die ursprüngliche Route-Pattern-Geometrie aktiv. Der Standard-Frontendlayer zeigt nur hochkonfidente OSM-Rekonstruktionen an; niedrigkonfidente Rekonstruktionen bleiben Diagnosematerial, bis die Korridore visuell belastbar sind.
 
 ## Snapshot aktivieren
 
@@ -156,3 +167,11 @@ curl 'http://127.0.0.1:4001/api/v1/stops/de%3A01060%3A37985%3A1%3A8000526/realti
 ```
 
 Erwartung: normalisierte `ApiItineraryResponse` mit bis zu drei Alternativen ab Hamburg Hbf. Fehlercodes sind `db_stop_unmapped` für nicht gemappte Ziele und `realtime_unavailable` für Upstream-/Timeoutprobleme.
+
+Tagesgenaue Direktverbindungen im Metrikblock prüfen:
+
+```bash
+curl 'http://127.0.0.1:4001/api/v1/stops/de%3A01060%3A37985%3A1%3A8000526/metrics?profile=regular_tue_thu&date=2026-07-07'
+```
+
+Erwartung: `directConnectionCount` enthält die Anzahl fahrplanmäßiger direkter Trips ohne Umstieg am angegebenen Datum.

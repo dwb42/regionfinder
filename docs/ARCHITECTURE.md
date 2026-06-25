@@ -21,14 +21,14 @@ Die Karte lädt im API-Modus StopPlaces und Route Patterns ausschließlich als V
 
 Die Modusfilter werden serverseitig in PostGIS angewendet. Stop-Tiles akzeptieren zusätzlich `profile` und liefern Reisezeit-/Linien-Metadaten für Styling und Hover. Der Client entfernt und erneuert die MapLibre-Vector-Tile-Sources beim Umschalten der Modi, weil `setTiles()` allein bereits geladene ungefilterte Tiles nicht zuverlässig aus dem Cache entfernt.
 
-Route-Pattern-Tiles liefern `route_color`, falls eine echte GTFS-Farbe existiert. MapLibre nutzt diese Farbe bevorzugt und fällt sonst auf Modusfarben zurück. Die angezeigte Geometrie kommt aus `route_pattern_display_geometries`, sodass hochkonfidente OSM-Schienenrekonstruktionen GTFS-Fallbacks ersetzen können. `stop_sequence_approximation` und niedrigkonfidente Rekonstruktionen werden gestrichelt/transparenter dargestellt; `stop_sequence_approximation` bleibt standardmäßig ausgeblendet.
+Route-Pattern-Tiles liefern `route_color`, falls eine echte GTFS-Farbe existiert. MapLibre nutzt diese Farbe bevorzugt und fällt sonst auf Modusfarben zurück. Die angezeigte Geometrie kommt aus `route_pattern_display_geometries`, sodass hochkonfidente OSM-Schienenrekonstruktionen GTFS-Fallbacks ersetzen können. `stop_sequence_approximation` und niedrigkonfidente Rekonstruktionen bleiben im Standardlayer ausgeblendet; niedrigkonfidente Matches sind derzeit Diagnosematerial fuer weitere Korridorarbeit.
 
 Basiskarten im API-Modus:
 
 - CARTO/OSM-Straßenkarte ohne Labels plus CARTO-Ortslabel-Overlay.
 - Esri World Imagery als Satellit plus dasselbe CARTO-Ortslabel-Overlay.
 
-StopPlaces aus MVTs sind anklickbar; der Klick lädt Details, Metriken und DB-Echtzeitverbindungen. Der Realtime-Endpunkt `GET /api/v1/stops/:publicId/realtime-itineraries` wird serverseitig über `server/realtime/dbTransportRestProvider.ts` bedient und normalisiert externe DB-/bahn.de-Antworten in `ApiItineraryResponse`.
+StopPlaces aus MVTs sind anklickbar; der Klick lädt Details, tagesgenaue Metriken und DB-Echtzeitverbindungen. Der Realtime-Endpunkt `GET /api/v1/stops/:publicId/realtime-itineraries` wird serverseitig über `server/realtime/dbTransportRestProvider.ts` bedient und normalisiert externe DB-/bahn.de-Antworten in `ApiItineraryResponse`.
 
 ## Überblick
 

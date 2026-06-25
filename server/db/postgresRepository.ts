@@ -216,9 +216,12 @@ export class PostgresRepository implements RegionfinderRepository {
     }
   }
 
-  async stopMetrics(publicId: string, profile: string): Promise<ApiMetrics | null> {
+  async stopMetrics(publicId: string, profile: string, _snapshot?: string, date?: string): Promise<ApiMetrics | null> {
     const result = await this.pool.query<{
+      snapshot_internal_id: string
       snapshot_id: string
+      origin_stop_place_id: string
+      destination_stop_place_id: string
       fastest_seconds: number | null
       average_seconds: string | null
       median_seconds: string | null
@@ -240,7 +243,10 @@ export class PostgresRepository implements RegionfinderRepository {
       max_service_gap_seconds: number | null
     }>(
       `
-      SELECT snap.public_id AS snapshot_id,
+      SELECT snap.id AS snapshot_internal_id,
+             snap.public_id AS snapshot_id,
+             odm.origin_stop_place_id,
+             odm.destination_stop_place_id,
              odm.fastest_seconds,
              odm.average_seconds,
              odm.median_seconds,
@@ -276,6 +282,15 @@ export class PostgresRepository implements RegionfinderRepository {
       return null
     }
 
+    const directConnectionCount = date
+      ? await this.directConnectionCountForDate(
+          row.snapshot_internal_id,
+          row.origin_stop_place_id,
+          row.destination_stop_place_id,
+          date,
+        )
+      : null
+
     return {
       snapshotId: row.snapshot_id,
       profileId: profile,
@@ -291,6 +306,7 @@ export class PostgresRepository implements RegionfinderRepository {
       unreachableSampleCount: row.unreachable_sample_count,
       reachabilityRatio: Number(row.reachability_ratio),
       directConnectionRatio: row.direct_connection_ratio === null ? null : Number(row.direct_connection_ratio),
+      directConnectionCount,
       minimumTransfers: row.minimum_transfers,
       medianTransfers: row.median_transfers === null ? null : Number(row.median_transfers),
       averageInitialWaitSeconds:
@@ -302,6 +318,46 @@ export class PostgresRepository implements RegionfinderRepository {
       maxServiceGapSeconds: row.max_service_gap_seconds,
       quantileMethod: 'nearest-rank-p90',
     }
+  }
+
+  private async directConnectionCountForDate(
+    snapshotId: string,
+    originStopPlaceId: string,
+    destinationStopPlaceId: string,
+    serviceDate: string,
+  ): Promise<number> {
+    const result = await this.pool.query<{ direct_connection_count: number }>(
+      `
+      SELECT count(DISTINCT tr.id)::int AS direct_connection_count
+      FROM trips tr
+      JOIN service_dates sd
+        ON sd.snapshot_id = tr.snapshot_id
+       AND sd.service_id = tr.service_id
+       AND sd.service_date = $4::date
+       AND sd.is_active = true
+      JOIN stop_times origin_st
+        ON origin_st.snapshot_id = tr.snapshot_id
+       AND origin_st.trip_id = tr.id
+      JOIN stops origin_stop
+        ON origin_stop.snapshot_id = origin_st.snapshot_id
+       AND origin_stop.id = origin_st.stop_id
+      JOIN stop_times destination_st
+        ON destination_st.snapshot_id = tr.snapshot_id
+       AND destination_st.trip_id = tr.id
+       AND destination_st.stop_sequence > origin_st.stop_sequence
+      JOIN stops destination_stop
+        ON destination_stop.snapshot_id = destination_st.snapshot_id
+       AND destination_stop.id = destination_st.stop_id
+      WHERE tr.snapshot_id = $1
+        AND origin_stop.stop_place_id = $2
+        AND destination_stop.stop_place_id = $3
+        AND COALESCE(origin_st.pickup_type, 0) <> 1
+        AND COALESCE(destination_st.drop_off_type, 0) <> 1
+      `,
+      [snapshotId, originStopPlaceId, destinationStopPlaceId, serviceDate],
+    )
+
+    return result.rows[0]?.direct_connection_count ?? 0
   }
 
   async itineraries(query: ItineraryQuery): Promise<ApiItineraryResponse | null> {

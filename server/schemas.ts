@@ -14,6 +14,7 @@ export const publicIdParamsSchema = z.object({
 export const metricsQuerySchema = z.object({
   profile: z.string().min(1).default('regular_tue_thu'),
   snapshot: z.string().optional(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 })
 
 export const itineraryQuerySchema = z.object({

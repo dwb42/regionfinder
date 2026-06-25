@@ -46,10 +46,10 @@ Stopfolgen-Approximationen dürfen nicht als offizielle Linienwege oder präzise
 
 Aktuelle UI-Konvention:
 
-- `official_gtfs` wird als echte Route-Pattern-Geometrie angezeigt.
+- `official_gtfs` bleibt Fallback-Datenquelle, wird im Standard-Schienenlayer aber nicht als Ersatz fuer fehlende OSM-Rekonstruktionen sichtbar gemacht, damit keine GTFS-Diagonalen als reale Korridore erscheinen.
 - `osm_reconstructed` darf als Anzeigegeometrie verwendet werden, wenn die Rekonstruktion mindestens 0,70 Konfidenz erreicht.
-- `osm_reconstructed_low_confidence` wird gestrichelt/transparenter dargestellt und darf nicht als präzise Strecke kommuniziert werden.
-- `stop_sequence_approximation` ist gestrichelt, transparenter und im API-Modus standardmäßig ausgeschaltet.
+- `osm_reconstructed_low_confidence` bleibt Diagnosematerial und ist im Standardlayer ausgeblendet, bis der jeweilige Korridor visuell belastbar ist.
+- `stop_sequence_approximation` ist im API-Modus standardmäßig ausgeschaltet.
 - Die Legende muss approximierte oder niedrigkonfidente Geometrien als solche kennzeichnen, sobald diese Layer sichtbar sind.
 
 ## DB-Echtzeitqualität

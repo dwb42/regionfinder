@@ -130,7 +130,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     const params = publicIdParamsSchema.parse(request.params)
     const query = metricsQuerySchema.parse(request.query)
     const metrics = await firstResolved(publicIdAliases(params.publicId), (publicId) =>
-      options.repository.stopMetrics(publicId, query.profile, query.snapshot),
+      options.repository.stopMetrics(publicId, query.profile, query.snapshot, query.date),
     )
 
     if (!metrics) {

@@ -61,7 +61,16 @@ npm run metrics:compute:production  # Produktionsmetriken mit MOTIS one-to-all
 npm run verify:production           # Produktionssnapshot verifizieren
 ```
 
-OSM-Schienenrekonstruktion nutzt standardmäßig `data/raw/osm/germany-latest.osm.pbf` und lädt die PBF per Docker/osm2pgsql in `staging_osm_rail_*`. Auf Docker Desktop wird ein lokales `DATABASE_URL` für den Import automatisch auf `host.docker.internal` umgesetzt; bei abweichenden Netzwerken `OSM2PGSQL_DATABASE_URL` setzen.
+OSM-Schienenrekonstruktion nutzt standardmäßig `data/raw/osm/germany-latest.osm.pbf`. Die Pipeline filtert daraus zuerst eine Rail-only-PBF unter `data/processed/osm/`, lädt diese per Docker/osm2pgsql in `staging_osm_rail_*`, baut `rail_edges`/`rail_vertices`, snappt StopPlaces und schreibt `route_pattern_rail_matches`.
+
+Für lokale Nachläufe sollte das Pattern-Matching nicht mehr als großer Deutschland- oder Norddeutschland-Batch laufen. Stattdessen werden Korridore und Linienlabels stückweise gerechnet:
+
+```bash
+npm run rail:reconstruct -- match-patterns --corridor=hamburg-luebeck --modes=RE,RB --routes=RE8,RB81
+npm run rail:reconstruct -- match-patterns --bbox=8.3,52.9,11.6,54.4 --modes=S --routes=S1,S2,S3,S5,S7
+```
+
+Auf Docker Desktop wird ein lokales `DATABASE_URL` für osm2pgsql automatisch auf `host.docker.internal` umgesetzt; bei abweichenden Netzwerken `OSM2PGSQL_DATABASE_URL` setzen.
 
 ## Aktueller Produktionsstand
 
@@ -128,7 +137,8 @@ Wichtige UX-Entscheidungen:
   - Esri World Imagery Satellit plus dasselbe CARTO-Ortslabel-Overlay
 - StopPlaces und Route Patterns werden als MVTs geladen, nicht als vollständige JSON-Dateien.
 - Stationen aus Vektor-Tiles sind anklickbar und öffnen rechts StopPlace-Details, Metriken, DB-Echtzeitverbindungen und Linien.
-- Das Detailpanel zeigt unter `DB Echtzeit` bis zu drei Live-Alternativen ab der UI-Abfahrtszeit; lokale `/itineraries` werden dort nicht mehr als eigener Vergleichsblock gerendert.
+- Das Detailpanel zeigt unter `DB Echtzeit` bis zu drei Live-Alternativen ab der Detailpanel-Startzeit. Die Startzeit besitzt `Frühere`-/`Spätere`-Navigation; lokale `/itineraries` werden dort nicht mehr als eigener Vergleichsblock gerendert.
+- Datenstand und technische StopPlace-Details sind im Detailpanel als einklappbare Abschnitte untergebracht.
 - Verkehrsmittel-Layer:
   - `Regional/Fern`
   - `S-Bahn/AKN`
@@ -139,7 +149,8 @@ Wichtige UX-Entscheidungen:
 - Route Patterns werden farbig dargestellt:
   - bevorzugt echte GTFS-Route-Farbe aus PostGIS/MVT (`route_color`)
   - Fallbackfarbe nach Modus
-- Stopfolgen-Approximationen sind gestrichelt, transparenter und standardmäßig ausgeblendet.
+- Hochkonfidente OSM-Schienenrekonstruktionen (`osm_reconstructed`, Confidence `>= 0.70`) ersetzen GTFS-Geometrien im Standardlayer.
+- Niedrigkonfidente OSM-Rekonstruktionen (`osm_reconstructed_low_confidence`) und `stop_sequence_approximation` bleiben im Standardlayer ausgeblendet, weil sie noch sichtbare Fehlkorridore erzeugen können.
 - Reisezeitfenster, Umstiegsfilter, unerreichbare Ziele und Wohnregion-Radius sind im API-Modus wieder verfügbar.
 - Reisezeitfenster und Stationskreise verwenden dieselbe 5-stufige Farbskala: 30 min grün, 45 min teal, 60 min ocker, 75 min orange, 90 min rot.
 

@@ -48,8 +48,12 @@ type CacheEntry<T> = {
 
 type DbLocation = {
   id?: unknown
+  extId?: unknown
   name?: unknown
   distance?: unknown
+  lat?: unknown
+  lon?: unknown
+  type?: unknown
   location?: {
     latitude?: unknown
     longitude?: unknown
@@ -200,19 +204,39 @@ export class DbTransportRestProvider implements RealtimeItineraryProvider {
       return directCandidate
     }
 
-    const nearby = await this.findNearbyStop(stop)
+    const nearby = await this.tryResolveLocation(() => this.findNearbyStop(stop))
     if (nearby) {
       this.writeCache(this.stopMappingCache, cacheKey, nearby, this.mappingTtlMs)
       return nearby
     }
 
-    const byName = await this.findStopByName(stop)
+    const byName = await this.tryResolveLocation(() => this.findStopByName(stop))
     if (byName) {
       this.writeCache(this.stopMappingCache, cacheKey, byName, this.mappingTtlMs)
       return byName
     }
 
+    if (this.backend === 'bahn-web') {
+      const bahnWebLocation = await this.findBahnWebLocationByName(stop)
+      if (bahnWebLocation) {
+        this.writeCache(this.stopMappingCache, cacheKey, bahnWebLocation, this.mappingTtlMs)
+        return bahnWebLocation
+      }
+    }
+
     throw new RealtimeProviderError(404, 'db_stop_unmapped', `No DB stop mapping for ${stop.publicId}`)
+  }
+
+  private async tryResolveLocation(resolve: () => Promise<string | null>): Promise<string | null> {
+    try {
+      return await resolve()
+    } catch (error) {
+      if (this.backend === 'bahn-web' && error instanceof RealtimeProviderError) {
+        return null
+      }
+
+      throw error
+    }
   }
 
   private async findNearbyStop(stop: ApiStopDetails): Promise<string | null> {
@@ -245,6 +269,17 @@ export class DbTransportRestProvider implements RealtimeItineraryProvider {
     return chooseBestLocationId(stop, candidates)
   }
 
+  private async findBahnWebLocationByName(stop: ApiStopDetails): Promise<string | null> {
+    const url = new URL('/web/api/reiseloesung/orte', BAHN_WEB_BASE_URL)
+    url.searchParams.set('suchbegriff', stop.name)
+    url.searchParams.set('typ', 'ALL')
+    url.searchParams.set('limit', '8')
+
+    const payload = await this.fetchBahnWebJson<unknown>(url)
+    const candidates = Array.isArray(payload) ? payload : []
+    return chooseBestLocationId(stop, candidates)
+  }
+
   private async fetchJson<T>(url: URL): Promise<T> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs)
@@ -272,6 +307,65 @@ export class DbTransportRestProvider implements RealtimeItineraryProvider {
       )
     } finally {
       clearTimeout(timeout)
+    }
+  }
+
+  private async fetchBahnWebJson<T>(url: URL): Promise<T> {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs)
+
+    try {
+      const response = await this.fetchImpl(url, {
+        headers: bahnWebHeaders(),
+        signal: controller.signal,
+      })
+      if (!response.ok) {
+        throw new RealtimeProviderError(502, 'realtime_unavailable', `Bahn web upstream returned ${response.status}`)
+      }
+
+      return (await response.json()) as T
+    } catch (error) {
+      if (this.enableCurlFallback) {
+        return this.fetchBahnWebJsonWithCurl<T>(url)
+      }
+
+      if (error instanceof RealtimeProviderError) {
+        throw error
+      }
+
+      throw new RealtimeProviderError(
+        502,
+        'realtime_unavailable',
+        error instanceof Error ? error.message : 'Bahn web upstream is unavailable',
+      )
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+
+  private async fetchBahnWebJsonWithCurl<T>(url: URL): Promise<T> {
+    try {
+      const { stdout } = await execFile(
+        'curl',
+        [
+          '--compressed',
+          '-sS',
+          '-H',
+          `accept: ${bahnWebHeaders().accept}`,
+          '-H',
+          `user-agent: ${BAHN_WEB_USER_AGENT}`,
+          url.toString(),
+        ],
+        { timeout: this.timeoutMs, maxBuffer: 2 * 1024 * 1024 },
+      )
+
+      return JSON.parse(stdout) as T
+    } catch (error) {
+      throw new RealtimeProviderError(
+        502,
+        'realtime_unavailable',
+        error instanceof Error ? error.message : 'Bahn web curl fallback is unavailable',
+      )
     }
   }
 
@@ -633,19 +727,23 @@ function chooseBestLocationId(stop: ApiStopDetails, rawLocations: unknown[]): st
   const scored = rawLocations
     .map((rawLocation) => {
       const location = objectRecord(rawLocation) as DbLocation
-      const id = stringOrNull(location.id)
+      const rawId = stringOrNull(location.id)
+      const extId = stringOrNull(location.extId)
+      const id = locationIdReference(rawId, extId)
       const name = stringOrNull(location.name)
       const distance = numberOrNull(location.distance)
+      const coordinateDistance = locationDistanceMeters(stop, location)
       const similarity = name ? nameSimilarity(stop.name, name) : 0
+      const effectiveDistance = distance ?? coordinateDistance
 
-      if (!id || !/^\d{7}$/.test(id)) {
+      if (!id) {
         return null
       }
 
       return {
         id,
-        score: similarity * 100 - (distance ?? 1000) / 25,
-        distance,
+        score: similarity * 100 - (effectiveDistance ?? 1000) / 25,
+        distance: effectiveDistance,
         similarity,
       }
     })
@@ -659,6 +757,32 @@ function chooseBestLocationId(stop: ApiStopDetails, rawLocations: unknown[]): st
   }
 
   return best.similarity >= 0.3 || (best.distance !== null && best.distance <= 250) ? best.id : null
+}
+
+function locationIdReference(rawId: string | null, extId: string | null): string | null {
+  if (rawId?.startsWith('A=')) {
+    return rawId
+  }
+
+  if (extId && /^\d{5,12}$/.test(extId)) {
+    return extId
+  }
+
+  return rawId && /^\d{5,12}$/.test(rawId) ? rawId : null
+}
+
+function locationDistanceMeters(stop: ApiStopDetails, location: DbLocation): number | null {
+  const lat = numberOrNull(location.lat) ?? numberOrNull(location.location?.latitude)
+  const lon = numberOrNull(location.lon) ?? numberOrNull(location.location?.longitude)
+
+  if (lat === null || lon === null) {
+    return null
+  }
+
+  const latDeltaMeters = (lat - stop.coordinate.lat) * 111_320
+  const lonDeltaMeters = (lon - stop.coordinate.lon) * 111_320 * Math.cos((stop.coordinate.lat * Math.PI) / 180)
+
+  return Math.hypot(latDeltaMeters, lonDeltaMeters)
 }
 
 function nameSimilarity(left: string, right: string): number {
@@ -831,8 +955,8 @@ function bahnWebJourneyRequest(originDbStopId: string, destinationDbStopId: stri
     reservierungsKontingenteVorhanden: false,
     schnelleVerbindungen: true,
     sitzplatzOnly: false,
-    abfahrtsHalt: `A=1@L=${originDbStopId}@`,
-    ankunftsHalt: `A=1@L=${destinationDbStopId}@`,
+    abfahrtsHalt: bahnWebLocationReference(originDbStopId),
+    ankunftsHalt: bahnWebLocationReference(destinationDbStopId),
     produktgattungen: ['ICE', 'EC_IC', 'IR', 'REGIONAL', 'SBAHN', 'BUS', 'SCHIFF', 'UBAHN', 'TRAM', 'ANRUFPFLICHTIG'],
     bikeCarriage: false,
     anfrageZeitpunkt: requestedLocalDateTime,
@@ -847,6 +971,10 @@ function bahnWebJourneyRequest(originDbStopId: string, destinationDbStopId: stri
       },
     ],
   }
+}
+
+function bahnWebLocationReference(value: string): string {
+  return value.startsWith('A=') ? value : `A=1@L=${value}@`
 }
 
 function objectRecord(value: unknown): Record<string, unknown> {

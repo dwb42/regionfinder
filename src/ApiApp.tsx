@@ -35,6 +35,7 @@ import {
 
 const defaultProfile = import.meta.env.VITE_REGIONFINDER_ROUTING_PROFILE || 'regular_tue_thu'
 const initialSearchQuery = 'Hamburg'
+const defaultDepartureTime = '08:00'
 
 type ModeLayerId = 'regional' | 's-bahn' | 'u-bahn' | 'bus' | 'ferry'
 type MapBaseLayer = 'street' | 'satellite'
@@ -377,8 +378,68 @@ function compactMinutes(value: number | null | undefined): string {
   return value === null || value === undefined ? 'n/a' : `${Math.round(value / 60)} min`
 }
 
+function clockTimeToMinutes(value: string | null | undefined): number | null {
+  const match = value?.match(/^(\d{2}):(\d{2})$/)
+
+  if (!match) {
+    return null
+  }
+
+  const hours = Number(match[1])
+  const minutesValue = Number(match[2])
+
+  if (!Number.isInteger(hours) || !Number.isInteger(minutesValue) || hours > 23 || minutesValue > 59) {
+    return null
+  }
+
+  return hours * 60 + minutesValue
+}
+
+function minutesToClockTime(value: number): string {
+  const normalized = ((value % 1440) + 1440) % 1440
+  const hours = Math.floor(normalized / 60)
+  const minutesValue = normalized % 60
+
+  return `${String(hours).padStart(2, '0')}:${String(minutesValue).padStart(2, '0')}`
+}
+
+function shiftClockTime(value: string, deltaMinutes: number): string {
+  return minutesToClockTime((clockTimeToMinutes(value) ?? clockTimeToMinutes(defaultDepartureTime) ?? 0) + deltaMinutes)
+}
+
+function durationBetweenSeconds(start: string | null | undefined, end: string | null | undefined): number | null {
+  if (!start || !end) {
+    return null
+  }
+
+  const startMs = Date.parse(start)
+  const endMs = Date.parse(end)
+
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) {
+    return null
+  }
+
+  return Math.round((endMs - startMs) / 1000)
+}
+
 function timeLabel(value: string | null | undefined): string {
   return value ? value.slice(11, 16) : 'n/a'
+}
+
+function earliestAlternativeDepartureMinutes(response: ApiItineraryResponse | null): number | null {
+  const values = response?.alternatives
+    .map((itinerary) => clockTimeToMinutes(timeLabel(itinerary.actualFirstDepartureAt)))
+    .filter((value) => value !== null) ?? []
+
+  return values.length === 0 ? null : Math.min(...values)
+}
+
+function latestAlternativeDepartureMinutes(response: ApiItineraryResponse | null): number | null {
+  const values = response?.alternatives
+    .map((itinerary) => clockTimeToMinutes(timeLabel(itinerary.actualFirstDepartureAt)))
+    .filter((value) => value !== null) ?? []
+
+  return values.length === 0 ? null : Math.max(...values)
 }
 
 function delayLabel(value: number | null | undefined): string {
@@ -412,12 +473,12 @@ function realtimeErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-function directConnectionsPerWeekday(metric: ApiMetrics | null): string {
-  if (metric?.directConnectionRatio === null || metric?.directConnectionRatio === undefined) {
+function directConnectionCount(metric: ApiMetrics | null): string {
+  if (metric?.directConnectionCount === null || metric?.directConnectionCount === undefined) {
     return 'n/a'
   }
 
-  return String(Math.round(metric.directConnectionRatio * metric.reachableSampleCount))
+  return String(metric.directConnectionCount)
 }
 
 function displayDate(): string {
@@ -541,7 +602,7 @@ function RealtimeItineraryBlock({
         <ol className="api-itinerary-alternatives">
           {alternatives.map((itinerary, index) => (
             <li key={`${itinerary.provider}-${itinerary.actualFirstDepartureAt ?? index}`}>
-              <ItineraryAlternative itinerary={itinerary} showRank={alternatives.length > 1} index={index} />
+              <ItineraryAlternative itinerary={itinerary} />
             </li>
           ))}
         </ol>
@@ -552,21 +613,17 @@ function RealtimeItineraryBlock({
 
 function ItineraryAlternative({
   itinerary,
-  showRank,
-  index,
 }: {
   itinerary: ApiItinerary
-  showRank: boolean
-  index: number
 }) {
+  const connectionDurationSeconds = durationBetweenSeconds(itinerary.actualFirstDepartureAt, itinerary.arrivalAt)
+
   return (
     <>
-      {showRank ? <h4>Alternative {index + 1}</h4> : null}
       <div className="api-itinerary-summary">
-        <span>Wunsch: {timeLabel(itinerary.requestedDepartureAt)}</span>
-        <span>Erste Abfahrt: {timeLabel(itinerary.actualFirstDepartureAt)}</span>
-        <span>Ankunft: {timeLabel(itinerary.arrivalAt)}</span>
-        <span>Dauer: {compactMinutes(itinerary.totalDurationSeconds)}</span>
+        <span>ab {timeLabel(itinerary.actualFirstDepartureAt)}</span>
+        <span>an {timeLabel(itinerary.arrivalAt)}</span>
+        <span>Dauer: {compactMinutes(connectionDurationSeconds)}</span>
       </div>
       <ol className="api-leg-list">
         {itinerary.legs.map((leg) => (
@@ -841,7 +898,7 @@ function ApiApp() {
     error: null,
   })
   const [status, setStatus] = useState('API wird geladen')
-  const [departureTime, setDepartureTime] = useState('08:00')
+  const [departureTime, setDepartureTime] = useState(defaultDepartureTime)
   const profile = defaultProfile
   const [activeModeLayers, setActiveModeLayers] = useState<ModeLayerId[]>(['regional', 's-bahn', 'u-bahn'])
   const [selectedTimeWindows, setSelectedTimeWindows] = useState<TravelTimeWindow[]>(travelTimeWindows)
@@ -991,7 +1048,7 @@ function ApiApp() {
       try {
         const [details, currentMetrics] = await Promise.all([
           fetchStopDetails(publicId),
-          fetchStopMetrics(publicId, profile).catch(() => null),
+          fetchStopMetrics(publicId, profile, displayDate()).catch(() => null),
         ])
 
         if (!cancelled) {
@@ -1057,6 +1114,16 @@ function ApiApp() {
     setSelectedStop(null)
     setMetrics(null)
     setRealtimeItineraries({ status: 'idle', response: null, error: null })
+  }
+
+  function showEarlierRealtimeConnections() {
+    const earliestDeparture = earliestAlternativeDepartureMinutes(realtimeItineraries.response)
+    setDepartureTime(earliestDeparture === null ? shiftClockTime(departureTime, -30) : minutesToClockTime(earliestDeparture - 60))
+  }
+
+  function showLaterRealtimeConnections() {
+    const latestDeparture = latestAlternativeDepartureMinutes(realtimeItineraries.response)
+    setDepartureTime(latestDeparture === null ? shiftClockTime(departureTime, 30) : minutesToClockTime(latestDeparture + 1))
   }
 
   return (
@@ -1206,20 +1273,6 @@ function ApiApp() {
           </div>
         </div>
 
-        <div className="control-group">
-          <label htmlFor="api-departure">
-            <Clock size={16} />
-            Gewünschte Abfahrt
-          </label>
-          <input
-            id="api-departure"
-            type="time"
-            value={departureTime}
-            onChange={(event) => setDepartureTime(event.target.value)}
-          />
-          <div className="station-meta">Profil: {profile}</div>
-        </div>
-
         <div className="summary-strip">
           <div>
             <strong>{visibleSearchResults.length}</strong>
@@ -1279,12 +1332,33 @@ function ApiApp() {
               <h2>Fahrzeit nach Hamburg Hbf</h2>
               <div className="api-metric-grid">
                 <MetricCard label="Schnellste Gesamtreisezeit" value={minutes(metrics?.fastestSeconds ?? null)} title={metricTooltip('fastest')} />
-                <MetricCard label="Direktverbindungen / Wochentag" value={directConnectionsPerWeekday(metrics)} />
+                <MetricCard
+                  label="Direktverbindungen / Wochentag"
+                  value={directConnectionCount(metrics)}
+                  title="Fahrplanmäßige direkte Trips ohne Umstieg am repräsentativen Wochentag."
+                />
               </div>
             </section>
 
             <section className="api-panel-section">
               <h2>DB Echtzeit</h2>
+              <div className="api-realtime-controls">
+                <label htmlFor="api-detail-departure">Startzeit</label>
+                <div className="api-realtime-time-row">
+                  <button type="button" className="api-time-step-button" onClick={showEarlierRealtimeConnections}>
+                    Frühere
+                  </button>
+                  <input
+                    id="api-detail-departure"
+                    type="time"
+                    value={departureTime}
+                    onChange={(event) => setDepartureTime(event.target.value || defaultDepartureTime)}
+                  />
+                  <button type="button" className="api-time-step-button" onClick={showLaterRealtimeConnections}>
+                    Spätere
+                  </button>
+                </div>
+              </div>
               <RealtimeItineraryBlock
                 response={realtimeItineraries.response}
                 loading={realtimeItineraries.status === 'loading'}
@@ -1305,25 +1379,29 @@ function ApiApp() {
               </div>
             </section>
 
-            <section className="api-panel-section">
-              <h2>Datenstand</h2>
-              {snapshot ? (
-                <>
-                  <p>{snapshot.source.name} · {snapshot.publicId}</p>
-                  <p>{snapshot.validFrom ?? '?'} bis {snapshot.validUntil ?? '?'}</p>
-                  <p>{snapshot.source.attribution ?? 'Attribution aus Snapshot-Metadaten erforderlich'}</p>
-                </>
-              ) : (
-                <p>Datenstand wird geladen</p>
-              )}
-            </section>
+            <details className="api-panel-section api-disclosure">
+              <summary>Datenstand</summary>
+              <div className="api-disclosure-content">
+                {snapshot ? (
+                  <>
+                    <p>{snapshot.source.name} · {snapshot.publicId}</p>
+                    <p>{snapshot.validFrom ?? '?'} bis {snapshot.validUntil ?? '?'}</p>
+                    <p>{snapshot.source.attribution ?? 'Attribution aus Snapshot-Metadaten erforderlich'}</p>
+                  </>
+                ) : (
+                  <p>Datenstand wird geladen</p>
+                )}
+              </div>
+            </details>
 
-            <section className="api-panel-section">
-              <h2>StopPlace-Details</h2>
-              <p>{selectedStop.municipalityName ?? 'Gemeinde unbekannt'} · {selectedStop.stateCode ?? 'Bundesland unbekannt'}</p>
-              <p>DHID: {selectedStop.dhid ?? 'fehlt'} · Qualität: {selectedStop.identityQuality}</p>
-              <p>{selectedStop.modes.join(', ')}</p>
-            </section>
+            <details className="api-panel-section api-disclosure">
+              <summary>StopPlace-Details</summary>
+              <div className="api-disclosure-content">
+                <p>{selectedStop.municipalityName ?? 'Gemeinde unbekannt'} · {selectedStop.stateCode ?? 'Bundesland unbekannt'}</p>
+                <p>DHID: {selectedStop.dhid ?? 'fehlt'} · Qualität: {selectedStop.identityQuality}</p>
+                <p>{selectedStop.modes.join(', ')}</p>
+              </div>
+            </details>
           </>
         </aside>
       ) : null}

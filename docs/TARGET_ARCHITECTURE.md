@@ -39,7 +39,7 @@ Statuswerte stehen in `db/migrations/001_core_schema.sql`: `created`, `raw_valid
 
 - Batchmetriken: `motis_one_to_all` und `r5py` sind zertifizierte Engines. Mindestens ein abgeschlossener Lauf einer zertifizierten Engine ist ein Aktivierungs-Gate. R5/r5py bleibt Vergleichs- und Performance-Engine, blockiert aber keinen Snapshot, wenn MOTIS den Produktionslauf abgeschlossen hat.
 - Lokale Verbindungsauskunft: `ItineraryProvider`-Format ist über `src/api/contracts.ts` festgelegt. Die Produktions-API kann reale MOTIS-`/api/v5/plan`-Antworten aus dem lokalen Graph in das interne Antwortformat transformieren.
-- DB-Echtzeitvergleich: `RealtimeItineraryProvider` liefert dasselbe `ApiItineraryResponse`-Format über `GET /api/v1/stops/:publicId/realtime-itineraries`. Die Abfrage läuft serverseitig; der Client erhält nur normalisierte Alternativen und Fehlercodes.
+- DB-Echtzeitvergleich: `RealtimeItineraryProvider` liefert dasselbe `ApiItineraryResponse`-Format über `GET /api/v1/stops/:publicId/realtime-itineraries`. Die Abfrage läuft serverseitig; der Client erhält nur normalisierte Alternativen und Fehlercodes. Die UI steuert die Startzeit im Detailpanel und bietet `Frühere`/`Spätere`-Navigation.
 - Fixture-Provider: `server/db/fixtureRepository.ts` liefert lokale Testverbindungen ohne externe Fahrplanauskunft.
 
 ## DB-Echtzeitprovider
@@ -100,8 +100,10 @@ Aktueller API-Modus:
 - StopPlace-MVT-Features sind anklickbar und öffnen das Detailpanel.
 - Basiskarten sind CARTO/OSM-Straßenkarte und Esri-Satellit. Beide nutzen ein gemeinsames CARTO-Ortslabel-Overlay, damit Ortsnamen in beiden Modi sichtbar sind.
 - Das Detailpanel rendert DB-Echtzeitverbindungen unter der Überschrift `DB Echtzeit`; lokale `/itineraries` werden dort nicht als eigener Block angezeigt.
+- Der Metrikblock zeigt eine tagesgenaue Direktverbindungszahl aus `directConnectionCount`, wenn `metrics` mit `date=YYYY-MM-DD` abgefragt wird.
+- Datenstand und technische StopPlace-Details sind einklappbar.
 - Route Patterns verwenden echte GTFS-Route-Farben aus `routes.color`, wenn vorhanden; sonst Fallbackfarben nach Modus.
-- Stopfolgen-Approximationen sind gestrichelt, transparent und standardmäßig ausgeschaltet.
+- Hochkonfidente OSM-Rekonstruktionen werden im Standardlayer angezeigt. Niedrigkonfidente Rekonstruktionen und Stopfolgen-Approximationen bleiben im Standardlayer ausgeblendet, bis ihre Qualität visuell belastbar ist.
 - Reisezeitfenster-Chips und Stop-Kreise verwenden dieselbe Farbskala: 30 min grün, 45 min teal, 60 min ocker, 75 min orange, 90 min rot.
 
 ## Tile-Datenvertrag
@@ -133,7 +135,7 @@ Route-MVT `routes` enthält mindestens:
 
 `route_color` wird im Repository auf `#RRGGBB` normalisiert, wenn der GTFS-Wert sechsstellige Hexnotation enthält. Fehlt eine Farbe, entscheidet das Frontend anhand von `mode`.
 
-Route-Tiles verwenden `route_pattern_display_geometries` statt direkt `route_patterns.geometry`. Die View bevorzugt hochkonfidente OSM-Schienenrekonstruktionen, markiert niedrigkonfidente Rekonstruktionen als `osm_reconstructed_low_confidence` und fällt sonst auf die GTFS-Geometrie bzw. `stop_sequence_approximation` zurück.
+Route-Tiles verwenden `route_pattern_display_geometries` statt direkt `route_patterns.geometry`. Die View bevorzugt hochkonfidente OSM-Schienenrekonstruktionen, markiert niedrigkonfidente Rekonstruktionen als `osm_reconstructed_low_confidence` und fällt sonst auf die GTFS-Geometrie bzw. `stop_sequence_approximation` zurück. Der API-Client filtert im Standardlayer zusätzlich niedrigkonfidente Rekonstruktionen und Stopfolgen-Approximationen aus; diese Qualitätsstufen sind Diagnosematerial, keine präzise Standardstrecke.
 
 Rail-Network-MVT `rail-network` enthält OSM-Schienenkanten aus `rail_edges` mit:
 
@@ -144,3 +146,23 @@ Rail-Network-MVT `rail-network` enthält OSM-Schienenkanten aus `rail_edges` mit
 - `usage`
 - `is_service`
 - `geom`
+
+## OSM-Schienenmatching
+
+Die OSM-Rekonstruktion ist als Batch-Pipeline ausgelegt:
+
+1. Rail-only-PBF mit osmium aus der Geofabrik-PBF erzeugen.
+2. Gefilterte PBF mit osm2pgsql nach `staging_osm_rail_*` importieren.
+3. `rail_edges` und `rail_vertices` aus aktiven OSM-Schienenlinien erzeugen.
+4. StopPlaces auf Schienenkanten snappen.
+5. Route-Pattern-Segmente mit pgRouting zwischen gesnappten Stops routen.
+6. Ergebnis mit Confidence und Status in `route_pattern_rail_matches` speichern.
+
+Lokale Match-Nachläufe sollen klein geschnitten werden. `pipeline/rail_network.py` unterstützt dafür:
+
+- `--modes`: GTFS-/DELFI-Modusfilter.
+- `--routes`: CSV von Linienlabels, z.B. `U1,S1,RE8,RB81`.
+- `--bbox`: freie Bounding Box.
+- `--corridor`: benannte Korridore wie `hamburg-luebeck` oder `hamburg-kiel`.
+
+Große Komplettläufe ueber `RAIL` oder Norddeutschland sind lokal weiterhin zu teuer und liefern schwer auswertbare Qualitätsmischungen. Bevorzugtes Pattern ist: eine Linienfamilie in einem Korridor rechnen, visuell prüfen, dann den nächsten Korridor nachziehen.
