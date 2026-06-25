@@ -38,6 +38,7 @@ Erlaubte Werte:
 - `official_gtfs`
 - `regional_enrichment`
 - `osm_reconstructed`
+- `osm_reconstructed_low_confidence`
 - `stop_sequence_approximation`
 - `missing`
 
@@ -46,8 +47,22 @@ Stopfolgen-Approximationen dürfen nicht als offizielle Linienwege oder präzise
 Aktuelle UI-Konvention:
 
 - `official_gtfs` wird als echte Route-Pattern-Geometrie angezeigt.
+- `osm_reconstructed` darf als Anzeigegeometrie verwendet werden, wenn die Rekonstruktion mindestens 0,70 Konfidenz erreicht.
+- `osm_reconstructed_low_confidence` wird gestrichelt/transparenter dargestellt und darf nicht als präzise Strecke kommuniziert werden.
 - `stop_sequence_approximation` ist gestrichelt, transparenter und im API-Modus standardmäßig ausgeschaltet.
-- Die Legende muss approximierte Geometrien als solche kennzeichnen.
+- Die Legende muss approximierte oder niedrigkonfidente Geometrien als solche kennzeichnen, sobald diese Layer sichtbar sind.
+
+## DB-Echtzeitqualität
+
+DB-Echtzeitdaten sind ein Vergleichs- und Nutzerkomfortsignal, nicht die kanonische Produktionsmetrik. Sie dürfen die MOTIS-/PostGIS-Metriken nicht überschreiben.
+
+Qualitätsgrenzen:
+
+- Stop-ID-Mapping ist heuristisch, wenn keine direkte EVA-/DB-ID aus PublicId, DHID oder technischen Stop-IDs extrahiert werden kann.
+- Nicht gemappte Ziele müssen kontrolliert als `404 db_stop_unmapped` erscheinen.
+- Upstream-Ausfälle, Timeouts oder Blockaden müssen als `502 realtime_unavailable` erscheinen.
+- Das Frontend muss diese Fehler lokal im DB-Echtzeitblock anzeigen und das Detailpanel weiter nutzbar lassen.
+- Realtime-Legs dürfen optionale Planzeiten, Ist-Zeiten, Verspätungen, Ausfallstatus und Remarks enthalten; fehlende Plattformen oder Zeiten sind zulässig.
 
 ## Bekannte Einschränkungen
 
@@ -55,3 +70,4 @@ Aktuelle UI-Konvention:
 - ZHV-Vollintegration ist noch zugangsbeschränkt; die aktive Baseline nutzt DELFI-DHIDs und interne IDs für fehlende DHIDs.
 - Der ausgeführte MOTIS-Produktionshorizont beträgt 240 Minuten statt des fachlichen 12-Stunden-Ziels.
 - HVV-Legacy-Artefakte bleiben separat und werden nicht ungeprüft als zweite Fahrplanwahrheit mit DELFI gemischt.
+- Der aktuelle Standard-Realtime-Pfad nutzt die bahn.de-Web-API mit `curl`-Fallback; das ist eine pragmatische serverseitige Integration und kein zertifiziertes DB-Marketplace-Produkt.

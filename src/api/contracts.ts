@@ -107,6 +107,12 @@ export type ApiItineraryLeg = {
   headsign: string | null
   platformFrom: string | null
   platformTo: string | null
+  plannedDepartureAt?: string | null
+  plannedArrivalAt?: string | null
+  departureDelaySeconds?: number | null
+  arrivalDelaySeconds?: number | null
+  cancelled?: boolean
+  remarks?: string[]
 }
 
 export type ApiItinerary = {
@@ -126,6 +132,9 @@ export type ApiItinerary = {
   totalDistanceMeters: number | null
   transferCount: number | null
   legs: ApiItineraryLeg[]
+  refreshToken?: string | null
+  realtimeSource?: string | null
+  realtimeFetchedAt?: string | null
 }
 
 export type ApiItineraryResponse = {

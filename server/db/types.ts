@@ -28,6 +28,7 @@ export type RegionfinderRepository = {
   stopMetrics(publicId: string, profile: string, snapshot?: string): Promise<ApiMetrics | null>
   itineraries(query: ItineraryQuery): Promise<ApiItineraryResponse | null>
   routePattern(id: string): Promise<ApiRoutePattern | null>
-  stopTile(z: number, x: number, y: number, modes?: string[]): Promise<Buffer | null>
+  stopTile(z: number, x: number, y: number, modes?: string[], profile?: string): Promise<Buffer | null>
   routeTile(z: number, x: number, y: number, modes?: string[]): Promise<Buffer | null>
+  railNetworkTile(z: number, x: number, y: number): Promise<Buffer | null>
 }

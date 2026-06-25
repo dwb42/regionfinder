@@ -1,6 +1,6 @@
 services:
   postgis:
-    image: postgis/postgis:16-3.4
+    image: pgrouting/pgrouting:16-3.5-4.0
     environment:
       POSTGRES_DB: regionfinder
       POSTGRES_USER: regionfinder

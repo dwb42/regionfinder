@@ -193,7 +193,7 @@ Nicht implementierte optionale Funktionen:
 - Regionale Fahrt-Merge-Deduplizierung.
 - OSM-basierte Shape-Rekonstruktion.
 - Produktive PMTiles.
-- Echtzeit/GTFS-RT, bewusst nicht Teil dieser Zielversion.
+- Historisch nicht Teil dieser Zielversion: Echtzeit/GTFS-RT. Aktueller Stand: Ein serverseitiger DB-Echtzeitvergleich ist inzwischen über `/api/v1/stops/:publicId/realtime-itineraries` implementiert; siehe `docs/CURRENT_STATE.md`.
 
 Bekannte Datenqualitätsprobleme:
 

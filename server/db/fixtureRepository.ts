@@ -413,4 +413,8 @@ export class FixtureRepository implements RegionfinderRepository {
   async routeTile(): Promise<Buffer | null> {
     return Buffer.alloc(0)
   }
+
+  async railNetworkTile(): Promise<Buffer | null> {
+    return Buffer.alloc(0)
+  }
 }

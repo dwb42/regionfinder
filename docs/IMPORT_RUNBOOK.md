@@ -8,6 +8,8 @@ cp .env.example .env
 npm run db:migrate
 ```
 
+Der lokale DB-Dienst nutzt das pgRouting-Image `pgrouting/pgrouting:16-3.5-4.0`. Das ist Voraussetzung für `db/migrations/004_rail_network.sql` und die OSM-Schienenrekonstruktion.
+
 ## Quellen bereitstellen
 
 ```bash
@@ -79,6 +81,40 @@ npm run metrics:compute:production
 
 Hinweis: `REGIONFINDER_MOTIS_MAX_TRAVEL_MINUTES=240` war in der lokalen 16-GB-/Docker-Umgebung der ausgefuehrte Produktionshorizont. Das fachliche Zielprofil bleibt bei 12 Stunden; der 12-Stunden-One-to-all-Lauf expandierte deutschlandweit auf mehr als 400.000 technische Orte pro Sample und ist als Performance-Restarbeit dokumentiert.
 
+## OSM-Schienenrekonstruktion
+
+Nach Datenbankmigration und bereitgestelltem OSM-PBF:
+
+```bash
+npm run rail:reconstruct
+```
+
+Standardwerte:
+
+- `OSM_PBF_PATH=data/raw/osm/germany-latest.osm.pbf`
+- `OSM_RAIL_PBF_PATH=data/processed/osm/germany-latest-railways.osm.pbf`, falls nicht explizit gesetzt
+- `OSMIUM_IMAGE=iboates/osmium:latest`
+- `OSM2PGSQL_IMAGE=iboates/osm2pgsql:latest`
+
+Schritte:
+
+1. OSM-PBF auf `railway=rail|light_rail|subway|tram` filtern.
+2. Gefilterte PBF per osm2pgsql in `staging_osm_rail_*` laden.
+3. `rail_edges` und `rail_vertices` aus aktiven Schienenlinien bauen.
+4. StopPlaces mit Schienenmodus auf nahe Kanten snappen.
+5. Route Patterns per pgRouting/Dijkstra zwischen gesnappten Stops rekonstruieren.
+6. Ergebnisse in `route_pattern_rail_matches` speichern.
+
+Optionen:
+
+```bash
+npm run rail:reconstruct -- --skip-osm-import
+npm run rail:reconstruct -- --snapshot delfi-bb69c7e2c8d5 --modes RE,RB,S --bbox 9.0,53.0,11.0,54.2
+npm run rail:reconstruct -- match-patterns --limit-patterns 100
+```
+
+Die Anzeige verwendet danach `route_pattern_display_geometries`: Konfidenz `>= 0.70` ersetzt die GTFS-/Fallback-Geometrie als `osm_reconstructed`, Konfidenz `>= 0.45` wird als `osm_reconstructed_low_confidence` markiert, darunter bleibt die ursprüngliche Route-Pattern-Geometrie aktiv.
+
 ## Snapshot aktivieren
 
 Nach Import, Qualitätsprüfung, Routinggraph und Metriken:
@@ -105,3 +141,18 @@ curl -o /tmp/routes.mvt \
 ```
 
 Die API-Modus-Karte muss bei deaktiviertem `Bus` und `Fähre` gefilterte MVT-URLs mit `?modes=...` anfragen. Der Client entfernt und erneuert die MapLibre-Quellen beim Umschalten, damit alte ungefilterte Tiles nicht im Cache sichtbar bleiben.
+
+Stop-Tiles müssen zusätzlich das aktive Routingprofil enthalten, damit Reisezeitfarben und Hover-Metriken aus dem passenden Metric Run stammen:
+
+```bash
+curl -o /tmp/stops.mvt \
+  'http://127.0.0.1:4001/api/v1/tiles/stops/8/135/83.mvt?modes=ICE%2CIC%2CEC%2CRE%2CRB%2CRAIL%2CS%2CAKN%2CU&profile=regular_tue_thu'
+```
+
+DB-Echtzeitprüfung:
+
+```bash
+curl 'http://127.0.0.1:4001/api/v1/stops/de%3A01060%3A37985%3A1%3A8000526/realtime-itineraries?date=2026-07-07&time=08%3A00&profile=regular_tue_thu'
+```
+
+Erwartung: normalisierte `ApiItineraryResponse` mit bis zu drei Alternativen ab Hamburg Hbf. Fehlercodes sind `db_stop_unmapped` für nicht gemappte Ziele und `realtime_unavailable` für Upstream-/Timeoutprobleme.

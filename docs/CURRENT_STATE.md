@@ -1,12 +1,12 @@
 # Current State
 
-Stand: 2026-06-24 nach Regionfinder V2 Produktionsintegration und API-/MapLibre-UX-Nachzug.
+Stand: 2026-06-25 nach Regionfinder V2 Produktionsintegration, API-/MapLibre-UX-Nachzug und DB-Echtzeitintegration.
 
 ## Produktstand
 
 Regionfinder besitzt zwei Modi:
 
-- `api`: produktiver V2-Pfad mit Fastify, PostgreSQL/PostGIS, MOTIS-Metriken, MapLibre und MVT-Kacheln.
+- `api`: produktiver V2-Pfad mit Fastify, PostgreSQL/PostGIS/pgRouting, MOTIS-Metriken, DB-Echtzeitvergleich, MapLibre und MVT-Kacheln.
 - `legacy`: alter Leaflet/HVV-JSON-/Seed-Router-Pfad als Vergleich und Fallback.
 
 Der API-Modus ist der aktuelle Hauptpfad. Der Browser lädt dort keine vollständigen Fahrplan-JSONs und führt keine kanonischen Fahrzeitberechnungen mehr aus.
@@ -75,10 +75,12 @@ Aktuelle UI-Funktionen im API-Modus:
 
 - StopPlace-Suche über API.
 - Klick auf StopPlaces aus MapLibre-Vektor-Tiles lädt Detaildaten in das rechte Panel.
-- Detailpanel zeigt Datenstand, StopPlace, Metriken, konkrete Verbindung und bedienende Linien.
+- Detailpanel zeigt Metriken, DB-Echtzeitverbindungen, bedienende Linien, Datenstand und StopPlace-Details.
+- Die Überschrift für Verbindungsauskunft lautet `DB Echtzeit`; der frühere lokale Block `Konkrete Verbindung`/`Unser System` wird im API-Detailpanel nicht mehr gerendert.
 - Basiskarten-Umschalter:
-  - OpenStreetMap-Straßenkarte
-  - Esri-Satellit mit Label-Overlay
+  - CARTO/OSM-Straßenkarte ohne Labels plus CARTO-Ortslabel-Overlay.
+  - Esri-Satellit plus dasselbe CARTO-Ortslabel-Overlay.
+- Zoom-Control sitzt links oben in der Map-Card; die aktuelle Zoomstufe wird direkt darunter angezeigt.
 - ÖPNV-Layer:
   - `Regional/Fern`
   - `S-Bahn/AKN`
@@ -87,20 +89,44 @@ Aktuelle UI-Funktionen im API-Modus:
   - `Fähre`
 - Default: `Regional/Fern`, `S-Bahn/AKN`, `U-Bahn` aktiv; `Bus`, `Fähre` aus.
 - MVT-Kacheln werden serverseitig per `modes` gefiltert.
+- Stop-MVTs enthalten zusätzlich Reisezeitmetrik, Stop-Priorität und kompakte Linienlabels für Hover/Styling; sie werden mit dem aktiven Routingprofil angefragt.
 - Beim Umschalten der Modi entfernt der Client die MapLibre-Vector-Tile-Sources und legt sie neu an, damit keine alten ungefilterten Tiles aus dem Cache sichtbar bleiben.
 - Route Patterns verwenden echte GTFS-Farben aus `routes.color`, falls vorhanden; sonst Modus-Fallbackfarben.
+- Route-Pattern-Geometrien kommen über die View `route_pattern_display_geometries`. Hochkonfidente OSM-Rekonstruktionen ersetzen GTFS-Fallbacks; niedrigkonfidente Rekonstruktionen werden gestrichelt/transparenter dargestellt.
 - `stop_sequence_approximation` ist gestrichelt, transparent und standardmäßig ausgeblendet.
 - Reisezeitfenster, maximaler Umstiegsfilter, unerreichbare Ziele und Wohnregion-Radius sind im API-Modus verfügbar.
+- Reisezeitfenster und Stationskreise nutzen dieselbe Farbskala: 30 min grün, 45 min teal, 60 min ocker, 75 min orange, 90 min rot.
+
+## DB-Echtzeitverbindungen
+
+Der Endpunkt `GET /api/v1/stops/:publicId/realtime-itineraries?date=YYYY-MM-DD&time=HH:mm&profile=...` liefert bis zu drei Live-Alternativen ab Hamburg Hbf zur ausgewählten Station. Die Abfrage verwendet die UI-Abfahrtszeit, nicht `now`.
+
+Technische Entscheidungen:
+
+- Die Realtime-Abfrage läuft ausschließlich serverseitig; der React-Client ruft nur die Regionfinder-API auf.
+- Der Provider sitzt in `server/realtime/dbTransportRestProvider.ts` und transformiert externe Antworten in `ApiItineraryResponse`.
+- Standard-Backend ist aktuell `bahn-web`, weil `v6.db.transport.rest` in der Live-Prüfung instabil war und direkte Node-Requests an bahn.de geblockt werden können. Das Backend nutzt kontrolliert `curl` mit Cookie-Warmup als Fallback.
+- `REGIONFINDER_REALTIME_PROVIDER=db-transport-rest` schaltet explizit auf den Wrapper `v6.db.transport.rest`; `DB_TRANSPORT_REST_BASE_URL` konfiguriert dessen Basis-URL.
+- Ursprung ist per Default Hamburg Hbf über `REGIONFINDER_ORIGIN_DB_STOP_ID=8002549`.
+- Stop-Mapping nutzt direkte 7-/8-stellige DB/EVA-Kandidaten aus PublicId/DHID/technischen Stops, danach `/locations/nearby`, danach `/locations`.
+- Mapping wird 24 Stunden im Prozess gecacht; Journey-Antworten werden 60 Sekunden pro Ursprung, Ziel und Abfahrtsminute gecacht.
+- Nicht auflösbare Ziele liefern `404 db_stop_unmapped`; Upstream-/Timeoutfehler liefern `502 realtime_unavailable`.
+- Für alte DHID-ähnliche PublicIds wird serverseitig ein Alias unterstützt: `de:01060:37985:18000526` kann auf `de:01060:37985:1:8000526` aufgelöst werden.
+
+Die API-Typen in `src/api/contracts.ts` enthalten optionale Live-Felder auf Legs: Planzeiten, Verspätungen, Ausfallstatus und Remarks. `ApiItinerary` enthält optional `refreshToken`, `realtimeSource` und `realtimeFetchedAt`.
 
 ## Aktuelle technische Entscheidungen
 
 - PostGIS ist Quelle für StopPlaces, Route Patterns, Metriken und MVTs.
+- pgRouting ist über das Compose-Image `pgrouting/pgrouting:16-3.5-4.0` verfügbar und wird für OSM-Schienenrekonstruktion genutzt.
 - Fastify validiert Requests mit Zod-Schemas.
 - Gemeinsame API-Antworttypen liegen in `src/api/contracts.ts`.
-- Stop- und Route-Tiles akzeptieren `?modes=...`.
+- Stop- und Route-Tiles akzeptieren `?modes=...`; Stop-Tiles akzeptieren zusätzlich `?profile=...`.
 - Route-Tiles liefern `route_color`, normalisiert auf `#RRGGBB`, wenn eine echte GTFS-Farbe existiert.
+- `npm run rail:reconstruct` filtert OSM-Schienen, lädt sie mit osm2pgsql in `staging_osm_rail_*`, baut `rail_edges`/`rail_vertices`, snappt StopPlaces und erzeugt `route_pattern_rail_matches`.
 - Der API-Modus darf nicht stillschweigend auf Fixture-Daten zurückfallen.
 - Fixtures bleiben für Tests und lokale isolierte Entwicklung verfügbar.
+- Playwright ist als Dev-Dependency verfügbar; lokale Browser-Smoke-Tests benötigen einmalig `npx playwright install chromium`.
 
 ## Legacy-Modus
 

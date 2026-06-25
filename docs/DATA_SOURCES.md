@@ -39,7 +39,7 @@ Regionale Feeds dürfen Geometrien, Betreiber, Farben, Plattformen und lokale Me
 
 ## OSM
 
-OSM-PBF wird für Fußwege, Zugänge, Transfers und R5/MOTIS-Netze verwendet.
+OSM-PBF wird für Fußwege, Zugänge, Transfers, R5/MOTIS-Netze und die Schienenrekonstruktion von Route-Pattern-Anzeigegeometrien verwendet.
 
 Aktueller Produktionsstand:
 
@@ -55,6 +55,18 @@ OSM_PBF_PATH=/absolute/path/to/norddeutschland.osm.pbf
 ```
 
 Das Netz darf nicht an Hamburg, Schleswig-Holstein, Mecklenburg-Vorpommern und Niedersachsen abgeschnitten werden. Bremen und angrenzende Korridore müssen im Routinggraph bleiben.
+
+## OSM-Schienenrekonstruktion
+
+`npm run rail:reconstruct` nutzt den OSM-PBF fuer einen separaten Schienenkorridor-Lauf:
+
+- Osmium filtert `railway=rail`, `light_rail`, `subway` und `tram` in eine kleinere Rail-PBF.
+- osm2pgsql lädt die Rail-PBF in `staging_osm_rail_*`.
+- `rail_edges` und `rail_vertices` bilden den pgRouting-Graph.
+- `stop_rail_snaps` speichert die naechsten Schienenkandidaten pro StopPlace.
+- `route_pattern_rail_matches` speichert rekonstruierte Pattern-Geometrien inklusive Konfidenz, Snap-Distanzen, Detour-Faktor und Status.
+
+Die UI verwendet nicht direkt `route_pattern_rail_matches`, sondern die View `route_pattern_display_geometries`. Dadurch bleiben niedrigqualitative Rekonstruktionen als solche markiert und offizielle GTFS-Geometrien bleiben Fallback.
 
 ## Verwaltungsgrenzen
 

@@ -10,11 +10,38 @@ import type {
 const configuredBaseUrl = import.meta.env.VITE_REGIONFINDER_API_BASE_URL
 export const apiBaseUrl = configuredBaseUrl ? configuredBaseUrl.replace(/\/$/, '') : ''
 
+export class ApiError extends Error {
+  readonly status: number
+  readonly statusText: string
+  readonly errorCode: string | null
+
+  constructor(path: string, status: number, statusText: string, errorCode: string | null, message: string) {
+    super(message || `${path}: ${status} ${statusText}`)
+    this.name = 'ApiError'
+    this.status = status
+    this.statusText = statusText
+    this.errorCode = errorCode
+  }
+}
+
 async function fetchApi<T>(path: string): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`)
 
   if (!response.ok) {
-    throw new Error(`${path}: ${response.status} ${response.statusText}`)
+    const payload = await response
+      .clone()
+      .json()
+      .catch(() => null)
+    const errorCode =
+      payload && typeof payload === 'object' && 'error' in payload && typeof payload.error === 'string'
+        ? payload.error
+        : null
+    const message =
+      payload && typeof payload === 'object' && 'message' in payload && typeof payload.message === 'string'
+        ? payload.message
+        : `${path}: ${response.status} ${response.statusText}`
+
+    throw new ApiError(path, response.status, response.statusText, errorCode, message)
   }
 
   return (await response.json()) as T
@@ -61,6 +88,17 @@ export function fetchItineraries(publicId: string, date: string, time: string, p
   const params = new URLSearchParams({ date, time, profile })
 
   return fetchApi<ApiItineraryResponse>(`/api/v1/stops/${encodeURIComponent(publicId)}/itineraries?${params}`)
+}
+
+export function fetchRealtimeItineraries(
+  publicId: string,
+  date: string,
+  time: string,
+  profile: string,
+): Promise<ApiItineraryResponse> {
+  const params = new URLSearchParams({ date, time, profile })
+
+  return fetchApi<ApiItineraryResponse>(`/api/v1/stops/${encodeURIComponent(publicId)}/realtime-itineraries?${params}`)
 }
 
 export function fetchRoutePattern(id: string): Promise<ApiRoutePattern> {

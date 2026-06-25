@@ -191,6 +191,8 @@ Migrationen ausgeführt:
 - `001_core_schema.sql`
 - `002_snapshot_activation.sql`
 - `003_admin_boundaries.sql`
+- `004_rail_network.sql`
+- `005_tile_hover_indexes.sql`
 
 ## API und Frontend
 
@@ -207,10 +209,12 @@ Gepruefte Endpunkte:
 - `GET /api/v1/stops/search`: reale Ziele in Hamburg, Schleswig-Holstein und Niedersachsen gefunden; Mecklenburg-Vorpommern ist ueber DB-Zaehlung abgedeckt.
 - `GET /api/v1/stops/de:01002:49079/metrics?profile=regular_tue_thu`: reale Kiel-Hbf-Metriken aus `motis_one_to_all`.
 - `GET /api/v1/stops/de:01002:49079/itineraries?date=2026-07-07&time=08:00&profile=regular_tue_thu`: reale MOTIS-Verbindung Hamburg Hbf -> Kiel Hbf.
+- `GET /api/v1/stops/de:01060:37985:1:8000526/realtime-itineraries?date=2026-07-07&time=08:00&profile=regular_tue_thu`: DB-Echtzeitvergleich Hamburg Hbf -> Altengörs mit drei normalisierten Alternativen.
 - `GET /api/v1/route-patterns/723cebcb-90e7-4336-878f-bdb4bfc2f635`: reales Route Pattern mit offizieller GTFS-Shape.
 - `GET /api/v1/tiles/stops/8/135/83.mvt`: reale MVT-Kachel, 416.615 Bytes.
 - `GET /api/v1/tiles/stops/{z}/{x}/{y}.mvt?modes=...`: serverseitig nach Verkehrsmitteln gefilterte StopPlace-Kacheln.
 - `GET /api/v1/tiles/routes/{z}/{x}/{y}.mvt?modes=...`: serverseitig nach Verkehrsmitteln gefilterte Route-Pattern-Kacheln.
+- `GET /api/v1/tiles/rail-network/{z}/{x}/{y}.mvt`: OSM-Schienenkanten aus `rail_edges`.
 
 MapLibre-/API-Modus wurde mit Vite verifiziert:
 
@@ -222,13 +226,18 @@ Der ausgelieferte Vite-Code enthaelt `VITE_REGIONFINDER_DATA_MODE="api"` und `VI
 
 Nachgezogene UI-/Kartenfunktionen:
 
-- Basiskarten-Umschalter zwischen OpenStreetMap-Straßenkarte und Esri-Satellit mit Esri-Beschriftung.
+- Basiskarten-Umschalter zwischen CARTO/OSM-Straßenkarte und Esri-Satellit; beide Modi verwenden ein CARTO-Ortslabel-Overlay.
 - StopPlaces aus MVT-Kacheln sind anklickbar und laden das API-Detailpanel.
 - Verkehrsmittel-Checkboxen filtern Suchtreffer, Marker und MVT-Kacheln.
+- Stop-MVT-Kacheln liefern Reisezeitmetrik, Stop-Priorität und kompakte Linienlabels für Styling/Hover und akzeptieren `profile`.
 - MapLibre-Vector-Tile-Sources werden bei Moduswechsel entfernt und neu angelegt; `setTiles()` allein reicht nicht, weil alte ungefilterte Tiles sonst sichtbar bleiben können.
 - Route Patterns verwenden echte GTFS-Farben aus `routes.color`, falls vorhanden; die Route-MVTs liefern dafür `route_color`.
 - Fehlt eine echte Farbe, nutzt das Frontend Modus-Fallbackfarben.
-- `stop_sequence_approximation` ist gestrichelt, transparent und standardmäßig ausgeschaltet.
+- Route Pattern-Anzeigegeometrien kommen über `route_pattern_display_geometries`, sodass hochkonfidente OSM-Rekonstruktionen sichtbar werden können.
+- `osm_reconstructed_low_confidence` und `stop_sequence_approximation` sind gestrichelt/transparenter; `stop_sequence_approximation` ist standardmäßig ausgeschaltet.
+- Das Detailpanel zeigt `DB Echtzeit` als Verbindungsabschnitt und rendert bis zu drei Live-Alternativen mit Plattformen, Verspätungen, Ausfallstatus und Remarks.
+- Reisezeitfenster und Stop-Kreise nutzen dieselbe 30/45/60/75/90-Farbskala.
+- Playwright ist als Dev-Dependency verfügbar und wurde für einen lokalen UI-Smoke-Test gegen API `4001` und Frontend `5176` genutzt.
 
 Bus-only-Ziel:
 

@@ -30,6 +30,7 @@ export const tileParamsSchema = z.object({
 
 export const tileQuerySchema = z.object({
   modes: z.string().optional(),
+  profile: z.string().min(1).default('regular_tue_thu'),
 })
 
 export const routePatternParamsSchema = z.object({

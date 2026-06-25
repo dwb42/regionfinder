@@ -1,20 +1,22 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import maplibregl, { type ExpressionSpecification, type Map, type StyleSpecification } from 'maplibre-gl'
 import type { FeatureCollection, Polygon } from 'geojson'
 import {
   Clock,
-  Info,
   Layers,
   MapPin,
   Route,
   Satellite,
   Search,
   SlidersHorizontal,
+  X,
   TrainFront,
 } from 'lucide-react'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type {
+  ApiItinerary,
+  ApiItineraryLeg,
   ApiItineraryResponse,
   ApiMetrics,
   ApiSnapshot,
@@ -22,9 +24,10 @@ import type {
   ApiStopSearchResult,
 } from './api/contracts'
 import {
+  ApiError,
   apiBaseUrl,
   fetchCurrentSnapshot,
-  fetchItineraries,
+  fetchRealtimeItineraries,
   fetchStopDetails,
   fetchStopMetrics,
   searchStops,
@@ -36,15 +39,27 @@ const initialSearchQuery = 'Hamburg'
 type ModeLayerId = 'regional' | 's-bahn' | 'u-bahn' | 'bus' | 'ferry'
 type MapBaseLayer = 'street' | 'satellite'
 type TravelTimeWindow = 30 | 45 | 60 | 75 | 90
+type MapUpdateState = 'idle' | 'loading' | 'complete'
+type RealtimeItineraryState = {
+  status: 'idle' | 'loading' | 'ready' | 'error'
+  response: ApiItineraryResponse | null
+  error: string | null
+}
 
 const mapLibreBaseStyle: StyleSpecification = {
   version: 8,
   sources: {
     'street-base': {
       type: 'raster',
-      tiles: ['https://a.tile.openstreetmap.org/{z}/{x}/{y}.png', 'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png', 'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tiles: [
+        'https://a.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png',
+        'https://b.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png',
+        'https://c.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png',
+        'https://d.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png',
+      ],
       tileSize: 256,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
     },
     'satellite-base': {
       type: 'raster',
@@ -52,11 +67,17 @@ const mapLibreBaseStyle: StyleSpecification = {
       tileSize: 256,
       attribution: 'Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community',
     },
-    'satellite-labels': {
+    'place-labels': {
       type: 'raster',
-      tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'],
+      tiles: [
+        'https://a.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}.png',
+        'https://b.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}.png',
+        'https://c.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}.png',
+        'https://d.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}.png',
+      ],
       tileSize: 256,
-      attribution: 'Reference tiles &copy; Esri',
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
     },
   },
   layers: [
@@ -72,10 +93,9 @@ const mapLibreBaseStyle: StyleSpecification = {
       layout: { visibility: 'none' },
     },
     {
-      id: 'satellite-labels',
+      id: 'place-labels',
       type: 'raster',
-      source: 'satellite-labels',
-      layout: { visibility: 'none' },
+      source: 'place-labels',
     },
   ],
 }
@@ -94,11 +114,22 @@ const modeLayerDefinitions: Array<{
 
 const travelTimeWindows: TravelTimeWindow[] = [30, 45, 60, 75, 90]
 const residentialRadiusOptions = [10, 15, 20]
+const travelTimeWindowColors: Record<TravelTimeWindow, string> = {
+  30: '#15803d',
+  45: '#0f766e',
+  60: '#ca8a04',
+  75: '#ea580c',
+  90: '#b91c1c',
+}
 
 const routeColorExpression: ExpressionSpecification = [
   'case',
   ['==', ['get', 'geometry_quality'], 'stop_sequence_approximation'],
   '#c2410c',
+  ['==', ['get', 'mode'], 'BUS'],
+  '#b45309',
+  ['==', ['get', 'mode'], 'TRAM'],
+  '#7c3aed',
   ['has', 'route_color'],
   ['get', 'route_color'],
   [
@@ -123,13 +154,30 @@ const routeColorExpression: ExpressionSpecification = [
     'U',
     '#0ea5e9',
     'BUS',
-    '#c2410c',
+    '#b45309',
     'TRAM',
-    '#9333ea',
+    '#7c3aed',
     'FERRY',
     '#0891b2',
     '#64748b',
   ],
+]
+
+const stopTravelTimeColorExpression: ExpressionSpecification = [
+  'case',
+  ['!', ['has', 'fastest_seconds']],
+  '#94a3b8',
+  ['<=', ['get', 'fastest_seconds'], 30 * 60],
+  travelTimeWindowColors[30],
+  ['<=', ['get', 'fastest_seconds'], 45 * 60],
+  travelTimeWindowColors[45],
+  ['<=', ['get', 'fastest_seconds'], 60 * 60],
+  travelTimeWindowColors[60],
+  ['<=', ['get', 'fastest_seconds'], 75 * 60],
+  travelTimeWindowColors[75],
+  ['<=', ['get', 'fastest_seconds'], 90 * 60],
+  travelTimeWindowColors[90],
+  '#64748b',
 ]
 
 function modesForLayers(activeLayers: ModeLayerId[]): string[] {
@@ -146,13 +194,41 @@ function stopMatchesModes(stop: ApiStopSearchResult, allowedModes: string[]): bo
   return allowedModes.length > 0 && stop.modes.some((mode) => allowedModes.includes(mode))
 }
 
-function tileUrl(path: 'stops' | 'routes', modes: string[]): string {
-  const suffix = modes.length > 0 ? `?modes=${encodeURIComponent(modes.join(','))}` : ''
+function tileUrl(path: 'stops' | 'routes' | 'rail-network', modes: string[] = [], profile?: string): string {
+  const params = new URLSearchParams()
+
+  if (modes.length > 0) {
+    params.set('modes', modes.join(','))
+  }
+
+  if (profile) {
+    params.set('profile', profile)
+  }
+
+  const suffix = params.size > 0 ? `?${params}` : ''
 
   return `${apiBaseUrl}/api/v1/tiles/${path}/{z}/{x}/{y}.mvt${suffix}`
 }
 
-function addTransitTileLayers(map: Map, modes: string[]) {
+function routeGeometryFilter(): ExpressionSpecification {
+  return [
+    'all',
+    ['!=', ['get', 'geometry_quality'], 'stop_sequence_approximation'],
+    ['!=', ['get', 'geometry_quality'], 'osm_reconstructed_low_confidence'],
+    [
+      'any',
+      ['!=', ['get', 'geometry_quality'], 'official_gtfs'],
+      ['==', ['get', 'mode'], 'BUS'],
+      ['==', ['get', 'mode'], 'TRAM'],
+    ],
+  ]
+}
+
+function applyRouteLayerState(map: Map) {
+  map.setFilter('regionfinder-routes-line', routeGeometryFilter())
+}
+
+function addTransitTileLayers(map: Map, modes: string[], profile: string) {
   map.addSource('regionfinder-routes', {
     type: 'vector',
     tiles: [tileUrl('routes', modes)],
@@ -166,14 +242,40 @@ function addTransitTileLayers(map: Map, modes: string[]) {
     'source-layer': 'routes',
     paint: {
       'line-color': routeColorExpression,
-      'line-width': ['interpolate', ['linear'], ['zoom'], 7, 1, 12, 3],
-      'line-opacity': ['case', ['==', ['get', 'geometry_quality'], 'stop_sequence_approximation'], 0.38, 0.78],
-      'line-dasharray': ['case', ['==', ['get', 'geometry_quality'], 'stop_sequence_approximation'], ['literal', [2, 2]], ['literal', [1, 0]]],
+      'line-width': [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        7,
+        ['case', ['any', ['==', ['get', 'mode'], 'BUS'], ['==', ['get', 'mode'], 'TRAM']], 0.25, 0.6],
+        10,
+        ['case', ['any', ['==', ['get', 'mode'], 'BUS'], ['==', ['get', 'mode'], 'TRAM']], 0.7, 2],
+        12,
+        ['case', ['any', ['==', ['get', 'mode'], 'BUS'], ['==', ['get', 'mode'], 'TRAM']], 1.15, 3],
+      ],
+      'line-opacity': [
+        'case',
+        ['any', ['==', ['get', 'mode'], 'BUS'], ['==', ['get', 'mode'], 'TRAM']],
+        0.46,
+        ['==', ['get', 'geometry_quality'], 'stop_sequence_approximation'],
+        0.38,
+        ['==', ['get', 'geometry_quality'], 'osm_reconstructed_low_confidence'],
+        0.48,
+        0.78,
+      ],
+      'line-dasharray': [
+        'case',
+        ['==', ['get', 'geometry_quality'], 'stop_sequence_approximation'],
+        ['literal', [2, 2]],
+        ['==', ['get', 'geometry_quality'], 'osm_reconstructed_low_confidence'],
+        ['literal', [4, 2]],
+        ['literal', [1, 0]],
+      ],
     },
   })
   map.addSource('regionfinder-stops', {
     type: 'vector',
-    tiles: [tileUrl('stops', modes)],
+    tiles: [tileUrl('stops', modes, profile)],
     minzoom: 0,
     maxzoom: 14,
   })
@@ -183,10 +285,30 @@ function addTransitTileLayers(map: Map, modes: string[]) {
     source: 'regionfinder-stops',
     'source-layer': 'stops',
     paint: {
-      'circle-radius': ['interpolate', ['linear'], ['zoom'], 6, 3, 12, 7],
-      'circle-color': '#0f766e',
+      'circle-radius': [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        6,
+        ['match', ['get', 'stop_priority'], 'regional', 4.5, 'urban_rail', 3.5, 'bus_only', 2.4, 3],
+        10,
+        ['match', ['get', 'stop_priority'], 'regional', 7.5, 'urban_rail', 6, 'bus_only', 4.2, 5],
+        12,
+        ['match', ['get', 'stop_priority'], 'regional', 10, 'urban_rail', 8, 'bus_only', 5.5, 6],
+      ],
+      'circle-color': stopTravelTimeColorExpression,
       'circle-stroke-color': '#ffffff',
-      'circle-stroke-width': 1,
+      'circle-stroke-width': [
+        'match',
+        ['get', 'stop_priority'],
+        'regional',
+        2,
+        'urban_rail',
+        1.4,
+        'bus_only',
+        0.8,
+        1,
+      ],
     },
   })
 }
@@ -251,12 +373,51 @@ function minutes(value: number | null): string {
   return `${Math.round(value / 60)} min`
 }
 
-function percent(value: number | null): string {
-  if (value === null) {
+function compactMinutes(value: number | null | undefined): string {
+  return value === null || value === undefined ? 'n/a' : `${Math.round(value / 60)} min`
+}
+
+function timeLabel(value: string | null | undefined): string {
+  return value ? value.slice(11, 16) : 'n/a'
+}
+
+function delayLabel(value: number | null | undefined): string {
+  if (value === null || value === undefined) {
     return 'n/a'
   }
 
-  return `${Math.round(value * 100)} %`
+  if (value === 0) {
+    return 'pünktlich'
+  }
+
+  const rounded = Math.round(value / 60)
+  return rounded > 0 ? `+${rounded} min` : `${rounded} min`
+}
+
+function realtimeErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.errorCode === 'db_stop_unmapped') {
+      return 'Keine passende DB-Haltestelle für diese Station gefunden.'
+    }
+
+    if (error.errorCode === 'realtime_unavailable') {
+      return 'DB-Echtzeit ist aktuell nicht verfügbar.'
+    }
+
+    if (error.status === 404) {
+      return 'DB-Echtzeit-Endpunkt nicht erreichbar. Bitte den API-Prozess neu starten.'
+    }
+  }
+
+  return error instanceof Error ? error.message : String(error)
+}
+
+function directConnectionsPerWeekday(metric: ApiMetrics | null): string {
+  if (metric?.directConnectionRatio === null || metric?.directConnectionRatio === undefined) {
+    return 'n/a'
+  }
+
+  return String(Math.round(metric.directConnectionRatio * metric.reachableSampleCount))
 }
 
 function displayDate(): string {
@@ -272,6 +433,68 @@ function metricTooltip(label: string): string {
   }
 
   return tooltips[label] ?? ''
+}
+
+function numericFeatureProperty(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+
+  if (typeof value === 'string' && value.length > 0) {
+    const parsed = Number(value)
+
+    return Number.isFinite(parsed) ? parsed : null
+  }
+
+  return null
+}
+
+function stringFeatureProperty(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function routeSummaryText(routeLabels: string | null, routeCount: number | null): string {
+  if (!routeLabels) {
+    return 'keine Route hinterlegt'
+  }
+
+  const visibleCount = routeLabels.split(', ').filter(Boolean).length
+  const hiddenCount = routeCount === null ? 0 : Math.max(0, routeCount - visibleCount)
+
+  return hiddenCount > 0 ? `${routeLabels}, +${hiddenCount} weitere` : routeLabels
+}
+
+function stopRouteLabel(route: ApiStopDetails['servedRoutes'][number]): string {
+  return `${route.shortName ?? route.longName ?? route.routePatternId} · ${route.mode}`
+}
+
+function createStopHoverPopupContent({
+  name,
+  fastestSeconds,
+  routeLabels,
+  routeCount,
+}: {
+  name: string
+  fastestSeconds: number | null
+  routeLabels: string | null
+  routeCount: number | null
+}): HTMLDivElement {
+  const wrapper = document.createElement('div')
+  wrapper.className = 'map-popup stop-hover-popup'
+
+  const title = document.createElement('strong')
+  title.textContent = name
+  wrapper.append(title)
+
+  const fastest = document.createElement('span')
+  fastest.textContent = `Schnellste Verbindung: ${minutes(fastestSeconds)}`
+  wrapper.append(fastest)
+
+  const routeText = document.createElement('span')
+  routeText.textContent = `Linie / Route: ${routeSummaryText(routeLabels, routeCount)}`
+  wrapper.append(routeText)
+
+  return wrapper
 }
 
 function MetricCard({
@@ -291,32 +514,118 @@ function MetricCard({
   )
 }
 
+function RealtimeItineraryBlock({
+  title,
+  response,
+  loading,
+  error,
+  maxAlternatives,
+  emptyText,
+}: {
+  title?: string
+  response: ApiItineraryResponse | null
+  loading?: boolean
+  error?: string | null
+  maxAlternatives: number
+  emptyText: string
+}) {
+  const alternatives = response?.alternatives.slice(0, maxAlternatives) ?? []
+
+  return (
+    <div className="api-itinerary-block">
+      {title ? <h3>{title}</h3> : null}
+      {loading ? <p className="api-inline-status">Verbindung wird geladen...</p> : null}
+      {!loading && error ? <p className="api-inline-error">{error}</p> : null}
+      {!loading && !error && alternatives.length === 0 ? <p>{emptyText}</p> : null}
+      {!loading && !error && alternatives.length > 0 ? (
+        <ol className="api-itinerary-alternatives">
+          {alternatives.map((itinerary, index) => (
+            <li key={`${itinerary.provider}-${itinerary.actualFirstDepartureAt ?? index}`}>
+              <ItineraryAlternative itinerary={itinerary} showRank={alternatives.length > 1} index={index} />
+            </li>
+          ))}
+        </ol>
+      ) : null}
+    </div>
+  )
+}
+
+function ItineraryAlternative({
+  itinerary,
+  showRank,
+  index,
+}: {
+  itinerary: ApiItinerary
+  showRank: boolean
+  index: number
+}) {
+  return (
+    <>
+      {showRank ? <h4>Alternative {index + 1}</h4> : null}
+      <div className="api-itinerary-summary">
+        <span>Wunsch: {timeLabel(itinerary.requestedDepartureAt)}</span>
+        <span>Erste Abfahrt: {timeLabel(itinerary.actualFirstDepartureAt)}</span>
+        <span>Ankunft: {timeLabel(itinerary.arrivalAt)}</span>
+        <span>Dauer: {compactMinutes(itinerary.totalDurationSeconds)}</span>
+      </div>
+      <ol className="api-leg-list">
+        {itinerary.legs.map((leg) => (
+          <li key={leg.sequence} className={leg.cancelled ? 'cancelled' : undefined}>
+            <Route size={14} />
+            <span>
+              <strong>{legLabel(leg)}</strong>
+              {leg.fromName} → {leg.toName} · {compactMinutes(leg.durationSeconds)}
+              <small>
+                {timeLabel(leg.departureAt)}-{timeLabel(leg.arrivalAt)}
+                {leg.platformFrom ? ` · Gleis ${leg.platformFrom}` : ''}
+                {leg.departureDelaySeconds !== undefined ? ` · ${delayLabel(leg.departureDelaySeconds)}` : ''}
+                {leg.cancelled ? ' · fällt aus' : ''}
+              </small>
+              {leg.remarks?.length ? <em>{leg.remarks.slice(0, 3).join(' · ')}</em> : null}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </>
+  )
+}
+
+function legLabel(leg: ApiItineraryLeg): string {
+  if (leg.legType === 'transit') {
+    return [leg.routeName, leg.headsign ? `Richtung ${leg.headsign}` : null].filter(Boolean).join(' · ') || 'Transit'
+  }
+
+  return leg.legType
+}
+
 function MapLibreCanvas({
   selectedStop,
   visibleStops,
   mapBaseLayer,
   tileModes,
-  showRoutePatterns,
-  showApproximateRoutes,
   showResidentialRegions,
   residentialRadiusMeters,
+  profile,
   onSelect,
+  onTileLoadingChange,
 }: {
   selectedStop: ApiStopDetails | null
   visibleStops: ApiStopSearchResult[]
   mapBaseLayer: MapBaseLayer
   tileModes: string[]
-  showRoutePatterns: boolean
-  showApproximateRoutes: boolean
   showResidentialRegions: boolean
   residentialRadiusMeters: number
+  profile: string
   onSelect: (publicId: string) => void
+  onTileLoadingChange: (isLoading: boolean) => void
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<Map | null>(null)
-  const markersRef = useRef<maplibregl.Marker[]>([])
   const initialTileModesRef = useRef(tileModes)
+  const hoverPopupRef = useRef<maplibregl.Popup | null>(null)
+  const currentHoverPublicIdRef = useRef<string | null>(null)
   const [mapReady, setMapReady] = useState(false)
+  const [zoomLevel, setZoomLevel] = useState(8.4)
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -330,9 +639,16 @@ function MapLibreCanvas({
       zoom: 8.4,
       attributionControl: {},
     })
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right')
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left')
+    map.on('zoom', () => {
+      setZoomLevel(Number(map.getZoom().toFixed(1)))
+    })
+    map.on('idle', () => {
+      onTileLoadingChange(false)
+    })
     map.on('load', () => {
-      addTransitTileLayers(map, initialTileModesRef.current)
+      addTransitTileLayers(map, initialTileModesRef.current, profile)
+      applyRouteLayerState(map)
       map.on('click', 'regionfinder-stops-symbol', (event) => {
         const publicId = event.features?.[0]?.properties?.public_id
 
@@ -340,11 +656,58 @@ function MapLibreCanvas({
           onSelect(publicId)
         }
       })
-      map.on('mouseenter', 'regionfinder-stops-symbol', () => {
+      const showStopHoverPopup = (event: maplibregl.MapLayerMouseEvent) => {
+        const feature = event.features?.[0]
+        const publicId = feature?.properties?.public_id
+        const fallbackName = feature?.properties?.name
+
+        if (typeof publicId !== 'string' || publicId.length === 0) {
+          return
+        }
+
+        if (currentHoverPublicIdRef.current === publicId) {
+          hoverPopupRef.current?.setLngLat(event.lngLat)
+          return
+        }
+
+        currentHoverPublicIdRef.current = publicId
+        const popup =
+          hoverPopupRef.current ??
+          new maplibregl.Popup({
+            closeButton: false,
+            closeOnClick: false,
+            offset: 12,
+            className: 'stop-hover-map-popup',
+          })
+        hoverPopupRef.current = popup
+        const name = typeof fallbackName === 'string' ? fallbackName : 'StopPlace'
+        const fastestSeconds = numericFeatureProperty(feature?.properties?.fastest_seconds)
+        const routeLabels = stringFeatureProperty(feature?.properties?.route_labels)
+        const routeCount = numericFeatureProperty(feature?.properties?.route_count)
+
+        popup
+          .setLngLat(event.lngLat)
+          .setDOMContent(
+            createStopHoverPopupContent({
+              name,
+              fastestSeconds,
+              routeLabels,
+              routeCount,
+            }),
+          )
+          .addTo(map)
+      }
+      map.on('mouseenter', 'regionfinder-stops-symbol', (event) => {
         map.getCanvas().style.cursor = 'pointer'
+        showStopHoverPopup(event)
+      })
+      map.on('mousemove', 'regionfinder-stops-symbol', (event) => {
+        showStopHoverPopup(event)
       })
       map.on('mouseleave', 'regionfinder-stops-symbol', () => {
         map.getCanvas().style.cursor = ''
+        currentHoverPublicIdRef.current = null
+        hoverPopupRef.current?.remove()
       })
       map.addSource('regionfinder-residential-radius', {
         type: 'geojson',
@@ -374,10 +737,11 @@ function MapLibreCanvas({
     mapRef.current = map
 
     return () => {
+      hoverPopupRef.current?.remove()
       map.remove()
       mapRef.current = null
     }
-  }, [onSelect])
+  }, [onSelect, onTileLoadingChange, profile])
 
   useEffect(() => {
     const map = mapRef.current
@@ -386,15 +750,12 @@ function MapLibreCanvas({
       return
     }
 
+    onTileLoadingChange(true)
     removeTransitTileLayers(map)
-    addTransitTileLayers(map, tileModes)
-    map.setLayoutProperty('regionfinder-routes-line', 'visibility', showRoutePatterns ? 'visible' : 'none')
-    map.setFilter(
-      'regionfinder-routes-line',
-      showApproximateRoutes ? null : ['!=', ['get', 'geometry_quality'], 'stop_sequence_approximation'],
-    )
+    addTransitTileLayers(map, tileModes, profile)
+    applyRouteLayerState(map)
     map.triggerRepaint()
-  }, [mapReady, showApproximateRoutes, showRoutePatterns, tileModes])
+  }, [mapReady, onTileLoadingChange, profile, tileModes])
 
   useEffect(() => {
     const map = mapRef.current
@@ -405,37 +766,20 @@ function MapLibreCanvas({
 
     map.setLayoutProperty('street-base', 'visibility', mapBaseLayer === 'street' ? 'visible' : 'none')
     map.setLayoutProperty('satellite-base', 'visibility', mapBaseLayer === 'satellite' ? 'visible' : 'none')
-    map.setLayoutProperty('satellite-labels', 'visibility', mapBaseLayer === 'satellite' ? 'visible' : 'none')
   }, [mapBaseLayer, mapReady])
 
   useEffect(() => {
-    markersRef.current.forEach((marker) => marker.remove())
-    markersRef.current = []
     const map = mapRef.current
 
-    if (!map) {
+    if (!map || !selectedStop) {
       return
     }
 
-    const markerStops = selectedStop ? [selectedStop] : Array.isArray(visibleStops) ? visibleStops : []
-    for (const stop of markerStops) {
-      const marker = new maplibregl.Marker({
-        color: stop.modes.includes('BUS') && stop.modes.length === 1 ? '#c2410c' : '#0f766e',
-      })
-        .setLngLat([stop.coordinate.lon, stop.coordinate.lat])
-        .setPopup(new maplibregl.Popup().setText(stop.name))
-        .addTo(map)
-      marker.getElement().addEventListener('click', () => onSelect(stop.publicId))
-      markersRef.current.push(marker)
-    }
-
-    if (selectedStop) {
-      map.easeTo({
-        center: [selectedStop.coordinate.lon, selectedStop.coordinate.lat],
-        zoom: Math.max(map.getZoom(), 10),
-      })
-    }
-  }, [onSelect, selectedStop, visibleStops])
+    map.easeTo({
+      center: [selectedStop.coordinate.lon, selectedStop.coordinate.lat],
+      zoom: Math.max(map.getZoom(), 10),
+    })
+  }, [selectedStop])
 
   useEffect(() => {
     const map = mapRef.current
@@ -444,12 +788,9 @@ function MapLibreCanvas({
       return
     }
 
-    map.setLayoutProperty('regionfinder-routes-line', 'visibility', showRoutePatterns ? 'visible' : 'none')
-    map.setFilter(
-      'regionfinder-routes-line',
-      showApproximateRoutes ? null : ['!=', ['get', 'geometry_quality'], 'stop_sequence_approximation'],
-    )
-  }, [mapReady, showApproximateRoutes, showRoutePatterns])
+    applyRouteLayerState(map)
+    onTileLoadingChange(true)
+  }, [mapReady, onTileLoadingChange])
 
   useEffect(() => {
     const map = mapRef.current
@@ -477,7 +818,14 @@ function MapLibreCanvas({
     source.setData(collection)
   }, [mapReady, residentialRadiusMeters, selectedStop, showResidentialRegions, visibleStops])
 
-  return <div ref={containerRef} className="maplibre-map" aria-label="API-basierte MapLibre-Karte" />
+  return (
+    <div className="maplibre-map-shell">
+      <div ref={containerRef} className="maplibre-map" aria-label="API-basierte MapLibre-Karte" />
+      <div className="map-zoom-level" aria-live="polite">
+        Zoom {zoomLevel.toFixed(1)}
+      </div>
+    </div>
+  )
 }
 
 function ApiApp() {
@@ -487,7 +835,11 @@ function ApiApp() {
   const [selectedPublicId, setSelectedPublicId] = useState<string | null>(null)
   const [selectedStop, setSelectedStop] = useState<ApiStopDetails | null>(null)
   const [metrics, setMetrics] = useState<ApiMetrics | null>(null)
-  const [itineraries, setItineraries] = useState<ApiItineraryResponse | null>(null)
+  const [realtimeItineraries, setRealtimeItineraries] = useState<RealtimeItineraryState>({
+    status: 'idle',
+    response: null,
+    error: null,
+  })
   const [status, setStatus] = useState('API wird geladen')
   const [departureTime, setDepartureTime] = useState('08:00')
   const profile = defaultProfile
@@ -496,11 +848,11 @@ function ApiApp() {
   const [maxTransfers, setMaxTransfers] = useState(2)
   const [showUnreachable, setShowUnreachable] = useState(true)
   const [mapBaseLayer, setMapBaseLayer] = useState<MapBaseLayer>('street')
-  const [showRoutePatterns, setShowRoutePatterns] = useState(true)
-  const [showApproximateRoutes, setShowApproximateRoutes] = useState(false)
   const [showResidentialRegions, setShowResidentialRegions] = useState(false)
   const [residentialRadiusMinutes, setResidentialRadiusMinutes] = useState(15)
   const [resultMetrics, setResultMetrics] = useState<Record<string, ApiMetrics | null>>({})
+  const [mapUpdateState, setMapUpdateState] = useState<MapUpdateState>('idle')
+  const mapUpdateTimerRef = useRef<number | null>(null)
 
   const allowedModes = useMemo(() => modesForLayers(activeModeLayers), [activeModeLayers])
   const tileModes = useMemo(() => (activeModeLayers.length === 0 ? ['__none__'] : allowedModes), [activeModeLayers.length, allowedModes])
@@ -531,6 +883,37 @@ function ApiApp() {
       }),
     [allowedModes, maxTransfers, resultMetrics, searchResults, selectedTimeWindows, showUnreachable],
   )
+
+  const handleMapTileLoadingChange = useCallback((isLoading: boolean) => {
+    if (mapUpdateTimerRef.current !== null) {
+      window.clearTimeout(mapUpdateTimerRef.current)
+      mapUpdateTimerRef.current = null
+    }
+
+    if (isLoading) {
+      setMapUpdateState('loading')
+      mapUpdateTimerRef.current = window.setTimeout(() => {
+        setMapUpdateState('complete')
+        mapUpdateTimerRef.current = window.setTimeout(() => {
+          setMapUpdateState('idle')
+          mapUpdateTimerRef.current = null
+        }, 1400)
+      }, 10_000)
+      return
+    }
+
+    setMapUpdateState('complete')
+    mapUpdateTimerRef.current = window.setTimeout(() => {
+      setMapUpdateState('idle')
+      mapUpdateTimerRef.current = null
+    }, 1400)
+  }, [])
+
+  useEffect(() => () => {
+    if (mapUpdateTimerRef.current !== null) {
+      window.clearTimeout(mapUpdateTimerRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -597,22 +980,39 @@ function ApiApp() {
 
     async function loadDetails() {
       setStatus('Details werden geladen')
+      setRealtimeItineraries({ status: 'loading', response: null, error: null })
+      const realtimeRequest = fetchRealtimeItineraries(publicId, displayDate(), departureTime, profile)
+        .then((response) => ({ response, error: null }))
+        .catch((error: unknown) => ({
+          response: null,
+          error: realtimeErrorMessage(error),
+        }))
+
       try {
-        const [details, currentMetrics, currentItineraries] = await Promise.all([
+        const [details, currentMetrics] = await Promise.all([
           fetchStopDetails(publicId),
           fetchStopMetrics(publicId, profile).catch(() => null),
-          fetchItineraries(publicId, displayDate(), departureTime, profile).catch(() => null),
         ])
 
         if (!cancelled) {
           setSelectedStop(details)
           setMetrics(currentMetrics)
-          setItineraries(currentItineraries)
           setStatus('bereit')
+        }
+
+        const realtimeResult = await realtimeRequest
+
+        if (!cancelled) {
+          setRealtimeItineraries(
+            realtimeResult.response
+              ? { status: 'ready', response: realtimeResult.response, error: null }
+              : { status: 'error', response: null, error: realtimeResult.error },
+          )
         }
       } catch (error) {
         if (!cancelled) {
           setStatus(error instanceof Error ? error.message : String(error))
+          setRealtimeItineraries({ status: 'idle', response: null, error: null })
         }
       }
     }
@@ -624,8 +1024,10 @@ function ApiApp() {
     }
   }, [departureTime, profile, selectedPublicId])
 
-  const activeItinerary = itineraries?.alternatives[0] ?? null
-  const selectedRoutes = useMemo(() => selectedStop?.servedRoutes.slice(0, 12) ?? [], [selectedStop])
+  const selectedRouteLabels = useMemo(
+    () => Array.from(new Set(selectedStop?.servedRoutes.map(stopRouteLabel) ?? [])).slice(0, 12),
+    [selectedStop],
+  )
 
   async function submitSearch() {
     setStatus('Suche läuft')
@@ -650,8 +1052,15 @@ function ApiApp() {
     )
   }
 
+  function closeDetailPanel() {
+    setSelectedPublicId(null)
+    setSelectedStop(null)
+    setMetrics(null)
+    setRealtimeItineraries({ status: 'idle', response: null, error: null })
+  }
+
   return (
-    <main className="api-shell">
+    <main className={selectedStop ? 'api-shell detail-open' : 'api-shell'}>
       <aside className="api-sidebar" aria-label="API-Einstellungen">
         <div className="brand-row">
           <div className="brand-mark" aria-hidden="true">
@@ -724,22 +1133,6 @@ function ApiApp() {
                 <span>{definition.label}</span>
               </label>
             ))}
-            <label className="layer-toggle">
-              <input
-                type="checkbox"
-                checked={showRoutePatterns}
-                onChange={(event) => setShowRoutePatterns(event.target.checked)}
-              />
-              <span>Bahninfrastruktur / Route Patterns</span>
-            </label>
-            <label className="layer-toggle">
-              <input
-                type="checkbox"
-                checked={showApproximateRoutes}
-                onChange={(event) => setShowApproximateRoutes(event.target.checked)}
-              />
-              <span>approximierte Geometrien</span>
-            </label>
           </div>
         </div>
 
@@ -781,7 +1174,7 @@ function ApiApp() {
                 key={window}
                 type="button"
                 className={selectedTimeWindows.includes(window) ? 'window-chip active' : 'window-chip'}
-                style={{ '--chip-color': window <= 45 ? '#0f766e' : window <= 75 ? '#c2410c' : '#7c2d12' } as CSSProperties}
+                style={{ '--chip-color': travelTimeWindowColors[window] } as CSSProperties}
                 onClick={() => toggleTravelTimeWindow(window)}
               >
                 {window}
@@ -855,97 +1248,85 @@ function ApiApp() {
           visibleStops={visibleSearchResults}
           mapBaseLayer={mapBaseLayer}
           tileModes={tileModes}
-          showRoutePatterns={showRoutePatterns}
-          showApproximateRoutes={showApproximateRoutes}
           showResidentialRegions={showResidentialRegions}
           residentialRadiusMeters={residentialRadiusMeters}
+          profile={profile}
           onSelect={setSelectedPublicId}
+          onTileLoadingChange={handleMapTileLoadingChange}
         />
+        <div className={`map-update-status ${mapUpdateState}`} role="status" aria-live="polite">
+          {mapUpdateState === 'loading' ? 'Karte wird aktualisiert...' : 'Karte aktualisiert'}
+        </div>
         <div className="api-legend">
-          <span><i className="legend-rail" /> Bahn/Umstieg</span>
-          <span><i className="legend-bus" /> Bus-only</span>
-          <span><i className="legend-approx" /> approximierte Geometrie</span>
+          <span><i className="legend-stop-regional" /> Regional/Fern</span>
+          <span><i className="legend-stop-urban" /> S/U/AKN</span>
+          <span><i className="legend-stop-bus" /> Bus-only</span>
+          <span><i className="legend-route-bus" /> Busroute</span>
         </div>
       </section>
 
-      <aside className="api-detail-panel" aria-label="StopPlace-Details">
-        {snapshot ? (
-          <section className="api-panel-section">
-            <h2>Datenstand</h2>
-            <p>{snapshot.source.name} · {snapshot.publicId}</p>
-            <p>{snapshot.validFrom ?? '?'} bis {snapshot.validUntil ?? '?'}</p>
-            <p>{snapshot.source.attribution ?? 'Attribution aus Snapshot-Metadaten erforderlich'}</p>
-          </section>
-        ) : null}
+      {selectedStop ? (
+        <aside className="api-detail-panel" aria-label="StopPlace-Details">
+          <div className="api-detail-header">
+            <h2 className="api-detail-title">{selectedStop.name}</h2>
+            <button type="button" className="api-detail-close" onClick={closeDetailPanel} aria-label="Detailpanel schließen">
+              <X size={16} />
+            </button>
+          </div>
 
-        {selectedStop ? (
           <>
-            <section className="api-panel-section">
-              <h2>{selectedStop.name}</h2>
-              <p>{selectedStop.municipalityName ?? 'Gemeinde unbekannt'} · {selectedStop.stateCode ?? 'Bundesland unbekannt'}</p>
-              <p>DHID: {selectedStop.dhid ?? 'fehlt'} · Qualität: {selectedStop.identityQuality}</p>
-              <p>{selectedStop.modes.join(', ')}</p>
-            </section>
-
             <section className="api-panel-section">
               <h2>Fahrzeit nach Hamburg Hbf</h2>
               <div className="api-metric-grid">
                 <MetricCard label="Schnellste Gesamtreisezeit" value={minutes(metrics?.fastestSeconds ?? null)} title={metricTooltip('fastest')} />
-                <MetricCard label="Typische Fahrzeit, Median" value={minutes(metrics?.medianSeconds ?? null)} title={metricTooltip('median')} />
-                <MetricCard label="Durchschnittliche Gesamtreisezeit" value={minutes(metrics?.averageSeconds ?? null)} title={metricTooltip('average')} />
-                <MetricCard label="P90" value={minutes(metrics?.p90Seconds ?? null)} title={metricTooltip('p90')} />
-                <MetricCard label="Erreichbarkeitsquote" value={percent(metrics?.reachabilityRatio ?? null)} />
-                <MetricCard label="Direktverbindungen" value={percent(metrics?.directConnectionRatio ?? null)} />
-                <MetricCard label="Typische Umstiege" value={metrics?.medianTransfers === null || metrics?.medianTransfers === undefined ? 'n/a' : String(metrics.medianTransfers)} />
-                <MetricCard label="Längste Bedienungslücke" value={minutes(metrics?.maxServiceGapSeconds ?? null)} />
+                <MetricCard label="Direktverbindungen / Wochentag" value={directConnectionsPerWeekday(metrics)} />
               </div>
             </section>
 
             <section className="api-panel-section">
-              <h2>Konkrete Verbindung</h2>
-              {activeItinerary ? (
-                <>
-                  <div className="api-itinerary-summary">
-                    <span>Wunsch: {activeItinerary.requestedDepartureAt.slice(11, 16)}</span>
-                    <span>Erste Abfahrt: {activeItinerary.actualFirstDepartureAt?.slice(11, 16) ?? 'n/a'}</span>
-                    <span>Ankunft: {activeItinerary.arrivalAt?.slice(11, 16) ?? 'n/a'}</span>
-                    <span>Dauer: {minutes(activeItinerary.totalDurationSeconds)}</span>
-                  </div>
-                  <ol className="api-leg-list">
-                    {activeItinerary.legs.map((leg) => (
-                      <li key={leg.sequence}>
-                        <Route size={14} />
-                        <span>
-                          <strong>{leg.legType === 'transit' ? leg.routeName : leg.legType}</strong>
-                          {leg.fromName} → {leg.toName} · {minutes(leg.durationSeconds)}
-                        </span>
-                      </li>
-                    ))}
-                  </ol>
-                </>
-              ) : (
-                <p>Keine lokale Verbindung für diese Auswahl vorhanden.</p>
-              )}
+              <h2>DB Echtzeit</h2>
+              <RealtimeItineraryBlock
+                response={realtimeItineraries.response}
+                loading={realtimeItineraries.status === 'loading'}
+                error={realtimeItineraries.error}
+                maxAlternatives={3}
+                emptyText="Keine DB-Echtzeitverbindung für diese Auswahl vorhanden."
+              />
             </section>
 
             <section className="api-panel-section">
               <h2>Linien</h2>
               <div className="api-route-list">
-                {selectedRoutes.map((route) => (
-                  <span key={route.routePatternId} title={route.geometryQuality}>
-                    {route.shortName ?? route.longName ?? route.routePatternId} · {route.mode}
+                {selectedRouteLabels.map((label) => (
+                  <span key={label}>
+                    {label}
                   </span>
                 ))}
               </div>
             </section>
+
+            <section className="api-panel-section">
+              <h2>Datenstand</h2>
+              {snapshot ? (
+                <>
+                  <p>{snapshot.source.name} · {snapshot.publicId}</p>
+                  <p>{snapshot.validFrom ?? '?'} bis {snapshot.validUntil ?? '?'}</p>
+                  <p>{snapshot.source.attribution ?? 'Attribution aus Snapshot-Metadaten erforderlich'}</p>
+                </>
+              ) : (
+                <p>Datenstand wird geladen</p>
+              )}
+            </section>
+
+            <section className="api-panel-section">
+              <h2>StopPlace-Details</h2>
+              <p>{selectedStop.municipalityName ?? 'Gemeinde unbekannt'} · {selectedStop.stateCode ?? 'Bundesland unbekannt'}</p>
+              <p>DHID: {selectedStop.dhid ?? 'fehlt'} · Qualität: {selectedStop.identityQuality}</p>
+              <p>{selectedStop.modes.join(', ')}</p>
+            </section>
           </>
-        ) : (
-          <div className="empty-state">
-            <Info size={18} />
-            StopPlace suchen oder Marker auswählen.
-          </div>
-        )}
-      </aside>
+        </aside>
+      ) : null}
     </main>
   )
 }

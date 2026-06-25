@@ -6,9 +6,9 @@ Hinweis: Diese Datei beschreibt den Legacy-MVP und bleibt als Referenz erhalten.
 
 Der aktuelle V2-Pfad besteht aus:
 
-- `server/`: Fastify-API für Snapshots, StopPlaces, Metriken, Itineraries, Route Patterns und MVT-Kacheln.
+- `server/`: Fastify-API für Snapshots, StopPlaces, Metriken, lokale Itineraries, DB-Echtzeit-Itineraries, Route Patterns und MVT-Kacheln.
 - `db/migrations/`: PostGIS-Schema, Admin-Grenzen, Snapshot-Aktivierung.
-- `pipeline/`: Produktionsquellen, DELFI-Import, MOTIS/R5-Orchestrierung und Metrikberechnung.
+- `pipeline/`: Produktionsquellen, DELFI-Import, MOTIS/R5-Orchestrierung, Metrikberechnung und OSM-Schienenrekonstruktion.
 - `src/ApiApp.tsx`: MapLibre-Frontend.
 - `src/data/api.ts`: API-Client.
 - `src/api/contracts.ts`: gemeinsame Antworttypen.
@@ -17,17 +17,18 @@ Die Karte lädt im API-Modus StopPlaces und Route Patterns ausschließlich als V
 
 - `GET /api/v1/tiles/stops/{z}/{x}/{y}.mvt?modes=...`
 - `GET /api/v1/tiles/routes/{z}/{x}/{y}.mvt?modes=...`
+- `GET /api/v1/tiles/rail-network/{z}/{x}/{y}.mvt`
 
-Die Modusfilter werden serverseitig in PostGIS angewendet. Der Client entfernt und erneuert die MapLibre-Vector-Tile-Sources beim Umschalten der Modi, weil `setTiles()` allein bereits geladene ungefilterte Tiles nicht zuverlässig aus dem Cache entfernt.
+Die Modusfilter werden serverseitig in PostGIS angewendet. Stop-Tiles akzeptieren zusätzlich `profile` und liefern Reisezeit-/Linien-Metadaten für Styling und Hover. Der Client entfernt und erneuert die MapLibre-Vector-Tile-Sources beim Umschalten der Modi, weil `setTiles()` allein bereits geladene ungefilterte Tiles nicht zuverlässig aus dem Cache entfernt.
 
-Route-Pattern-Tiles liefern `route_color`, falls eine echte GTFS-Farbe existiert. MapLibre nutzt diese Farbe bevorzugt und fällt sonst auf Modusfarben zurück. `stop_sequence_approximation` wird gestrichelt, transparenter und standardmäßig ausgeblendet dargestellt.
+Route-Pattern-Tiles liefern `route_color`, falls eine echte GTFS-Farbe existiert. MapLibre nutzt diese Farbe bevorzugt und fällt sonst auf Modusfarben zurück. Die angezeigte Geometrie kommt aus `route_pattern_display_geometries`, sodass hochkonfidente OSM-Schienenrekonstruktionen GTFS-Fallbacks ersetzen können. `stop_sequence_approximation` und niedrigkonfidente Rekonstruktionen werden gestrichelt/transparenter dargestellt; `stop_sequence_approximation` bleibt standardmäßig ausgeblendet.
 
 Basiskarten im API-Modus:
 
-- OpenStreetMap-Straßenkarte.
-- Esri World Imagery als Satellit, plus Esri Reference Labels.
+- CARTO/OSM-Straßenkarte ohne Labels plus CARTO-Ortslabel-Overlay.
+- Esri World Imagery als Satellit plus dasselbe CARTO-Ortslabel-Overlay.
 
-StopPlaces aus MVTs sind anklickbar; der Klick lädt Details über `GET /api/v1/stops/:publicId` und zeigt sie im rechten Panel.
+StopPlaces aus MVTs sind anklickbar; der Klick lädt Details, Metriken und DB-Echtzeitverbindungen. Der Realtime-Endpunkt `GET /api/v1/stops/:publicId/realtime-itineraries` wird serverseitig über `server/realtime/dbTransportRestProvider.ts` bedient und normalisiert externe DB-/bahn.de-Antworten in `ApiItineraryResponse`.
 
 ## Überblick
 

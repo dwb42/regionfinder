@@ -36,6 +36,7 @@ Aktueller Status:
 - Produktionsmetriken kommen aus `motis_one_to_all`.
 - R5/r5py bleibt optionaler Vergleichsweg und ist kein Aktivierungs-Gate.
 - Das API-Frontend nutzt MapLibre, MVT-Kacheln und PostGIS/API statt großer JSON-Dateien.
+- DB-Echtzeitverbindungen werden serverseitig über `/api/v1/stops/:publicId/realtime-itineraries` geladen und im API-Detailpanel als `DB Echtzeit` dargestellt.
 
 ## Frontend-Migration
 
@@ -48,6 +49,9 @@ Aus dem Legacy-Frontend wurden im API-Modus nachgezogen:
 - Wohnregion-Radius.
 - Basiskarten-Umschalter Straße/Satellit.
 - Detailpanel bei Stationsklick.
+- Ortsnamen in beiden Basiskartenmodi über gemeinsames CARTO-Label-Overlay.
+- Reisezeitfensterfarben auch für Stop-Kreise.
+- DB-Echtzeitblock statt des früheren lokalen `Konkrete Verbindung`/`Unser System`-Vergleichs im API-Detailpanel.
 
 Wichtiger Unterschied: Die API-Karte lädt StopPlaces und Route Patterns über MVT-Kacheln. Die Layer-Toggles filtern deshalb serverseitig über `?modes=...`; der Client muss die MapLibre-Sources bei Filterwechseln neu anlegen, um Tile-Cache-Reste zu vermeiden.
 

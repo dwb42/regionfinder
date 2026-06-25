@@ -2,6 +2,7 @@ import cors from '@fastify/cors'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { ZodError } from 'zod'
 import type { RegionfinderRepository } from './db/types'
+import { DbTransportRestProvider, RealtimeProviderError, type RealtimeItineraryProvider } from './realtime/dbTransportRestProvider'
 import {
   itineraryQuerySchema,
   metricsQuerySchema,
@@ -15,6 +16,7 @@ import {
 
 export type BuildAppOptions = {
   repository: RegionfinderRepository
+  realtimeItineraryProvider?: RealtimeItineraryProvider
 }
 
 function notFound(message: string) {
@@ -24,10 +26,34 @@ function notFound(message: string) {
   }
 }
 
+function publicIdAliases(publicId: string): string[] {
+  const aliases = [publicId]
+  const legacyEightDigitMatch = publicId.match(/^(.*:)(1\d{7})$/)
+
+  if (legacyEightDigitMatch) {
+    aliases.push(`${legacyEightDigitMatch[1]}1:${legacyEightDigitMatch[2].slice(1)}`)
+  }
+
+  return Array.from(new Set(aliases))
+}
+
+async function firstResolved<T>(ids: string[], resolve: (publicId: string) => Promise<T | null>): Promise<T | null> {
+  for (const publicId of ids) {
+    const resolved = await resolve(publicId)
+
+    if (resolved) {
+      return resolved
+    }
+  }
+
+  return null
+}
+
 export async function buildApp(options: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({
     logger: true,
   })
+  const realtimeItineraryProvider = options.realtimeItineraryProvider ?? new DbTransportRestProvider()
 
   await app.register(cors, {
     origin: true,
@@ -91,7 +117,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
 
   app.get('/api/v1/stops/:publicId', async (request, reply) => {
     const params = publicIdParamsSchema.parse(request.params)
-    const details = await options.repository.stopDetails(params.publicId)
+    const details = await firstResolved(publicIdAliases(params.publicId), (publicId) => options.repository.stopDetails(publicId))
 
     if (!details) {
       return reply.code(404).send(notFound(`Unknown StopPlace ${params.publicId}`))
@@ -103,7 +129,9 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   app.get('/api/v1/stops/:publicId/metrics', async (request, reply) => {
     const params = publicIdParamsSchema.parse(request.params)
     const query = metricsQuerySchema.parse(request.query)
-    const metrics = await options.repository.stopMetrics(params.publicId, query.profile, query.snapshot)
+    const metrics = await firstResolved(publicIdAliases(params.publicId), (publicId) =>
+      options.repository.stopMetrics(publicId, query.profile, query.snapshot),
+    )
 
     if (!metrics) {
       return reply.code(404).send(notFound(`No metrics for ${params.publicId}`))
@@ -129,6 +157,42 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     return response
   })
 
+  app.get('/api/v1/stops/:publicId/realtime-itineraries', async (request, reply) => {
+    const params = publicIdParamsSchema.parse(request.params)
+    const query = itineraryQuerySchema.parse(request.query)
+    const [stop, snapshot] = await Promise.all([
+      firstResolved(publicIdAliases(params.publicId), (publicId) => options.repository.stopDetails(publicId)),
+      options.repository.currentSnapshot(),
+    ])
+
+    if (!stop) {
+      return reply.code(404).send(notFound(`Unknown StopPlace ${params.publicId}`))
+    }
+
+    if (!snapshot) {
+      return reply.code(404).send(notFound('No active snapshot'))
+    }
+
+    try {
+      return await realtimeItineraryProvider.plan({
+        stop,
+        date: query.date,
+        time: query.time,
+        profile: query.profile,
+        snapshotId: snapshot.publicId,
+      })
+    } catch (error) {
+      if (error instanceof RealtimeProviderError) {
+        return reply.code(error.statusCode).send({
+          error: error.reason,
+          message: error.message,
+        })
+      }
+
+      throw error
+    }
+  })
+
   app.get('/api/v1/route-patterns/:id', async (request, reply) => {
     const params = routePatternParamsSchema.parse(request.params)
     const pattern = await options.repository.routePattern(params.id)
@@ -144,11 +208,11 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     const params = tileParamsSchema.parse(request.params)
     const query = tileQuerySchema.parse(request.query)
     const modes = splitCsv(query.modes)
-    const tile = await options.repository.stopTile(params.z, params.x, params.y, modes)
+    const tile = await options.repository.stopTile(params.z, params.x, params.y, modes, query.profile)
 
     reply.header('Content-Type', 'application/vnd.mapbox-vector-tile')
     reply.header('Cache-Control', 'public, max-age=300')
-    reply.header('ETag', `"stops-${params.z}-${params.x}-${params.y}-${modes.join('-')}"`)
+    reply.header('ETag', `"stops-${params.z}-${params.x}-${params.y}-${modes.join('-')}-${query.profile}"`)
 
     return tile ?? Buffer.alloc(0)
   })
@@ -162,6 +226,17 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     reply.header('Content-Type', 'application/vnd.mapbox-vector-tile')
     reply.header('Cache-Control', 'public, max-age=300')
     reply.header('ETag', `"routes-${params.z}-${params.x}-${params.y}-${modes.join('-')}"`)
+
+    return tile ?? Buffer.alloc(0)
+  })
+
+  app.get('/api/v1/tiles/rail-network/:z/:x/:y.mvt', async (request, reply) => {
+    const params = tileParamsSchema.parse(request.params)
+    const tile = await options.repository.railNetworkTile(params.z, params.x, params.y)
+
+    reply.header('Content-Type', 'application/vnd.mapbox-vector-tile')
+    reply.header('Cache-Control', 'public, max-age=300')
+    reply.header('ETag', `"rail-network-${params.z}-${params.x}-${params.y}"`)
 
     return tile ?? Buffer.alloc(0)
   })
