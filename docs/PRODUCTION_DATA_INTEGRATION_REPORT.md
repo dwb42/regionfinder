@@ -222,10 +222,10 @@ Gepruefte Endpunkte:
 MapLibre-/API-Modus wurde mit Vite verifiziert:
 
 ```bash
-VITE_REGIONFINDER_DATA_MODE=api VITE_REGIONFINDER_API_BASE_URL=http://127.0.0.1:4001 npm run dev -- --host 127.0.0.1 --port 5176
+VITE_REGIONFINDER_API_BASE_URL=http://127.0.0.1:4001 npm run dev -- --host 127.0.0.1 --port 5176
 ```
 
-Der ausgelieferte Vite-Code enthaelt `VITE_REGIONFINDER_DATA_MODE="api"` und `VITE_REGIONFINDER_API_BASE_URL="http://127.0.0.1:4001"`.
+Der ausgelieferte Vite-Code enthaelt `VITE_REGIONFINDER_API_BASE_URL="http://127.0.0.1:4001"`.
 
 Nachgezogene UI-/Kartenfunktionen:
 
@@ -242,7 +242,7 @@ Nachgezogene UI-/Kartenfunktionen:
 - Das Detailpanel zeigt `DB Echtzeit` als Verbindungsabschnitt und rendert bis zu drei Live-Alternativen mit Plattformen, Verspätungen, Ausfallstatus und Remarks.
 - Reisezeitfenster und Stop-Kreise nutzen dieselbe 30/45/60/75/90-Farbskala.
 - Reisezeitfenster filtern sichtbare MVT-StopPlaces anhand von `fastest_seconds`.
-- Wohnregionen sind geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele, mit Legacy-Faktor `0,75 km/min` und 5/10/15/20-Minuten-Schaltflächen.
+- Wohnregionen sind geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele, mit Schätzfaktor `0,75 km/min` und 5/10/15/20-Minuten-Schaltflächen.
 - Playwright ist als Dev-Dependency verfügbar und wurde für einen lokalen UI-Smoke-Test gegen API `4001` und Frontend `5176` genutzt.
 
 Beispiel-Busziel nach dem aktuellen Profil:
@@ -306,7 +306,7 @@ Die regionale Enrichment-Recherche ist dokumentiert in `docs/REGIONAL_FEED_COMPA
 
 Ergebnis:
 
-- HVV, VBN/Connect, VVW und Mobilithek wurden als offizielle Ausgangspunkte untersucht.
+- VBN/Connect, VVW und Mobilithek wurden als offizielle Ausgangspunkte untersucht.
 - Es wurde keine regionale GTFS-Datei ungeprueft als zweite Fahrplanwahrheit importiert.
 - VVW/Mecklenburg-Vorpommern ist fuer den regionalen Feedzugang registrierungs- beziehungsweise freigabepflichtig.
 - Spaetere regionale Nutzung bleibt auf deterministisches Enrichment begrenzt, solange keine Trip-Deduplizierung implementiert und getestet ist.

@@ -45,10 +45,10 @@ Stand: 2026-06-24
 ### Frontend
 
 - `src/ApiApp.tsx` ist ein MapLibre-API-Modus.
-- `src/App.tsx` schaltet per `VITE_REGIONFINDER_DATA_MODE=api|legacy`.
-- Der API-Modus lädt keine HVV-Großdateien, sondern Snapshot, Suche, Details, Metriken, Itineraries und MVT-Tiles.
+- `src/App.tsx` startet den API-/MapLibre-Pfad.
+- Der API-Modus lädt keine großen Fahrplandateien im Browser, sondern Snapshot, Suche, Details, Metriken, Itineraries und MVT-Tiles.
 
-Aktueller Stand: `src/App.tsx` ist nur noch ein lazy Modus-Switch mit API-Default. Legacy liegt in `src/legacy/LegacyApp.tsx`; API-Hooks, MapLibre-Canvas, Layer und Formatter liegen unter `src/apiApp/`.
+Aktueller Stand: `src/App.tsx` startet `src/ApiApp.tsx`; API-Hooks, MapLibre-Canvas, Layer und Formatter liegen unter `src/apiApp/`.
 
 ### Tests
 
@@ -75,7 +75,7 @@ Aktueller Stand: `src/App.tsx` ist nur noch ein lazy Modus-Switch mit API-Defaul
 ## Datenquellenstatus
 
 - Tatsächlich validiert: synthetischer GTFS-Feed unter `fixtures/gtfs/synthetic`.
-- Historisch über Legacy vorhanden: HVV-Artefakte unter `public/data/hvv/`. Aktuell sind diese Artefakte lokal generierbar, aber nicht versioniert und werden durch den Produktionsbuild-Guard aus `dist/` herausgehalten.
+- Historische Browserartefakte sind entfernt; der produktive Pfad nutzt DELFI/PostGIS/API.
 - Nicht vorhanden: DELFI-Vollsnapshot, ZHV-Datei, OSM-PBF, produktive Verwaltungsgrenzen.
 - Implementierte Adapter/Schnittstellen: `DELFI_GTFS_PATH`, `ZHV_STOPS_PATH`, `OSM_PBF_PATH`, `ADMIN_BOUNDARIES_PATH`.
 - Datenmengen synthetisch: 8 Stops, 2 Routes, 5 Trips, 12 Stop-Times, 2 Kalenderdienste, 3 Calendar-Date-Ausnahmen/Einträge, 8 Shape-Punkte.
@@ -200,7 +200,7 @@ Nicht implementierte optionale Funktionen:
 Bekannte Datenqualitätsprobleme:
 
 - Fixture enthält absichtlich fehlende DHID und fehlende Bus-Shape.
-- Legacy-HVV-StopPlaces bleiben heuristisch und sind nicht kanonisch migriert.
+- Historische StopPlace-Artefakte wurden nicht kanonisch migriert; der produktive Pfad nutzt DELFI/PostGIS-StopPlaces.
 
 ## Git-Status
 

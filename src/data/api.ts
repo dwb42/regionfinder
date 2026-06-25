@@ -1,4 +1,5 @@
 import type {
+  ApiDrivingRouteResponse,
   ApiItineraryResponse,
   ApiMetrics,
   ApiRoutePattern,
@@ -103,6 +104,10 @@ export function fetchRealtimeItineraries(
   const params = new URLSearchParams({ date, time, profile })
 
   return fetchApi<ApiItineraryResponse>(`/api/v1/stops/${encodeURIComponent(publicId)}/realtime-itineraries?${params}`)
+}
+
+export function fetchDrivingRoute(publicId: string): Promise<ApiDrivingRouteResponse> {
+  return fetchApi<ApiDrivingRouteResponse>(`/api/v1/stops/${encodeURIComponent(publicId)}/driving-route`)
 }
 
 export function fetchRoutePattern(id: string): Promise<ApiRoutePattern> {

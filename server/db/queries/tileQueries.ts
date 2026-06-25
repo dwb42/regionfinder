@@ -12,7 +12,8 @@ export async function stopTile(
     db,
     `
     WITH bounds AS (
-      SELECT ST_TileEnvelope($1, $2, $3) AS geom
+      SELECT ST_TileEnvelope($1, $2, $3) AS geom,
+             ST_Transform(ST_TileEnvelope($1, $2, $3, margin => 96.0 / 2048.0), 4326) AS query_wgs84
     ),
     active_snapshot AS (
       SELECT id
@@ -38,7 +39,8 @@ export async function stopTile(
       FROM stop_places sp
       JOIN active_snapshot snap ON snap.id = sp.snapshot_id
       CROSS JOIN bounds
-      WHERE ST_Intersects(ST_Transform(sp.geometry, 3857), bounds.geom)
+      WHERE sp.geometry && bounds.query_wgs84
+        AND ST_Intersects(sp.geometry, bounds.query_wgs84)
         AND sp.is_display_stop = true
         AND (cardinality($4::text[]) = 0 OR sp.modes && $4::text[])
     ),
@@ -58,7 +60,7 @@ export async function stopTile(
       JOIN route_pattern_stops rps ON rps.snapshot_id = vs.snapshot_id AND rps.stop_place_id = vs.id
       JOIN route_patterns rp ON rp.id = rps.route_pattern_id AND rp.snapshot_id = rps.snapshot_id
       JOIN routes r ON r.id = rp.route_id AND r.snapshot_id = rp.snapshot_id
-      WHERE $1 >= 10
+      WHERE $1 >= 9
         AND rp.is_active = true
     ),
     ranked_route_labels AS (
@@ -85,14 +87,14 @@ export async function stopTile(
              COALESCE(route_summary.route_count, 0) AS route_count,
              vs.is_bus_only,
              vs.stop_priority,
-             ST_AsMVTGeom(ST_Transform(vs.geometry, 3857), bounds.geom) AS geom
+             ST_AsMVTGeom(ST_Transform(vs.geometry, 3857), bounds.geom, 2048, 96, true) AS geom
       FROM visible_stops vs
       CROSS JOIN bounds
       LEFT JOIN latest_metric_run lmr ON true
       LEFT JOIN od_metrics odm ON odm.metric_run_id = lmr.id AND odm.destination_stop_place_id = vs.id
       LEFT JOIN route_summary ON route_summary.stop_place_id = vs.id
     )
-    SELECT ST_AsMVT(mvtgeom, 'stops', 4096, 'geom') AS tile FROM mvtgeom
+    SELECT ST_AsMVT(mvtgeom, 'stops', 2048, 'geom') AS tile FROM mvtgeom
     `,
     z,
     x,
@@ -102,15 +104,78 @@ export async function stopTile(
   )
 }
 
-export async function routeTile(db: Queryable, z: number, x: number, y: number, modes: string[] = []): Promise<Buffer | null> {
+export async function routeTile(
+  db: Queryable,
+  z: number,
+  x: number,
+  y: number,
+  modes: string[] = [],
+  profile = 'regular_tue_thu',
+): Promise<Buffer | null> {
   return mvtTile(
     db,
     `
     WITH bounds AS (
-      SELECT ST_TileEnvelope($1, $2, $3) AS geom
+      SELECT ST_TileEnvelope($1, $2, $3) AS geom,
+             ST_Transform(ST_TileEnvelope($1, $2, $3, margin => 96.0 / 2048.0), 4326) AS query_wgs84
     ),
-    mvtgeom AS (
+    active_snapshot AS (
+      SELECT id
+      FROM data_snapshots
+      WHERE is_active = true
+      LIMIT 1
+    ),
+    latest_metric_run AS (
+      SELECT mr.id
+      FROM metric_runs mr
+      JOIN active_snapshot snap ON snap.id = mr.snapshot_id
+      WHERE mr.routing_profile_id = $5
+      ORDER BY mr.completed_at DESC NULLS LAST, mr.started_at DESC
+      LIMIT 1
+    ),
+    route_lines AS (
       SELECT rp.id::text,
+             r.short_name,
+             r.mode,
+             CASE
+               WHEN r.color ~ '^#[0-9A-Fa-f]{6}$' THEN r.color
+               WHEN r.color ~ '^[0-9A-Fa-f]{6}$' THEN '#' || r.color
+             ELSE NULL
+             END AS route_color,
+             rp.geometry_quality,
+             rp.geometry_source,
+             NULL::float8 AS match_confidence,
+             NULL::text AS match_status,
+             NULL::integer AS from_fastest_seconds,
+             NULL::integer AS to_fastest_seconds,
+             NULL::float8 AS segment_length_meters,
+             ST_AsMVTGeom(
+               ST_Transform(
+                 CASE
+                   WHEN $1 < 8 THEN ST_SimplifyPreserveTopology(rp.geometry, 0.01)
+                   WHEN $1 < 10 THEN ST_SimplifyPreserveTopology(rp.geometry, 0.003)
+                   ELSE rp.geometry
+                 END,
+                 3857
+               ),
+               bounds.geom,
+               2048,
+               96,
+               true
+             ) AS geom
+      FROM route_patterns rp
+      JOIN routes r ON r.id = rp.route_id AND r.snapshot_id = rp.snapshot_id
+      JOIN active_snapshot snap ON snap.id = rp.snapshot_id
+      CROSS JOIN bounds
+      WHERE $1 >= 9
+        AND rp.geometry IS NOT NULL
+        AND r.mode <> ALL(ARRAY['ICE', 'IC', 'EC', 'RE', 'RB', 'RAIL', 'S', 'AKN', 'U']::text[])
+        AND rp.geometry && bounds.query_wgs84
+        AND ST_Intersects(rp.geometry, bounds.query_wgs84)
+        AND (cardinality($4::text[]) = 0 OR r.mode = ANY($4::text[]))
+    ),
+    rail_segments AS (
+      SELECT rss.route_id::text || ':' || rss.from_stop_place_id::text || ':' || rss.to_stop_place_id::text AS id,
              r.short_name,
              r.mode,
              CASE
@@ -118,36 +183,47 @@ export async function routeTile(db: Queryable, z: number, x: number, y: number, 
                WHEN r.color ~ '^[0-9A-Fa-f]{6}$' THEN '#' || r.color
                ELSE NULL
              END AS route_color,
-             rpd.geometry_quality,
-             rpd.geometry_source,
-             rpd.match_confidence::float8,
-             rpd.match_status,
-             ST_AsMVTGeom(
-               ST_Transform(
-                 CASE
-                   WHEN $1 < 8 THEN ST_SimplifyPreserveTopology(rpd.geometry, 0.01)
-                   WHEN $1 < 10 THEN ST_SimplifyPreserveTopology(rpd.geometry, 0.003)
-                   ELSE rpd.geometry
-                 END,
-                 3857
-               ),
-               bounds.geom
-             ) AS geom
-      FROM route_patterns rp
-      JOIN route_pattern_display_geometries rpd ON rpd.snapshot_id = rp.snapshot_id AND rpd.route_pattern_id = rp.id
-      JOIN routes r ON r.id = rp.route_id AND r.snapshot_id = rp.snapshot_id
-      JOIN data_snapshots snap ON snap.id = rp.snapshot_id AND snap.is_active = true
+             'stop_pair_segment'::text AS geometry_quality,
+             'route_pattern_stops'::text AS geometry_source,
+             NULL::float8 AS match_confidence,
+             NULL::text AS match_status,
+             from_metric.fastest_seconds AS from_fastest_seconds,
+             to_metric.fastest_seconds AS to_fastest_seconds,
+             rss.length_meters::float8 AS segment_length_meters,
+             ST_AsMVTGeom(ST_Transform(rss.geometry, 3857), bounds.geom, 2048, 96, true) AS geom
+      FROM route_stop_segments rss
+      JOIN routes r ON r.snapshot_id = rss.snapshot_id AND r.id = rss.route_id
+      JOIN active_snapshot snap ON snap.id = rss.snapshot_id
       CROSS JOIN bounds
-      WHERE rpd.geometry IS NOT NULL
-        AND ST_Intersects(ST_Transform(rpd.geometry, 3857), bounds.geom)
+      LEFT JOIN latest_metric_run lmr ON true
+      LEFT JOIN od_metrics from_metric
+        ON from_metric.metric_run_id = lmr.id
+       AND from_metric.destination_stop_place_id = rss.from_stop_place_id
+      LEFT JOIN od_metrics to_metric
+        ON to_metric.metric_run_id = lmr.id
+       AND to_metric.destination_stop_place_id = rss.to_stop_place_id
+      WHERE r.mode = ANY(ARRAY['ICE', 'IC', 'EC', 'RE', 'RB', 'RAIL', 'S', 'AKN', 'U']::text[])
+        AND rss.length_meters <= CASE
+          WHEN r.mode = 'U' THEN 8000
+          WHEN r.mode = ANY(ARRAY['S', 'AKN']::text[]) THEN 15000
+          ELSE 20000
+        END
+        AND rss.geometry && bounds.query_wgs84
+        AND ST_Intersects(rss.geometry, bounds.query_wgs84)
         AND (cardinality($4::text[]) = 0 OR r.mode = ANY($4::text[]))
+    ),
+    mvtgeom AS (
+      SELECT * FROM route_lines
+      UNION ALL
+      SELECT * FROM rail_segments
     )
-    SELECT ST_AsMVT(mvtgeom, 'routes', 4096, 'geom') AS tile FROM mvtgeom
+    SELECT ST_AsMVT(mvtgeom, 'routes', 2048, 'geom') AS tile FROM mvtgeom
     `,
     z,
     x,
     y,
     modes,
+    profile,
   )
 }
 
@@ -156,7 +232,8 @@ export async function railNetworkTile(db: Queryable, z: number, x: number, y: nu
     db,
     `
     WITH bounds AS (
-      SELECT ST_TileEnvelope($1, $2, $3) AS geom
+      SELECT ST_TileEnvelope($1, $2, $3) AS geom,
+             ST_Transform(ST_TileEnvelope($1, $2, $3, margin => 96.0 / 2048.0), 4326) AS query_wgs84
     ),
     mvtgeom AS (
       SELECT re.id::text,
@@ -173,19 +250,62 @@ export async function railNetworkTile(db: Queryable, z: number, x: number, y: nu
                  END,
                  3857
                ),
-               bounds.geom
+               bounds.geom,
+               2048,
+               96,
+               true
              ) AS geom
       FROM rail_edges re
       CROSS JOIN bounds
       WHERE re.is_active = true
         AND cardinality($4::text[]) = 0
-        AND ST_Intersects(ST_Transform(re.geom, 3857), bounds.geom)
+        AND re.geom && bounds.query_wgs84
+        AND ST_Intersects(re.geom, bounds.query_wgs84)
     )
-    SELECT ST_AsMVT(mvtgeom, 'rail-network', 4096, 'geom') AS tile FROM mvtgeom
+    SELECT ST_AsMVT(mvtgeom, 'rail-network', 2048, 'geom') AS tile FROM mvtgeom
     `,
     z,
     x,
     y,
+  )
+}
+
+export async function schoolTile(
+  db: Queryable,
+  z: number,
+  x: number,
+  y: number,
+  categories: string[] = [],
+  states: string[] = [],
+): Promise<Buffer | null> {
+  return mvtTile(
+    db,
+    `
+    WITH bounds AS (
+      SELECT ST_TileEnvelope($1, $2, $3) AS geom,
+             ST_Transform(ST_TileEnvelope($1, $2, $3, margin => 96.0 / 2048.0), 4326) AS query_wgs84
+    ),
+    mvtgeom AS (
+      SELECT s.id::text AS id,
+             s.name,
+             s.school_category,
+             s.school_type_label,
+             s.state_code,
+             ST_AsMVTGeom(ST_Transform(s.geometry, 3857), bounds.geom, 2048, 96, true) AS geom
+      FROM schools s
+      CROSS JOIN bounds
+      WHERE s.geometry && bounds.query_wgs84
+        AND ST_Intersects(s.geometry, bounds.query_wgs84)
+        AND (cardinality($4::text[]) = 0 OR s.school_category = ANY($4::text[]))
+        AND (cardinality($5::text[]) = 0 OR s.state_code = ANY($5::text[]))
+    )
+    SELECT ST_AsMVT(mvtgeom, 'schools', 2048, 'geom') AS tile FROM mvtgeom
+    `,
+    z,
+    x,
+    y,
+    categories,
+    states,
   )
 }
 

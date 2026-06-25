@@ -298,6 +298,7 @@ DELETE FROM itinerary_legs WHERE itinerary_id IN (SELECT id FROM itineraries WHE
 DELETE FROM itineraries WHERE snapshot_id = :'snapshot_id';
 DELETE FROM od_metrics WHERE metric_run_id IN (SELECT id FROM metric_runs WHERE snapshot_id = :'snapshot_id');
 DELETE FROM metric_runs WHERE snapshot_id = :'snapshot_id';
+DELETE FROM route_stop_segments WHERE snapshot_id = :'snapshot_id';
 DELETE FROM route_pattern_stops WHERE snapshot_id = :'snapshot_id';
 DELETE FROM stop_times WHERE snapshot_id = :'snapshot_id';
 DELETE FROM trips WHERE snapshot_id = :'snapshot_id';
@@ -609,6 +610,49 @@ JOIN route_patterns rp ON rp.snapshot_id = '{snapshot_id}' AND rp.route_id = pr.
 JOIN stop_times st ON st.snapshot_id = '{snapshot_id}' AND st.trip_id = pr.trip_uuid
 JOIN stops s ON s.snapshot_id = st.snapshot_id AND s.id = st.stop_id
 ON CONFLICT (snapshot_id, route_pattern_id, stop_sequence) DO NOTHING;
+
+INSERT INTO route_stop_segments (
+  snapshot_id, route_id, from_stop_place_id, to_stop_place_id, geometry, length_meters
+)
+WITH ordered_stops AS (
+  SELECT rps.snapshot_id,
+         rp.route_id,
+         rps.stop_place_id,
+         lead(rps.stop_place_id) OVER (
+           PARTITION BY rps.snapshot_id, rps.route_pattern_id
+           ORDER BY rps.stop_sequence
+         ) AS next_stop_place_id
+  FROM route_pattern_stops rps
+  JOIN route_patterns rp
+    ON rp.snapshot_id = rps.snapshot_id
+   AND rp.id = rps.route_pattern_id
+  WHERE rps.snapshot_id = '{snapshot_id}'
+    AND rps.stop_place_id IS NOT NULL
+),
+segment_pairs AS (
+  SELECT DISTINCT
+         os.snapshot_id,
+         os.route_id,
+         LEAST(os.stop_place_id, os.next_stop_place_id) AS from_stop_place_id,
+         GREATEST(os.stop_place_id, os.next_stop_place_id) AS to_stop_place_id
+  FROM ordered_stops os
+  WHERE os.next_stop_place_id IS NOT NULL
+    AND os.stop_place_id <> os.next_stop_place_id
+)
+SELECT sp.snapshot_id,
+       sp.route_id,
+       sp.from_stop_place_id,
+       sp.to_stop_place_id,
+       ST_MakeLine(from_stop.geometry, to_stop.geometry) AS geometry,
+       ST_Length(ST_MakeLine(from_stop.geometry, to_stop.geometry)::geography) AS length_meters
+FROM segment_pairs sp
+JOIN stop_places from_stop
+  ON from_stop.snapshot_id = sp.snapshot_id
+ AND from_stop.id = sp.from_stop_place_id
+JOIN stop_places to_stop
+  ON to_stop.snapshot_id = sp.snapshot_id
+ AND to_stop.id = sp.to_stop_place_id
+ON CONFLICT (snapshot_id, route_id, from_stop_place_id, to_stop_place_id) DO NOTHING;
 
 COMMIT;
     """

@@ -1,16 +1,19 @@
-import { lazy, Suspense, useMemo, useState } from 'react'
-import { Clock, Layers, Satellite, X, TrainFront } from 'lucide-react'
-import { MetricCard, RealtimeItineraryBlock } from './apiApp/ItineraryComponents'
+import { lazy, Suspense, useCallback, useMemo, useState } from 'react'
+import { Clock, GraduationCap, Layers, Satellite, X, TrainFront } from 'lucide-react'
+import type { ApiStopSelectionPreview } from './api/contracts'
+import { DrivingRouteBlock, MetricCard, RealtimeItineraryBlock } from './apiApp/ItineraryComponents'
 import {
   defaultDepartureTime,
   defaultProfile,
   estimatedResidentialRadiusKmPerMinute,
   modeLayerDefinitions,
+  poiLayerDefinitions,
   residentialRadiusOptions,
   travelTimeChipStyle,
   travelTimeWindows,
   type MapBaseLayer,
   type ModeLayerId,
+  type PoiLayerId,
   type TravelTimeWindow,
 } from './apiApp/config'
 import {
@@ -33,15 +36,17 @@ const MapLibreCanvas = lazy(() =>
 function ApiApp() {
   const { snapshot, setStatus } = useApiStartup()
   const [selectedPublicId, setSelectedPublicId] = useState<string | null>(null)
+  const [selectedStopPreview, setSelectedStopPreview] = useState<ApiStopSelectionPreview | null>(null)
   const [departureTime, setDepartureTime] = useState(defaultDepartureTime)
   const profile = defaultProfile
   const [activeModeLayers, setActiveModeLayers] = useState<ModeLayerId[]>(['regional', 's-bahn', 'u-bahn'])
   const [selectedTimeWindows, setSelectedTimeWindows] = useState<TravelTimeWindow[]>(travelTimeWindows)
   const [mapBaseLayer, setMapBaseLayer] = useState<MapBaseLayer>('street')
+  const [activePoiLayer, setActivePoiLayer] = useState<PoiLayerId>('none')
   const [showResidentialRegions, setShowResidentialRegions] = useState(false)
   const [residentialRadiusMinutes, setResidentialRadiusMinutes] = useState(15)
   const { mapUpdateState, handleMapTileLoadingChange } = useMapUpdateStatus()
-  const { selectedStop, metrics, realtimeItineraries, clearDetails } = useSelectedStopDetails({
+  const { selectedStop, metrics, realtimeItineraries, drivingRoute, clearDetails } = useSelectedStopDetails({
     selectedPublicId,
     departureTime,
     profile,
@@ -51,10 +56,16 @@ function ApiApp() {
   const allowedModes = useMemo(() => modesForLayers(activeModeLayers, modeLayerDefinitions), [activeModeLayers])
   const tileModes = useMemo(() => (activeModeLayers.length === 0 ? ['__none__'] : allowedModes), [activeModeLayers.length, allowedModes])
   const residentialRadiusMeters = residentialRadiusMinutes * estimatedResidentialRadiusKmPerMinute * 1000
+  const detailPanelStop = selectedStop ?? selectedStopPreview
+  const selectedFastestSeconds = metrics?.fastestSeconds ?? selectedStopPreview?.fastestSeconds ?? null
+  const isDetailsLoading = Boolean(selectedStopPreview && !selectedStop)
 
   const selectedRouteLabels = useMemo(
-    () => Array.from(new Set(selectedStop?.servedRoutes.map(stopRouteLabel) ?? [])).slice(0, 12),
-    [selectedStop],
+    () =>
+      Array.from(
+        new Set(selectedStop ? selectedStop.servedRoutes.map(stopRouteLabel) : selectedStopPreview?.routeLabels ?? []),
+      ).slice(0, 12),
+    [selectedStop, selectedStopPreview],
   )
 
   function toggleModeLayer(id: ModeLayerId) {
@@ -71,8 +82,14 @@ function ApiApp() {
 
   function closeDetailPanel() {
     setSelectedPublicId(null)
+    setSelectedStopPreview(null)
     clearDetails()
   }
+
+  const handleSelectStop = useCallback((selection: ApiStopSelectionPreview) => {
+    setSelectedStopPreview(selection)
+    setSelectedPublicId(selection.publicId)
+  }, [])
 
   function showEarlierRealtimeConnections() {
     const earliestDeparture = earliestAlternativeDepartureMinutes(realtimeItineraries.response)
@@ -85,7 +102,7 @@ function ApiApp() {
   }
 
   return (
-    <main className={selectedStop ? 'api-shell detail-open' : 'api-shell'}>
+    <main className={detailPanelStop ? 'api-shell detail-open' : 'api-shell'}>
       <aside className="api-sidebar" aria-label="API-Einstellungen">
         <div className="brand-row">
           <div className="brand-mark" aria-hidden="true">
@@ -119,7 +136,7 @@ function ApiApp() {
         <div className="control-group">
           <div className="label-like">
             <Clock size={16} />
-            Reisezeitfenster
+            🚂 max. Reisezeit (Min)
           </div>
           <div className="window-grid">
             {travelTimeWindows.map((window) => (
@@ -143,7 +160,7 @@ function ApiApp() {
               checked={showResidentialRegions}
               onChange={(event) => setShowResidentialRegions(event.target.checked)}
             />
-            Wohnregionen anzeigen
+            🚙 Zielbahnhof-Radius
           </label>
           <div className="radius-buttons">
             {residentialRadiusOptions.map((minutesValue) => (
@@ -156,6 +173,28 @@ function ApiApp() {
                 {minutesValue} min
               </button>
             ))}
+          </div>
+        </div>
+
+        <div className="control-group">
+          <div className="label-like">
+            <GraduationCap size={16} />
+            anzeigen
+          </div>
+          <div className="layer-grid">
+            {poiLayerDefinitions
+              .filter((definition) => definition.id !== 'none')
+              .map((definition) => (
+                <label key={definition.id} className="layer-toggle">
+                  <input
+                    id={`poi-layer-${definition.id}`}
+                    type="checkbox"
+                    checked={activePoiLayer === definition.id}
+                    onChange={(event) => setActivePoiLayer(event.target.checked ? definition.id : 'none')}
+                  />
+                  <span>{definition.label}</span>
+                </label>
+              ))}
           </div>
         </div>
       </aside>
@@ -173,14 +212,15 @@ function ApiApp() {
         </button>
         <Suspense fallback={<div className="maplibre-map-shell"><div className="maplibre-map" /></div>}>
           <MapLibreCanvas
-            selectedStop={selectedStop}
+            selectedStop={detailPanelStop}
             mapBaseLayer={mapBaseLayer}
+            activePoiLayer={activePoiLayer}
             tileModes={tileModes}
             selectedTimeWindows={selectedTimeWindows}
             showResidentialRegions={showResidentialRegions}
             residentialRadiusMeters={residentialRadiusMeters}
             profile={profile}
-            onSelect={setSelectedPublicId}
+            onSelect={handleSelectStop}
             onTileLoadingChange={handleMapTileLoadingChange}
           />
         </Suspense>
@@ -192,13 +232,14 @@ function ApiApp() {
           <span><i className="legend-stop-urban" /> S/U/AKN</span>
           <span><i className="legend-stop-bus" /> Bus-only</span>
           <span><i className="legend-route-bus" /> Busroute</span>
+          {activePoiLayer === 'schools' ? <span><i className="legend-school" /> Schule</span> : null}
         </div>
       </section>
 
-      {selectedStop ? (
+      {detailPanelStop ? (
         <aside className="api-detail-panel" aria-label="StopPlace-Details">
           <div className="api-detail-header">
-            <h2 className="api-detail-title">{selectedStop.name}</h2>
+            <h2 className="api-detail-title">{detailPanelStop.name}</h2>
             <button type="button" className="api-detail-close" onClick={closeDetailPanel} aria-label="Detailpanel schließen">
               <X size={16} />
             </button>
@@ -206,9 +247,9 @@ function ApiApp() {
 
           <>
             <section className="api-panel-section">
-              <h2>Fahrzeit nach Hamburg Hbf</h2>
+              <h2>ab Hamburg Hbf</h2>
               <div className="api-metric-grid">
-                <MetricCard label="Schnellste Gesamtreisezeit" value={minutes(metrics?.fastestSeconds ?? null)} title={metricTooltip('fastest')} />
+                <MetricCard label="Schnellste Gesamtreisezeit" value={minutes(selectedFastestSeconds)} title={metricTooltip('fastest')} />
                 <MetricCard
                   label="Direktverbindungen / Wochentag"
                   value={directConnectionCount(metrics)}
@@ -218,9 +259,8 @@ function ApiApp() {
             </section>
 
             <section className="api-panel-section">
-              <h2>DB Echtzeit</h2>
+              <h2>Bahn 🚂</h2>
               <div className="api-realtime-controls">
-                <label htmlFor="api-detail-departure">Startzeit</label>
                 <div className="api-realtime-time-row">
                   <button type="button" className="api-time-step-button" onClick={showEarlierRealtimeConnections}>
                     Frühere
@@ -228,6 +268,7 @@ function ApiApp() {
                   <input
                     id="api-detail-departure"
                     type="time"
+                    aria-label="Startzeit"
                     value={departureTime}
                     onChange={(event) => setDepartureTime(event.target.value || defaultDepartureTime)}
                   />
@@ -246,6 +287,15 @@ function ApiApp() {
             </section>
 
             <section className="api-panel-section">
+              <h2>KFZ 🚙</h2>
+              <DrivingRouteBlock
+                response={drivingRoute.response}
+                loading={drivingRoute.status === 'loading'}
+                error={drivingRoute.error}
+              />
+            </section>
+
+            <section className="api-panel-section">
               <h2>Linien</h2>
               <div className="api-route-list">
                 {selectedRouteLabels.map((label) => (
@@ -254,29 +304,44 @@ function ApiApp() {
                   </span>
                 ))}
               </div>
+              {selectedRouteLabels.length === 0 ? <p>{isDetailsLoading ? 'Linien werden geladen...' : 'Keine Linien hinterlegt.'}</p> : null}
             </section>
 
-            <details className="api-panel-section api-disclosure">
-              <summary>Datenstand</summary>
-              <div className="api-disclosure-content">
-                {snapshot ? (
-                  <>
-                    <p>{snapshot.source.name} · {snapshot.publicId}</p>
-                    <p>{snapshot.validFrom ?? '?'} bis {snapshot.validUntil ?? '?'}</p>
-                    <p>{snapshot.source.attribution ?? 'Attribution aus Snapshot-Metadaten erforderlich'}</p>
-                  </>
-                ) : (
-                  <p>Datenstand wird geladen</p>
-                )}
-              </div>
-            </details>
+            <details className="api-panel-section api-disclosure api-meta-disclosure">
+              <summary aria-label="Zusätzliche Details ein- oder ausklappen" title="Zusätzliche Details" />
+              <div className="api-meta-disclosure-content">
+                <section>
+                  <h3>Datenstand</h3>
+                  <div className="api-disclosure-content">
+                    {snapshot ? (
+                      <>
+                        <p>{snapshot.source.name} · {snapshot.publicId}</p>
+                        <p>{snapshot.validFrom ?? '?'} bis {snapshot.validUntil ?? '?'}</p>
+                        <p>{snapshot.source.attribution ?? 'Attribution aus Snapshot-Metadaten erforderlich'}</p>
+                      </>
+                    ) : (
+                      <p>Datenstand wird geladen</p>
+                    )}
+                  </div>
+                </section>
 
-            <details className="api-panel-section api-disclosure">
-              <summary>StopPlace-Details</summary>
-              <div className="api-disclosure-content">
-                <p>{selectedStop.municipalityName ?? 'Gemeinde unbekannt'} · {selectedStop.stateCode ?? 'Bundesland unbekannt'}</p>
-                <p>DHID: {selectedStop.dhid ?? 'fehlt'} · Qualität: {selectedStop.identityQuality}</p>
-                <p>{selectedStop.modes.join(', ')}</p>
+                <section>
+                  <h3>StopPlace-Details</h3>
+                  <div className="api-disclosure-content">
+                    {selectedStop ? (
+                      <>
+                        <p>{selectedStop.municipalityName ?? 'Gemeinde unbekannt'} · {selectedStop.stateCode ?? 'Bundesland unbekannt'}</p>
+                        <p>DHID: {selectedStop.dhid ?? 'fehlt'} · Qualität: {selectedStop.identityQuality}</p>
+                        <p>{selectedStop.modes.join(', ')}</p>
+                      </>
+                    ) : (
+                      <>
+                        <p>Public ID: {detailPanelStop.publicId}</p>
+                        <p>StopPlace-Details werden geladen...</p>
+                      </>
+                    )}
+                  </div>
+                </section>
               </div>
             </details>
           </>

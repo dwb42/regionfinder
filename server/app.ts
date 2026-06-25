@@ -2,12 +2,15 @@ import cors from '@fastify/cors'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { ZodError } from 'zod'
 import type { RegionfinderRepository } from './db/types'
+import { OsrmDrivingRouteProvider } from './driving/osrmDrivingRouteProvider'
+import { DrivingRouteProviderError, type DrivingRouteProvider } from './driving/types'
 import { DbTransportRestProvider, RealtimeProviderError, type RealtimeItineraryProvider } from './realtime/dbTransportRestProvider'
 import {
   itineraryQuerySchema,
   metricsQuerySchema,
   publicIdParamsSchema,
   routePatternParamsSchema,
+  schoolTileQuerySchema,
   splitCsv,
   stopSearchQuerySchema,
   tileQuerySchema,
@@ -17,6 +20,7 @@ import {
 export type BuildAppOptions = {
   repository: RegionfinderRepository
   realtimeItineraryProvider?: RealtimeItineraryProvider
+  drivingRouteProvider?: DrivingRouteProvider
   logger?: boolean
 }
 
@@ -29,10 +33,10 @@ function notFound(message: string) {
 
 function publicIdAliases(publicId: string): string[] {
   const aliases = [publicId]
-  const legacyEightDigitMatch = publicId.match(/^(.*:)(1\d{7})$/)
+  const compactEvaPublicIdMatch = publicId.match(/^(.*:)(1\d{7})$/)
 
-  if (legacyEightDigitMatch) {
-    aliases.push(`${legacyEightDigitMatch[1]}1:${legacyEightDigitMatch[2].slice(1)}`)
+  if (compactEvaPublicIdMatch) {
+    aliases.push(`${compactEvaPublicIdMatch[1]}1:${compactEvaPublicIdMatch[2].slice(1)}`)
   }
 
   return Array.from(new Set(aliases))
@@ -55,6 +59,8 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     logger: options.logger ?? true,
   })
   const realtimeItineraryProvider = options.realtimeItineraryProvider ?? new DbTransportRestProvider()
+  const drivingRouteProvider =
+    options.drivingRouteProvider ?? new OsrmDrivingRouteProvider()
 
   await app.register(cors, {
     origin: true,
@@ -194,6 +200,28 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     }
   })
 
+  app.get('/api/v1/stops/:publicId/driving-route', async (request, reply) => {
+    const params = publicIdParamsSchema.parse(request.params)
+    const stop = await firstResolved(publicIdAliases(params.publicId), (publicId) => options.repository.stopDetails(publicId))
+
+    if (!stop) {
+      return reply.code(404).send(notFound(`Unknown StopPlace ${params.publicId}`))
+    }
+
+    try {
+      return await drivingRouteProvider.routeToStop({ stop })
+    } catch (error) {
+      if (error instanceof DrivingRouteProviderError) {
+        return reply.code(error.statusCode).send({
+          error: error.reason,
+          message: error.message,
+        })
+      }
+
+      throw error
+    }
+  })
+
   app.get('/api/v1/route-patterns/:id', async (request, reply) => {
     const params = routePatternParamsSchema.parse(request.params)
     const pattern = await options.repository.routePattern(params.id)
@@ -222,11 +250,11 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     const params = tileParamsSchema.parse(request.params)
     const query = tileQuerySchema.parse(request.query)
     const modes = splitCsv(query.modes)
-    const tile = await options.repository.routeTile(params.z, params.x, params.y, modes)
+    const tile = await options.repository.routeTile(params.z, params.x, params.y, modes, query.profile)
 
     reply.header('Content-Type', 'application/vnd.mapbox-vector-tile')
     reply.header('Cache-Control', 'public, max-age=300')
-    reply.header('ETag', `"routes-${params.z}-${params.x}-${params.y}-${modes.join('-')}"`)
+    reply.header('ETag', `"routes-${params.z}-${params.x}-${params.y}-${modes.join('-')}-${query.profile}"`)
 
     return tile ?? Buffer.alloc(0)
   })
@@ -238,6 +266,20 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     reply.header('Content-Type', 'application/vnd.mapbox-vector-tile')
     reply.header('Cache-Control', 'public, max-age=300')
     reply.header('ETag', `"rail-network-${params.z}-${params.x}-${params.y}"`)
+
+    return tile ?? Buffer.alloc(0)
+  })
+
+  app.get('/api/v1/tiles/schools/:z/:x/:y.mvt', async (request, reply) => {
+    const params = tileParamsSchema.parse(request.params)
+    const query = schoolTileQuerySchema.parse(request.query)
+    const categories = splitCsv(query.categories)
+    const states = splitCsv(query.states)
+    const tile = await options.repository.schoolTile(params.z, params.x, params.y, categories, states)
+
+    reply.header('Content-Type', 'application/vnd.mapbox-vector-tile')
+    reply.header('Cache-Control', 'public, max-age=300')
+    reply.header('ETag', `"schools-${params.z}-${params.x}-${params.y}-${categories.join('-')}-${states.join('-')}"`)
 
     return tile ?? Buffer.alloc(0)
   })

@@ -8,21 +8,11 @@ Diese Analyse wurde nach der DELFI-Kernintegration erstellt. DELFI bleibt die ka
 
 | Region | Offizielle Quelle | Zugriff | Status im Lauf | Nutzbare Rolle |
 | --- | --- | --- | --- | --- |
-| HVV | https://www.hvv.de/de/fahrplaene/abruf-fahrplaninfos/datenabruf | Verweis auf Open-Data-/Transparenzportal | Quelle identifiziert, kein Merge ausgefuehrt | Enrichment fuer lokale Metadaten, Farben, Plattformen und Geometrien nach DHID-/Stop-Match |
 | Niedersachsen/Bremen, VBN/Connect | https://www.vbn.de/service/entwicklerinfos/opendata-und-openservice | oeffentliche Entwicklerinfos, Connect-GTFS fuer Sollfahrplandaten | Quelle identifiziert, kein Merge ausgefuehrt | Enrichment nach deterministischem Match; keine ungepruefte Trip-Uebernahme |
 | Mecklenburg-Vorpommern, VVW | https://www.verkehrsverbund-warnow.de/service/open-data.html | Portal mit Registrierung/Freigabe fuer GTFS-Sollfahrplandaten | Zugang als registrierungsgebunden bewertet, kein Download mit Zugangsdaten | Potenzielles Enrichment nach Freigabe |
 | Mobilithek | https://mobilithek.info/ | Such- und Metadatenportal | Als zusaetzlicher Suchraum beruecksichtigt | Metadaten- und Lizenzpruefung fuer regionale Quellen |
 
 ## Vergleichskriterien
-
-### HVV
-
-- Aktualitaet: nicht in die Produktionsdatenbank uebernommen; vor Nutzung muss der konkrete Feed-Zeitstand aus dem Transparenzportal ermittelt werden.
-- Stops/DHIDs: nur nach realer Dateiinspektion belastbar messbar.
-- Trips: duerfen nicht pauschal neben DELFI importiert werden.
-- Shapes: sinnvoll als moegliche regionale Verbesserung, falls Route, Richtung, DHID-/Stopfolge und Gueltigkeitszeitraum deterministisch passen.
-- Betreiber/Plattformen: sinnvoll als Enrichment-Kandidat.
-- Lizenz: vor produktiver Nutzung aus dem konkreten Transparenzportal-Datensatz zu speichern.
 
 ### VBN / Connect
 

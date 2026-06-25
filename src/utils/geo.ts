@@ -1,4 +1,7 @@
-import type { Coordinates } from '../domain/types'
+type Coordinates = {
+  lat: number
+  lon: number
+}
 
 const earthRadiusKm = 6371
 

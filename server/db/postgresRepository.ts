@@ -12,7 +12,12 @@ import { findStopMetrics } from './queries/metricQueries'
 import { findRoutePattern } from './queries/routePatternQueries'
 import { findCurrentSnapshot } from './queries/snapshotQueries'
 import { findStopDetails, searchStops as searchStopsQuery } from './queries/stopQueries'
-import { railNetworkTile as railNetworkTileQuery, routeTile as routeTileQuery, stopTile as stopTileQuery } from './queries/tileQueries'
+import {
+  railNetworkTile as railNetworkTileQuery,
+  routeTile as routeTileQuery,
+  schoolTile as schoolTileQuery,
+  stopTile as stopTileQuery,
+} from './queries/tileQueries'
 import type { ItineraryQuery, RegionfinderRepository, StopSearchFilters } from './types'
 
 const { Pool } = pg
@@ -52,11 +57,15 @@ export class PostgresRepository implements RegionfinderRepository {
     return stopTileQuery(this.pool, z, x, y, modes, profile)
   }
 
-  routeTile(z: number, x: number, y: number, modes: string[] = []): Promise<Buffer | null> {
-    return routeTileQuery(this.pool, z, x, y, modes)
+  routeTile(z: number, x: number, y: number, modes: string[] = [], profile = 'regular_tue_thu'): Promise<Buffer | null> {
+    return routeTileQuery(this.pool, z, x, y, modes, profile)
   }
 
   railNetworkTile(z: number, x: number, y: number): Promise<Buffer | null> {
     return railNetworkTileQuery(this.pool, z, x, y)
+  }
+
+  schoolTile(z: number, x: number, y: number, categories: string[] = [], states: string[] = []): Promise<Buffer | null> {
+    return schoolTileQuery(this.pool, z, x, y, categories, states)
   }
 }

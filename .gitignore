@@ -17,8 +17,6 @@ data/raw/
 data/processed/
 data/reports/
 data/routing/
-public/data/hvv/*
-!public/data/hvv/.gitkeep
 data/r5/
 data/osm/
 data/delfi/

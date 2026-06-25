@@ -1,6 +1,6 @@
 import { Route } from 'lucide-react'
-import type { ApiItinerary, ApiItineraryResponse } from '../api/contracts'
-import { compactMinutes, delayLabel, durationBetweenSeconds, legLabel, timeLabel } from './formatters'
+import type { ApiDrivingRouteResponse, ApiItinerary, ApiItineraryResponse } from '../api/contracts'
+import { compactMinutes, delayLabel, durationBetweenSeconds, kilometers, legLabel, timeLabel } from './formatters'
 
 export function MetricCard({
   label,
@@ -39,7 +39,11 @@ export function RealtimeItineraryBlock({
   return (
     <div className="api-itinerary-block">
       {title ? <h3>{title}</h3> : null}
-      {loading ? <p className="api-inline-status">Verbindung wird geladen...</p> : null}
+      {loading ? (
+        <p className="api-inline-status api-loading-status" aria-live="polite">
+          <span>Verbindung wird geladen</span>
+        </p>
+      ) : null}
       {!loading && error ? <p className="api-inline-error">{error}</p> : null}
       {!loading && !error && alternatives.length === 0 ? <p>{emptyText}</p> : null}
       {!loading && !error && alternatives.length > 0 ? (
@@ -51,6 +55,43 @@ export function RealtimeItineraryBlock({
           ))}
         </ol>
       ) : null}
+    </div>
+  )
+}
+
+export function DrivingRouteBlock({
+  response,
+  loading,
+  error,
+}: {
+  response: ApiDrivingRouteResponse | null
+  loading?: boolean
+  error?: string | null
+}) {
+  return (
+    <div className="api-driving-route">
+      {loading ? (
+        <p className="api-inline-status api-loading-status" aria-live="polite">
+          <span>Autofahrzeit wird geladen</span>
+        </p>
+      ) : null}
+      {!loading && error ? <p className="api-inline-error">{error}</p> : null}
+      {!loading && !error && response ? (
+        <>
+          <div className="api-driving-route-summary">
+            <span>
+              <small>Fahrzeit</small>
+              <strong>{compactMinutes(response.durationSeconds)}</strong>
+            </span>
+            <span>
+              <small>Distanz</small>
+              <strong>{kilometers(response.distanceMeters)}</strong>
+            </span>
+          </div>
+          <p>OSM-Schätzung ohne Live-Verkehr</p>
+        </>
+      ) : null}
+      {!loading && !error && !response ? <p>Keine Autofahrzeit für diese Station vorhanden.</p> : null}
     </div>
   )
 }

@@ -359,11 +359,33 @@ export class FixtureRepository implements RegionfinderRepository {
     return Buffer.alloc(0)
   }
 
-  async routeTile(): Promise<Buffer | null> {
+  async routeTile(_z?: number, _x?: number, _y?: number, _modes?: string[], _profile?: string): Promise<Buffer | null> {
+    void _z
+    void _x
+    void _y
+    void _modes
+    void _profile
+
     return Buffer.alloc(0)
   }
 
   async railNetworkTile(): Promise<Buffer | null> {
+    return Buffer.alloc(0)
+  }
+
+  async schoolTile(
+    _z?: number,
+    _x?: number,
+    _y?: number,
+    _categories?: string[],
+    _states?: string[],
+  ): Promise<Buffer | null> {
+    void _z
+    void _x
+    void _y
+    void _categories
+    void _states
+
     return Buffer.alloc(0)
   }
 }

@@ -109,6 +109,33 @@ export function realtimeErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+export function drivingRouteErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.errorCode === 'driving_route_no_route') {
+      return 'Keine Autoroute für diese Station gefunden.'
+    }
+
+    if (error.errorCode === 'driving_route_unavailable') {
+      return 'Autofahrzeit ist aktuell nicht verfügbar.'
+    }
+
+    if (error.status === 404) {
+      return 'Autofahrzeit-Endpunkt nicht erreichbar. Bitte den API-Prozess neu starten.'
+    }
+  }
+
+  return error instanceof Error ? error.message : String(error)
+}
+
+export function kilometers(value: number | null | undefined): string {
+  if (value === null || value === undefined) {
+    return 'n/a'
+  }
+
+  const kilometersValue = value / 1000
+  return `${kilometersValue < 10 ? kilometersValue.toFixed(1) : Math.round(kilometersValue)} km`
+}
+
 export function directConnectionCount(metric: ApiMetrics | null): string {
   if (metric?.directConnectionCount === null || metric?.directConnectionCount === undefined) {
     return 'n/a'

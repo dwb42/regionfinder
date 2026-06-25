@@ -29,10 +29,6 @@ DHID ist im Datenmodell bevorzugt. Fehlt sie, wird `identity_quality = missing_d
 
 Aktueller Status: kein echter ZHV-Voll-Export lag lokal vor. Die aktive Produktionsbaseline nutzt DHIDs aus dem DELFI-GTFS, soweit vorhanden, und stabile interne IDs für fehlende DHIDs.
 
-## HVV
-
-HVV bleibt regionale Enrichment- und Integrationstestquelle. Der bestehende Importer `npm run import:hvv` erzeugt lokale Legacy-JSONs unter `public/data/hvv/`. Diese Artefakte sind nicht versioniert und dürfen nicht in Produktionsbuilds gelangen; der Build-Guard bricht ohne `REGIONFINDER_ALLOW_PUBLIC_HVV_ARTIFACTS=1` ab, wenn dort generierte Dateien liegen. HVV wird nicht ungeprüft mit DELFI-Fahrten gemischt.
-
 ## Regionale Enrichment-Feeds
 
 Regionale Feeds dürfen Geometrien, Betreiber, Farben, Plattformen und lokale Metadaten verbessern. Fahrten dürfen nur übernommen werden, wenn sie im DELFI-Snapshot fehlen und Deduplizierung getestet ist. Diese Merge-Funktion ist in diesem Schnitt noch nicht produktiv implementiert.

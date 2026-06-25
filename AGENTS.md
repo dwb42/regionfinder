@@ -10,8 +10,6 @@ Projektbezogene Hinweise für zukünftige Coding-Sessions.
   - API: `http://127.0.0.1:4001`
   - Frontend: `http://localhost:5176/`
 - Playwright ist als Dev-Dependency installiert; lokale UI-Smoke-Tests brauchen einmalig `npx playwright install chromium`.
-- `public/data/hvv/` ist nur Platzhalter für lokal generierte Legacy-Artefakte. Die JSON-Artefakte sind ignoriert; `stop-times.json` ist sehr groß und darf nicht in Browser-/Produktionsbuilds geraten.
-- `npm run build` führt vorher `scripts/assert-no-public-hvv-artifacts.mjs` aus und bricht ab, wenn generierte Dateien unter `public/data/hvv/` liegen. Nur für bewusst erzeugte Legacy-Artefakt-Builds `REGIONFINDER_ALLOW_PUBLIC_HVV_ARTIFACTS=1` setzen.
 - Große Produktionsdaten, Routinggraphen und Reports liegen unter `data/` und sind überwiegend per `.gitignore` ausgeschlossen.
 
 ## Standardprüfung
@@ -39,7 +37,7 @@ Produktiver API-Modus:
 
 ```bash
 DATABASE_URL=postgres://regionfinder:regionfinder@localhost:55432/regionfinder REGIONFINDER_API_PORT=4001 npm run dev:api
-VITE_REGIONFINDER_DATA_MODE=api VITE_REGIONFINDER_API_BASE_URL=http://127.0.0.1:4001 npm run dev -- --host 127.0.0.1 --port 5176
+VITE_REGIONFINDER_API_BASE_URL=http://127.0.0.1:4001 npm run dev -- --host 127.0.0.1 --port 5176
 ```
 
 Ohne `DATABASE_URL` startet die API nicht automatisch mit Fixtures. Für isolierte Tests/Demos muss Fixture explizit gesetzt werden:
@@ -51,14 +49,6 @@ REGIONFINDER_USE_FIXTURE_API=1 npm run dev:api
 Wenn `server/` geändert wurde, den API-Prozess neu starten. Wenn MapLibre-Quellen oder Hook-Strukturen geändert wurden, den Browser hart neu laden statt sich allein auf HMR zu verlassen.
 
 ## Datenimport
-
-Legacy-HVV-Artefakte:
-
-```bash
-npm run import:hvv -- --download
-```
-
-Der Import nutzt den im Script hinterlegten Transparenzportal-Link oder `HVV_GTFS_URL`.
 
 Produktionsdaten:
 
@@ -90,9 +80,9 @@ Benannte Korridore stehen in `pipeline/rail_network.py`. Aktuell sind viele S-/R
 
 ## Architekturregeln
 
-- API-Modus ist der aktuelle Hauptpfad; Legacy bleibt erhalten.
+- API-/PostGIS-/MapLibre-Modus ist der einzige Frontend-Pfad.
 - Der API-Modus lädt Verkehrsdaten über Fastify/PostGIS/MVT, nicht über große JSON-Dateien.
-- Keine vollständigen DELFI-/HVV-StopTimes direkt in React laden.
+- Keine vollständigen GTFS-StopTimes direkt in React laden.
 - StopPlaces und Route Patterns im API-Modus über Vector Tiles aus PostGIS laden.
 - Tile-Endpunkte mit `?modes=...` filtern, wenn UI-Layer aktiv/deaktiv sind. Stop-Tiles zusätzlich mit `?profile=...` anfragen, damit Reisezeitfarben und Hover-Metriken zum Routingprofil passen.
 - Bei Moduswechseln MapLibre-Vector-Tile-Sources entfernen und neu anlegen; `setTiles()` allein kann alte ungefilterte Tiles sichtbar lassen.
@@ -130,17 +120,6 @@ API-Modus:
 - Wohnregionen sind geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele; Radius = Minuten * `0,75 km`, Optionen 5/10/15/20 Minuten.
 - Zoom-Control sitzt links oben in der Map-Card; Zoomstufe sichtbar anzeigen.
 - MVT-Kacheln und abgeleitete Overlays müssen konsistent nach aktiven Modi und Reisezeitfenstern gefiltert sein.
-
-Legacy-Modus:
-
-- Initiale Karte: aktueller Startbahnhof, default `Hamburg Hbf`.
-- Klick auf Seed-Ziel: Seed-Detail mit Reisezeit und Verbindung.
-- Klick auf HVV-Haltestelle:
-  - Auswahl aktualisieren,
-  - Marker hervorheben,
-  - haltende Linien hervorheben,
-  - Detailpanel mit Linien und Reisezeit/Schätzung anzeigen,
-  - Kartenausschnitt nicht verändern.
 
 ## Nächster fachlicher Schwerpunkt
 

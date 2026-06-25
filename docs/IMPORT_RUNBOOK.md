@@ -36,14 +36,6 @@ npm run pipeline:compute
 
 Die Berichte landen unter `dist/pipeline/` und sind generierte Artefakte.
 
-## HVV-Integration
-
-```bash
-npm run import:hvv -- --download
-```
-
-HVV ist aktuell Legacy-/Integrationstestquelle. Der kanonische DELFI-Import ist erst mit bereitgestelltem Snapshot vollständig ausführbar.
-
 ## API starten
 
 ```bash
@@ -57,7 +49,7 @@ Produktiver API-/Frontend-Modus mit aktivem PostGIS-Snapshot:
 
 ```bash
 DATABASE_URL=postgres://regionfinder:regionfinder@localhost:55432/regionfinder REGIONFINDER_API_PORT=4001 npm run dev:api
-VITE_REGIONFINDER_DATA_MODE=api VITE_REGIONFINDER_API_BASE_URL=http://127.0.0.1:4001 npm run dev -- --host 127.0.0.1 --port 5176
+VITE_REGIONFINDER_API_BASE_URL=http://127.0.0.1:4001 npm run dev -- --host 127.0.0.1 --port 5176
 ```
 
 Lokale Frontend-URL: `http://localhost:5176/`.

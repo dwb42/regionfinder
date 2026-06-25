@@ -1,5 +1,3 @@
-export type ApiMode = 'legacy' | 'api'
-
 export type ApiLineString = {
   type: 'LineString'
   coordinates: number[][]
@@ -40,6 +38,12 @@ export type ApiStopSearchResult = {
   municipalityName: string | null
   modes: string[]
   identityQuality: string
+}
+
+export type ApiStopSelectionPreview = Pick<ApiStopSearchResult, 'publicId' | 'name' | 'coordinate'> & {
+  fastestSeconds: number | null
+  routeLabels: string[]
+  routeCount: number | null
 }
 
 export type ApiStopDetails = ApiStopSearchResult & {
@@ -125,6 +129,16 @@ export type ApiItineraryResponse = {
   originId: string
   destinationPublicId: string
   alternatives: ApiItinerary[]
+}
+
+export type ApiDrivingRouteResponse = {
+  originName: string
+  destinationPublicId: string
+  provider: string
+  durationSeconds: number
+  distanceMeters: number
+  sourceAttribution: string
+  fetchedAt?: string
 }
 
 export type ApiRoutePattern = {

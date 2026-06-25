@@ -89,7 +89,7 @@ Request-Validierung liegt in `server/schemas.ts`, gemeinsame Antworttypen in `sr
 
 ## Frontend
 
-`VITE_REGIONFINDER_DATA_MODE=api` aktiviert den API-Pfad mit MapLibre und API-Zugriff. Ohne Feature-Flag ist `api` der Default. `legacy` hält den bisherigen Leaflet/HVV-JSON-Pfad verfügbar. `src/App.tsx` lädt API und Legacy lazy; innerhalb des API-Pfads wird `MapLibreCanvas` separat lazy geladen. Der Browser soll im API-Modus keine großen Fahrplandateien laden.
+Das Frontend nutzt ausschließlich den API-Pfad mit MapLibre und Regionfinder-API-Zugriff. `src/App.tsx` startet `src/ApiApp.tsx`; innerhalb des API-Pfads wird `MapLibreCanvas` separat lazy geladen. Der Browser soll keine großen Fahrplandateien laden.
 
 Frontend-Code im API-Pfad ist nach Zuständigkeit aufgeteilt:
 
@@ -115,7 +115,7 @@ Aktueller API-Modus:
 - Hochkonfidente OSM-Rekonstruktionen werden im Standardlayer angezeigt. Niedrigkonfidente Rekonstruktionen und Stopfolgen-Approximationen bleiben im Standardlayer ausgeblendet, bis ihre Qualität visuell belastbar ist.
 - Reisezeitfenster-Chips und Stop-Kreise verwenden dieselbe Farbskala: 30 min grün, 45 min teal, 60 min ocker, 75 min orange, 90 min rot.
 - Reisezeitfenster filtern MVT-StopFeatures anhand von `fastest_seconds`. Umstiegsfilter und `Unerreichbare anzeigen` sind nicht Teil der aktuellen API-UI.
-- Wohnregionen sind geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele. Der Radius verwendet den Legacy-Faktor `0,75 km/min`; UI-Optionen sind 5/10/15/20 Minuten.
+- Wohnregionen sind geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele. Der Radius verwendet den Schätzfaktor `0,75 km/min`; UI-Optionen sind 5/10/15/20 Minuten.
 
 ## Tile-Datenvertrag
 

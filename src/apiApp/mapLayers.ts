@@ -99,6 +99,33 @@ const routeColorExpression: ExpressionSpecification = [
   ],
 ]
 
+const railRouteModes = new Set(['ICE', 'IC', 'EC', 'RE', 'RB', 'RAIL', 'S', 'AKN', 'U'])
+const defaultSchoolCategories = ['gymnasium', 'comprehensive', 'waldorf', 'vocational', 'upper_secondary']
+const defaultSchoolStates = ['HH', 'SH', 'MV', 'NI']
+
+export type TransitTileSourceKeys = {
+  stops: string
+  railRoutes: string
+  routes: string
+}
+
+function routeTileModeGroups(modes: string[]): { railModes: string[]; nonRailModes: string[] } {
+  return {
+    railModes: modes.filter((mode) => railRouteModes.has(mode)),
+    nonRailModes: modes.filter((mode) => !railRouteModes.has(mode)),
+  }
+}
+
+export function transitTileSourceKeys(modes: string[], profile: string): TransitTileSourceKeys {
+  const { railModes, nonRailModes } = routeTileModeGroups(modes)
+
+  return {
+    stops: `${profile}|stops|${modes.join(',')}`,
+    railRoutes: `${profile}|rail-routes|${railModes.join(',')}`,
+    routes: `${profile}|routes|${nonRailModes.join(',')}`,
+  }
+}
+
 const stopTravelTimeColorExpression: ExpressionSpecification = [
   'case',
   ['!', ['has', 'fastest_seconds']],
@@ -126,7 +153,11 @@ export function modesForLayers(activeLayers: ModeLayerId[], definitions: Array<{
   )
 }
 
-function tileUrl(path: 'stops' | 'routes' | 'rail-network', modes: string[] = [], profile?: string): string {
+function tileUrl(
+  path: 'stops' | 'routes' | 'rail-network' | 'schools',
+  modes: string[] = [],
+  profile?: string,
+): string {
   const params = new URLSearchParams()
 
   if (modes.length > 0) {
@@ -140,6 +171,15 @@ function tileUrl(path: 'stops' | 'routes' | 'rail-network', modes: string[] = []
   const suffix = params.size > 0 ? `?${params}` : ''
 
   return `${apiBaseUrl}/api/v1/tiles/${path}/{z}/{x}/{y}.mvt${suffix}`
+}
+
+function schoolTileUrl(): string {
+  const params = new URLSearchParams({
+    categories: defaultSchoolCategories.join(','),
+    states: defaultSchoolStates.join(','),
+  })
+
+  return `${apiBaseUrl}/api/v1/tiles/schools/{z}/{x}/{y}.mvt?${params}`
 }
 
 function routeGeometryFilter(): ExpressionSpecification {
@@ -156,11 +196,11 @@ function routeGeometryFilter(): ExpressionSpecification {
   ]
 }
 
-export function applyRouteLayerState(map: Map) {
-  map.setFilter('regionfinder-routes-line', routeGeometryFilter())
+function nonRailRouteFilter(): FilterSpecification {
+  return ['all', routeGeometryFilter(), ['!=', ['get', 'geometry_quality'], 'stop_pair_segment']] as FilterSpecification
 }
 
-function stopTravelTimeFilter(selectedWindows: TravelTimeWindow[]): FilterSpecification | null {
+function travelTimePropertyFilter(propertyName: string, selectedWindows: TravelTimeWindow[]): FilterSpecification | null {
   if (selectedWindows.length === travelTimeWindows.length) {
     return null
   }
@@ -175,27 +215,164 @@ function stopTravelTimeFilter(selectedWindows: TravelTimeWindow[]): FilterSpecif
       const previousWindow = index === 0 ? null : travelTimeWindows[index - 1]
 
       return previousWindow === null
-        ? (['<=', ['get', 'fastest_seconds'], window * 60] as FilterSpecification)
+        ? (['<=', ['get', propertyName], window * 60] as FilterSpecification)
         : ([
             'all',
-            ['>', ['get', 'fastest_seconds'], previousWindow * 60],
-            ['<=', ['get', 'fastest_seconds'], window * 60],
+            ['>', ['get', propertyName], previousWindow * 60],
+            ['<=', ['get', propertyName], window * 60],
           ] as FilterSpecification)
     })
     .filter((filter): filter is FilterSpecification => filter !== null)
 
-  return ['any', ['!', ['has', 'fastest_seconds']], ...windowFilters] as FilterSpecification
+  return ['any', ['!', ['has', propertyName]], ...windowFilters] as FilterSpecification
+}
+
+function stopTravelTimeFilter(selectedWindows: TravelTimeWindow[]): FilterSpecification | null {
+  return travelTimePropertyFilter('fastest_seconds', selectedWindows)
+}
+
+function railRouteFilter(selectedWindows: TravelTimeWindow[]): FilterSpecification {
+  const fromStopFilter = travelTimePropertyFilter('from_fastest_seconds', selectedWindows)
+  const toStopFilter = travelTimePropertyFilter('to_fastest_seconds', selectedWindows)
+  const baseFilter: FilterSpecification = [
+    'all',
+    routeGeometryFilter(),
+    ['==', ['get', 'geometry_quality'], 'stop_pair_segment'],
+  ] as FilterSpecification
+
+  if (!fromStopFilter || !toStopFilter) {
+    return baseFilter
+  }
+
+  return [
+    'all',
+    baseFilter,
+    fromStopFilter,
+    toStopFilter,
+  ] as FilterSpecification
+}
+
+export function applyRouteLayerState(map: Map, selectedWindows: TravelTimeWindow[] = travelTimeWindows) {
+  map.setFilter('regionfinder-routes-line', nonRailRouteFilter())
+  map.setFilter('regionfinder-rail-routes-casing', railRouteFilter(selectedWindows))
+  map.setFilter('regionfinder-rail-routes-line', railRouteFilter(selectedWindows))
 }
 
 export function applyStopLayerState(map: Map, selectedWindows: TravelTimeWindow[]) {
   map.setFilter('regionfinder-stops-symbol', stopTravelTimeFilter(selectedWindows))
 }
 
-export function addTransitTileLayers(map: Map, modes: string[], profile: string) {
+function firstExistingLayer(map: Map, layerIds: string[]): string | undefined {
+  return layerIds.find((layerId) => map.getLayer(layerId))
+}
+
+export function addRailRouteTileLayers(map: Map, modes: string[], profile: string) {
+  const { railModes } = routeTileModeGroups(modes)
+
+  map.addSource('regionfinder-rail-routes', {
+    type: 'vector',
+    tiles: [tileUrl('routes', railModes.length > 0 ? railModes : ['__none__'], profile)],
+    minzoom: 6,
+    maxzoom: 14,
+  })
+  map.addLayer({
+    id: 'regionfinder-rail-routes-casing',
+    type: 'line',
+    source: 'regionfinder-rail-routes',
+    'source-layer': 'routes',
+    layout: {
+      'line-cap': 'round',
+      'line-join': 'round',
+    },
+    paint: {
+      'line-color': '#ffffff',
+      'line-width': [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        7,
+        2,
+        10,
+        3.2,
+        12,
+        4.4,
+      ],
+      'line-opacity': 0.46,
+    },
+  }, firstExistingLayer(map, ['regionfinder-routes-line', 'regionfinder-stops-symbol']))
+  map.addLayer({
+    id: 'regionfinder-rail-routes-line',
+    type: 'line',
+    source: 'regionfinder-rail-routes',
+    'source-layer': 'routes',
+    layout: {
+      'line-cap': 'round',
+      'line-join': 'round',
+    },
+    paint: {
+      'line-color': routeColorExpression,
+      'line-width': [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        7,
+        1,
+        10,
+        1.8,
+        12,
+        2.6,
+      ],
+      'line-opacity': 0.62,
+    },
+  }, firstExistingLayer(map, ['regionfinder-routes-line', 'regionfinder-stops-symbol']))
+}
+
+export function addRouteTileLayers(map: Map, modes: string[], profile: string) {
+  const { nonRailModes } = routeTileModeGroups(modes)
+
+  map.addSource('regionfinder-routes', {
+    type: 'vector',
+    tiles: [tileUrl('routes', nonRailModes.length > 0 ? nonRailModes : ['__none__'], profile)],
+    minzoom: 9,
+    maxzoom: 14,
+  })
+  map.addLayer({
+    id: 'regionfinder-routes-line',
+    type: 'line',
+    source: 'regionfinder-routes',
+    'source-layer': 'routes',
+    minzoom: 9,
+    paint: {
+      'line-color': routeColorExpression,
+      'line-width': [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        9,
+        0.45,
+        10,
+        0.7,
+        12,
+        1.15,
+      ],
+      'line-opacity': 0.46,
+      'line-dasharray': [
+        'case',
+        ['==', ['get', 'geometry_quality'], 'stop_sequence_approximation'],
+        ['literal', [2, 2]],
+        ['==', ['get', 'geometry_quality'], 'osm_reconstructed_low_confidence'],
+        ['literal', [4, 2]],
+        ['literal', [1, 0]],
+      ],
+    },
+  }, firstExistingLayer(map, ['regionfinder-stops-symbol']))
+}
+
+export function addStopTileLayers(map: Map, modes: string[], profile: string) {
   map.addSource('regionfinder-stops', {
     type: 'vector',
     tiles: [tileUrl('stops', modes, profile)],
-    minzoom: 0,
+    minzoom: 6,
     maxzoom: 14,
   })
   map.addLayer({
@@ -230,75 +407,183 @@ export function addTransitTileLayers(map: Map, modes: string[], profile: string)
       ],
     },
   })
-  map.addSource('regionfinder-routes', {
+}
+
+export function addTransitTileLayers(map: Map, modes: string[], profile: string) {
+  addRailRouteTileLayers(map, modes, profile)
+  addRouteTileLayers(map, modes, profile)
+  addStopTileLayers(map, modes, profile)
+}
+
+function ensureSchoolIcon(map: Map) {
+  if (map.hasImage('regionfinder-school-icon')) {
+    return
+  }
+
+  const size = 32
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const context = canvas.getContext('2d')
+
+  if (!context) {
+    return
+  }
+
+  context.clearRect(0, 0, size, size)
+  context.fillStyle = '#0f172a'
+  context.strokeStyle = '#ffffff'
+  context.lineWidth = 1.8
+  context.beginPath()
+  context.roundRect(4, 5, 24, 22, 6)
+  context.fill()
+  context.stroke()
+  context.fillStyle = '#ffffff'
+  context.strokeStyle = '#ffffff'
+  context.lineWidth = 1.8
+  context.lineJoin = 'round'
+  context.beginPath()
+  context.moveTo(8, 14)
+  context.lineTo(16, 10)
+  context.lineTo(24, 14)
+  context.lineTo(16, 18)
+  context.closePath()
+  context.fill()
+  context.beginPath()
+  context.moveTo(11, 18)
+  context.lineTo(11, 21)
+  context.quadraticCurveTo(16, 24, 21, 21)
+  context.lineTo(21, 18)
+  context.stroke()
+  context.beginPath()
+  context.moveTo(24, 15)
+  context.lineTo(24, 21)
+  context.stroke()
+  context.fillStyle = '#fbbf24'
+  context.beginPath()
+  context.arc(24, 22.5, 2, 0, Math.PI * 2)
+  context.fill()
+
+  map.addImage('regionfinder-school-icon', context.getImageData(0, 0, size, size), { pixelRatio: 2 })
+}
+
+export function addSchoolTileLayer(map: Map) {
+  ensureSchoolIcon(map)
+  map.addSource('regionfinder-schools', {
     type: 'vector',
-    tiles: [tileUrl('routes', modes)],
-    minzoom: 0,
+    tiles: [schoolTileUrl()],
+    minzoom: 8,
     maxzoom: 14,
   })
   map.addLayer({
-    id: 'regionfinder-routes-line',
-    type: 'line',
-    source: 'regionfinder-routes',
-    'source-layer': 'routes',
+    id: 'regionfinder-schools-halo',
+    type: 'circle',
+    source: 'regionfinder-schools',
+    'source-layer': 'schools',
+    minzoom: 8,
     paint: {
-      'line-color': routeColorExpression,
-      'line-width': [
+      'circle-radius': [
         'interpolate',
         ['linear'],
         ['zoom'],
+        8,
         7,
-        ['case', ['any', ['==', ['get', 'mode'], 'BUS'], ['==', ['get', 'mode'], 'TRAM']], 0.25, 0.6],
-        10,
-        ['case', ['any', ['==', ['get', 'mode'], 'BUS'], ['==', ['get', 'mode'], 'TRAM']], 0.7, 2],
-        12,
-        ['case', ['any', ['==', ['get', 'mode'], 'BUS'], ['==', ['get', 'mode'], 'TRAM']], 1.15, 3],
+        11,
+        9,
+        14,
+        11,
       ],
-      'line-opacity': [
-        'case',
-        ['any', ['==', ['get', 'mode'], 'BUS'], ['==', ['get', 'mode'], 'TRAM']],
-        0.46,
-        ['==', ['get', 'geometry_quality'], 'stop_sequence_approximation'],
-        0.38,
-        ['==', ['get', 'geometry_quality'], 'osm_reconstructed_low_confidence'],
-        0.48,
-        0.78,
-      ],
-      'line-dasharray': [
-        'case',
-        ['==', ['get', 'geometry_quality'], 'stop_sequence_approximation'],
-        ['literal', [2, 2]],
-        ['==', ['get', 'geometry_quality'], 'osm_reconstructed_low_confidence'],
-        ['literal', [4, 2]],
-        ['literal', [1, 0]],
-      ],
+      'circle-color': '#0f172a',
+      'circle-opacity': 0.22,
+      'circle-stroke-color': '#ffffff',
+      'circle-stroke-width': 1,
+      'circle-stroke-opacity': 0.78,
     },
-  }, 'regionfinder-stops-symbol')
+  })
+  map.addLayer({
+    id: 'regionfinder-schools-symbol',
+    type: 'symbol',
+    source: 'regionfinder-schools',
+    'source-layer': 'schools',
+    minzoom: 8,
+    layout: {
+      'icon-image': 'regionfinder-school-icon',
+      'icon-size': [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        8,
+        0.72,
+        11,
+        0.9,
+        14,
+        1.05,
+      ],
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+    },
+  })
 }
 
-export function removeTransitTileLayers(map: Map) {
-  for (const layerId of ['regionfinder-stops-symbol', 'regionfinder-routes-line']) {
+export function removeRailRouteTileLayers(map: Map) {
+  for (const layerId of ['regionfinder-rail-routes-line', 'regionfinder-rail-routes-casing']) {
     if (map.getLayer(layerId)) {
       map.removeLayer(layerId)
     }
   }
 
-  for (const sourceId of ['regionfinder-stops', 'regionfinder-routes']) {
-    if (map.getSource(sourceId)) {
-      map.removeSource(sourceId)
-    }
+  if (map.getSource('regionfinder-rail-routes')) {
+    map.removeSource('regionfinder-rail-routes')
   }
 }
 
-export function circlePolygon(lon: number, lat: number, radiusMeters: number): Polygon {
+export function removeRouteTileLayers(map: Map) {
+  if (map.getLayer('regionfinder-routes-line')) {
+    map.removeLayer('regionfinder-routes-line')
+  }
+
+  if (map.getSource('regionfinder-routes')) {
+    map.removeSource('regionfinder-routes')
+  }
+}
+
+export function removeStopTileLayers(map: Map) {
+  if (map.getLayer('regionfinder-stops-symbol')) {
+    map.removeLayer('regionfinder-stops-symbol')
+  }
+
+  if (map.getSource('regionfinder-stops')) {
+    map.removeSource('regionfinder-stops')
+  }
+}
+
+export function removeTransitTileLayers(map: Map) {
+  removeStopTileLayers(map)
+  removeRouteTileLayers(map)
+  removeRailRouteTileLayers(map)
+}
+
+export function removeSchoolTileLayer(map: Map) {
+  for (const layerId of ['regionfinder-schools-symbol', 'regionfinder-schools-halo']) {
+    if (map.getLayer(layerId)) {
+      map.removeLayer(layerId)
+    }
+  }
+
+  if (map.getSource('regionfinder-schools')) {
+    map.removeSource('regionfinder-schools')
+  }
+}
+
+export function circlePolygon(lon: number, lat: number, radiusMeters: number, segments = 32): Polygon {
   const points: number[][] = []
   const earthRadiusMeters = 6_371_000
   const angularDistance = radiusMeters / earthRadiusMeters
   const latRad = (lat * Math.PI) / 180
   const lonRad = (lon * Math.PI) / 180
 
-  for (let step = 0; step <= 64; step += 1) {
-    const bearing = (step / 64) * 2 * Math.PI
+  for (let step = 0; step <= segments; step += 1) {
+    const bearing = (step / segments) * 2 * Math.PI
     const pointLat = Math.asin(
       Math.sin(latRad) * Math.cos(angularDistance) +
         Math.cos(latRad) * Math.sin(angularDistance) * Math.cos(bearing),
@@ -373,6 +658,46 @@ export function createStopHoverPopupContent({
   const routeText = document.createElement('span')
   routeText.textContent = `Linie / Route: ${routeSummaryText(routeLabels, routeCount)}`
   wrapper.append(routeText)
+
+  return wrapper
+}
+
+export function schoolCategoryLabel(category: string | null): string {
+  switch (category) {
+    case 'gymnasium':
+      return 'Gymnasium'
+    case 'comprehensive':
+      return 'Gesamtschule'
+    case 'waldorf':
+      return 'Waldorfschule'
+    case 'vocational':
+      return 'Berufsschule'
+    case 'upper_secondary':
+      return 'Oberstufe'
+    default:
+      return 'Weiterführende Schule'
+  }
+}
+
+export function createSchoolHoverPopupContent({
+  name,
+  schoolTypeLabel,
+  schoolCategory,
+}: {
+  name: string
+  schoolTypeLabel: string | null
+  schoolCategory: string | null
+}): HTMLDivElement {
+  const wrapper = document.createElement('div')
+  wrapper.className = 'map-popup school-hover-popup'
+
+  const title = document.createElement('strong')
+  title.textContent = name
+  wrapper.append(title)
+
+  const type = document.createElement('span')
+  type.textContent = `Schulart: ${schoolTypeLabel ?? schoolCategoryLabel(schoolCategory)}`
+  wrapper.append(type)
 
   return wrapper
 }

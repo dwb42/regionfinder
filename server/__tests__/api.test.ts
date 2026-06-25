@@ -1,9 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import { buildApp } from '../app'
 import { FixtureRepository } from '../db/fixtureRepository'
+import { OsrmDrivingRouteProvider } from '../driving/osrmDrivingRouteProvider'
 import { DbTransportRestProvider } from '../realtime/dbTransportRestProvider'
 
-async function withApp(fetchImpl?: typeof fetch, backend: 'bahn-web' | 'db-transport-rest' = 'db-transport-rest') {
+async function withApp(
+  fetchImpl?: typeof fetch,
+  backend: 'bahn-web' | 'db-transport-rest' = 'db-transport-rest',
+  drivingFetchImpl?: typeof fetch,
+) {
   const app = await buildApp({
     repository: new FixtureRepository(),
     logger: false,
@@ -13,6 +18,14 @@ async function withApp(fetchImpl?: typeof fetch, backend: 'bahn-web' | 'db-trans
           fetchImpl,
           backend,
           now: () => Date.parse('2026-07-07T07:59:00.000Z'),
+        })
+      : undefined,
+    drivingRouteProvider: drivingFetchImpl
+      ? new OsrmDrivingRouteProvider({
+          baseUrl: 'https://osrm.test',
+          fetchImpl: drivingFetchImpl,
+          now: () => Date.parse('2026-07-07T07:59:00.000Z'),
+          timeoutMs: 1_000,
         })
       : undefined,
   })
@@ -123,6 +136,15 @@ describe('Regionfinder API', () => {
     expect(response.headers['cache-control']).toContain('max-age=300')
   })
 
+  it('serves route tiles with profile-specific cache keys', async () => {
+    const app = await withApp()
+    const response = await app.inject('/api/v1/tiles/routes/8/135/83.mvt?modes=RE,S&profile=test_profile')
+
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['content-type']).toContain('application/vnd.mapbox-vector-tile')
+    expect(response.headers.etag).toContain('routes-8-135-83-RE-S-test_profile')
+  })
+
   it('serves rail-network debug tiles with cache headers', async () => {
     const app = await withApp()
     const response = await app.inject('/api/v1/tiles/rail-network/8/135/83.mvt')
@@ -130,6 +152,41 @@ describe('Regionfinder API', () => {
     expect(response.statusCode).toBe(200)
     expect(response.headers['content-type']).toContain('application/vnd.mapbox-vector-tile')
     expect(response.headers.etag).toContain('rail-network-8-135-83')
+  })
+
+  it('serves school POI tiles with category and state cache keys', async () => {
+    class CapturingSchoolRepository extends FixtureRepository {
+      schoolTileCall: { z: number; x: number; y: number; categories: string[]; states: string[] } | null = null
+
+      override async schoolTile(
+        z: number,
+        x: number,
+        y: number,
+        categories: string[] = [],
+        states: string[] = [],
+      ): Promise<Buffer | null> {
+        this.schoolTileCall = { z, x, y, categories, states }
+        return Buffer.from('fixture-school-tile')
+      }
+    }
+
+    const repository = new CapturingSchoolRepository()
+    const app = await buildApp({ repository, logger: false })
+    const response = await app.inject(
+      '/api/v1/tiles/schools/8/135/83.mvt?categories=gymnasium,comprehensive&states=HH,SH',
+    )
+
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['content-type']).toContain('application/vnd.mapbox-vector-tile')
+    expect(response.headers.etag).toContain('schools-8-135-83-gymnasium-comprehensive-HH-SH')
+    expect(response.body).toBe('fixture-school-tile')
+    expect(repository.schoolTileCall).toEqual({
+      z: 8,
+      x: 135,
+      y: 83,
+      categories: ['gymnasium', 'comprehensive'],
+      states: ['HH', 'SH'],
+    })
   })
 
   it('validates invalid itinerary parameters', async () => {
@@ -284,5 +341,97 @@ describe('Regionfinder API', () => {
     expect((await app.inject(path)).statusCode).toBe(200)
     expect((await app.inject(path)).statusCode).toBe(200)
     expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns driving route duration and distance from OSRM', async () => {
+    const drivingFetchImpl = vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = new URL(String(input))
+
+      expect(url.pathname).toBe('/route/v1/driving/10.0064,53.5527;10.314,53.529')
+      expect(url.searchParams.get('overview')).toBe('false')
+      expect(init?.headers).toMatchObject({ Accept: 'application/json' })
+      return jsonResponse({
+        code: 'Ok',
+        routes: [{ duration: 1850.2, distance: 28640.7 }],
+      })
+    }) as typeof fetch
+    const app = await withApp(undefined, 'db-transport-rest', drivingFetchImpl)
+    const response = await app.inject('/api/v1/stops/de:01056:9001/driving-route')
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      originName: 'Hamburg Hbf',
+      destinationPublicId: 'de:01056:9001',
+      provider: 'osrm',
+      durationSeconds: 1850.2,
+      distanceMeters: 28640.7,
+      sourceAttribution: expect.stringContaining('OpenStreetMap'),
+      fetchedAt: '2026-07-07T07:59:00.000Z',
+    })
+  })
+
+  it('maps OSRM NoRoute to driving_route_no_route', async () => {
+    const drivingFetchImpl = vi.fn(async () => jsonResponse({ code: 'NoRoute', routes: [] })) as typeof fetch
+    const app = await withApp(undefined, 'db-transport-rest', drivingFetchImpl)
+    const response = await app.inject('/api/v1/stops/de:01056:9001/driving-route')
+
+    expect(response.statusCode).toBe(404)
+    expect(response.json()).toMatchObject({ error: 'driving_route_no_route' })
+  })
+
+  it('maps OSRM upstream failures to driving_route_unavailable', async () => {
+    const drivingFetchImpl = vi.fn(async () => jsonResponse({ code: 'TooManyRequests' }, 429)) as typeof fetch
+    const app = await withApp(undefined, 'db-transport-rest', drivingFetchImpl)
+    const response = await app.inject('/api/v1/stops/de:01056:9001/driving-route')
+
+    expect(response.statusCode).toBe(502)
+    expect(response.json()).toMatchObject({ error: 'driving_route_unavailable' })
+  })
+
+  it('maps OSRM timeouts to driving_route_unavailable', async () => {
+    const drivingFetchImpl = vi.fn(
+      (_input: URL | RequestInfo, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new Error('aborted')))
+        }),
+    ) as typeof fetch
+    const app = await buildApp({
+      repository: new FixtureRepository(),
+      logger: false,
+      drivingRouteProvider: new OsrmDrivingRouteProvider({
+        baseUrl: 'https://osrm.test',
+        fetchImpl: drivingFetchImpl,
+        timeoutMs: 1,
+      }),
+    })
+    const response = await app.inject('/api/v1/stops/de:01056:9001/driving-route')
+
+    expect(response.statusCode).toBe(502)
+    expect(response.json()).toMatchObject({ error: 'driving_route_unavailable' })
+  })
+
+  it('caches driving routes for the same stop', async () => {
+    const drivingFetchImpl = vi.fn(async () =>
+      jsonResponse({
+        code: 'Ok',
+        routes: [{ duration: 1800, distance: 28_000 }],
+      }),
+    ) as typeof fetch
+    const app = await withApp(undefined, 'db-transport-rest', drivingFetchImpl)
+    const path = '/api/v1/stops/de:01056:9001/driving-route'
+
+    expect((await app.inject(path)).statusCode).toBe(200)
+    expect((await app.inject(path)).statusCode).toBe(200)
+    expect(drivingFetchImpl).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns not_found before calling OSRM for an unknown driving destination', async () => {
+    const drivingFetchImpl = vi.fn(async () => jsonResponse({ code: 'Ok', routes: [] })) as typeof fetch
+    const app = await withApp(undefined, 'db-transport-rest', drivingFetchImpl)
+    const response = await app.inject('/api/v1/stops/unknown/driving-route')
+
+    expect(response.statusCode).toBe(404)
+    expect(response.json()).toMatchObject({ error: 'not_found' })
+    expect(drivingFetchImpl).not.toHaveBeenCalled()
   })
 })

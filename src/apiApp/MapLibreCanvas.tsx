@@ -2,23 +2,56 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FeatureCollection, Polygon } from 'geojson'
 import maplibregl, { type Map } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import type { ApiStopDetails } from '../api/contracts'
-import type { MapBaseLayer, TravelTimeWindow } from './config'
+import type { ApiStopSelectionPreview } from '../api/contracts'
+import type { MapBaseLayer, PoiLayerId, TravelTimeWindow } from './config'
 import {
+  addRailRouteTileLayers,
+  addRouteTileLayers,
+  addSchoolTileLayer,
+  addStopTileLayers,
   addTransitTileLayers,
   applyRouteLayerState,
   applyStopLayerState,
   circlePolygon,
+  createSchoolHoverPopupContent,
   createStopHoverPopupContent,
   mapLibreBaseStyle,
   numericFeatureProperty,
-  removeTransitTileLayers,
+  removeSchoolTileLayer,
+  removeRailRouteTileLayers,
+  removeRouteTileLayers,
+  removeStopTileLayers,
   stringFeatureProperty,
+  transitTileSourceKeys,
+  type TransitTileSourceKeys,
 } from './mapLayers'
+
+type SelectedMapStop = Pick<ApiStopSelectionPreview, 'publicId' | 'name' | 'coordinate'>
+
+function isResidentialRadiusStationFeature(feature: { properties?: Record<string, unknown> | null }): boolean {
+  const stopPriority = stringFeatureProperty(feature.properties?.stop_priority)
+
+  return stopPriority === 'regional' || stopPriority === 'urban_rail'
+}
+
+function transitTileSourcesChanged(previous: TransitTileSourceKeys, next: TransitTileSourceKeys): boolean {
+  return previous.stops !== next.stops || previous.railRoutes !== next.railRoutes || previous.routes !== next.routes
+}
+
+function transitSourcesLoaded(map: Map): boolean {
+  return ['regionfinder-stops', 'regionfinder-routes', 'regionfinder-rail-routes'].every((sourceId) => {
+    if (!map.getSource(sourceId)) {
+      return true
+    }
+
+    return map.isSourceLoaded(sourceId)
+  })
+}
 
 export function MapLibreCanvas({
   selectedStop,
   mapBaseLayer,
+  activePoiLayer,
   tileModes,
   selectedTimeWindows,
   showResidentialRegions,
@@ -27,23 +60,28 @@ export function MapLibreCanvas({
   onSelect,
   onTileLoadingChange,
 }: {
-  selectedStop: ApiStopDetails | null
+  selectedStop: SelectedMapStop | null
   mapBaseLayer: MapBaseLayer
+  activePoiLayer: PoiLayerId
   tileModes: string[]
   selectedTimeWindows: TravelTimeWindow[]
   showResidentialRegions: boolean
   residentialRadiusMeters: number
   profile: string
-  onSelect: (publicId: string) => void
+  onSelect: (selection: ApiStopSelectionPreview) => void
   onTileLoadingChange: (isLoading: boolean) => void
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<Map | null>(null)
   const initialTileModesRef = useRef(tileModes)
+  const initialProfileRef = useRef(profile)
+  const activeTransitTileSourceKeysRef = useRef(transitTileSourceKeys(tileModes, profile))
   const selectedTimeWindowsRef = useRef(selectedTimeWindows)
   const hoverPopupRef = useRef<maplibregl.Popup | null>(null)
-  const currentHoverPublicIdRef = useRef<string | null>(null)
+  const currentHoverFeatureRef = useRef<string | null>(null)
   const residentialSettingsRef = useRef({ showResidentialRegions, residentialRadiusMeters })
+  const residentialUpdateFrameRef = useRef<number | null>(null)
+  const residentialSourceDataKeyRef = useRef('empty')
   const [mapReady, setMapReady] = useState(false)
   const [zoomLevel, setZoomLevel] = useState(8.4)
 
@@ -56,38 +94,52 @@ export function MapLibreCanvas({
     }
 
     const { showResidentialRegions, residentialRadiusMeters } = residentialSettingsRef.current
-    const stops: Array<{ publicId: string; name: string; lon: number; lat: number }> = []
 
-    if (showResidentialRegions && map.getLayer('regionfinder-stops-symbol')) {
-      const seen = new Set<string>()
-      const features = map.queryRenderedFeatures({ layers: ['regionfinder-stops-symbol'] })
-
-      for (const feature of features) {
-        if (feature.geometry.type !== 'Point') {
-          continue
-        }
-
-        const publicId = feature.properties?.public_id
-        const name = feature.properties?.name
-        const [lon, lat] = feature.geometry.coordinates
-
-        if (
-          typeof publicId !== 'string' ||
-          seen.has(publicId) ||
-          typeof lon !== 'number' ||
-          typeof lat !== 'number'
-        ) {
-          continue
-        }
-
-        seen.add(publicId)
-        stops.push({
-          publicId,
-          name: typeof name === 'string' ? name : 'StopPlace',
-          lon,
-          lat,
-        })
+    if (!showResidentialRegions || !map.getLayer('regionfinder-stops-symbol')) {
+      if (residentialSourceDataKeyRef.current !== 'empty') {
+        source.setData({ type: 'FeatureCollection', features: [] })
+        residentialSourceDataKeyRef.current = 'empty'
       }
+
+      return
+    }
+
+    const stops: Array<{ publicId: string; name: string; lon: number; lat: number }> = []
+    const seen = new Set<string>()
+    const features = map.queryRenderedFeatures({ layers: ['regionfinder-stops-symbol'] })
+
+    for (const feature of features) {
+      if (feature.geometry.type !== 'Point' || !isResidentialRadiusStationFeature(feature)) {
+        continue
+      }
+
+      const publicId = feature.properties?.public_id
+      const name = feature.properties?.name
+      const [lon, lat] = feature.geometry.coordinates
+
+      if (
+        typeof publicId !== 'string' ||
+        seen.has(publicId) ||
+        typeof lon !== 'number' ||
+        typeof lat !== 'number'
+      ) {
+        continue
+      }
+
+      seen.add(publicId)
+      stops.push({
+        publicId,
+        name: typeof name === 'string' ? name : 'StopPlace',
+        lon,
+        lat,
+      })
+    }
+
+    stops.sort((left, right) => left.publicId.localeCompare(right.publicId))
+    const sourceDataKey = `${residentialRadiusMeters}|${stops.map((stop) => stop.publicId).join('|')}`
+
+    if (residentialSourceDataKeyRef.current === sourceDataKey) {
+      return
     }
 
     const collection: FeatureCollection<Polygon, { publicId: string; name: string }> = {
@@ -103,7 +155,23 @@ export function MapLibreCanvas({
     }
 
     source.setData(collection)
+    residentialSourceDataKeyRef.current = sourceDataKey
   }, [])
+
+  const scheduleResidentialRadiusUpdate = useCallback(() => {
+    if (residentialUpdateFrameRef.current !== null) {
+      return
+    }
+
+    residentialUpdateFrameRef.current = window.requestAnimationFrame(() => {
+      residentialUpdateFrameRef.current = null
+      updateResidentialRadiusSource()
+    })
+  }, [updateResidentialRadiusSource])
+
+  useEffect(() => {
+    selectedTimeWindowsRef.current = selectedTimeWindows
+  }, [selectedTimeWindows])
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -122,18 +190,32 @@ export function MapLibreCanvas({
       setZoomLevel(Number(map.getZoom().toFixed(1)))
     })
     map.on('idle', () => {
-      onTileLoadingChange(false)
-      updateResidentialRadiusSource()
+      scheduleResidentialRadiusUpdate()
+    })
+    map.on('sourcedata', (event) => {
+      if (
+        event.sourceId !== 'regionfinder-stops' &&
+        event.sourceId !== 'regionfinder-routes' &&
+        event.sourceId !== 'regionfinder-rail-routes'
+      ) {
+        return
+      }
+
+      if (transitSourcesLoaded(map)) {
+        onTileLoadingChange(false)
+        scheduleResidentialRadiusUpdate()
+      }
     })
     map.on('load', () => {
-      addTransitTileLayers(map, initialTileModesRef.current, profile)
-      applyRouteLayerState(map)
+      addTransitTileLayers(map, initialTileModesRef.current, initialProfileRef.current)
+      activeTransitTileSourceKeysRef.current = transitTileSourceKeys(initialTileModesRef.current, initialProfileRef.current)
+      applyRouteLayerState(map, selectedTimeWindowsRef.current)
       applyStopLayerState(map, selectedTimeWindowsRef.current)
       map.on('click', 'regionfinder-stops-symbol', (event) => {
-        const publicId = event.features?.[0]?.properties?.public_id
+        const selection = stopSelectionPreview(event)
 
-        if (typeof publicId === 'string' && publicId.length > 0) {
-          onSelect(publicId)
+        if (selection) {
+          onSelect(selection)
         }
       })
       const showStopHoverPopup = (event: maplibregl.MapLayerMouseEvent) => {
@@ -145,12 +227,14 @@ export function MapLibreCanvas({
           return
         }
 
-        if (currentHoverPublicIdRef.current === publicId) {
+        const hoverKey = `stop:${publicId}`
+
+        if (currentHoverFeatureRef.current === hoverKey) {
           hoverPopupRef.current?.setLngLat(event.lngLat)
           return
         }
 
-        currentHoverPublicIdRef.current = publicId
+        currentHoverFeatureRef.current = hoverKey
         const popup =
           hoverPopupRef.current ??
           new maplibregl.Popup({
@@ -186,7 +270,7 @@ export function MapLibreCanvas({
       })
       map.on('mouseleave', 'regionfinder-stops-symbol', () => {
         map.getCanvas().style.cursor = ''
-        currentHoverPublicIdRef.current = null
+        currentHoverFeatureRef.current = null
         hoverPopupRef.current?.remove()
       })
       map.addSource('regionfinder-residential-radius', {
@@ -203,7 +287,7 @@ export function MapLibreCanvas({
             'fill-opacity': 0.16,
           },
         },
-        'regionfinder-routes-line',
+        'regionfinder-rail-routes-casing',
       )
       map.addLayer(
         {
@@ -223,11 +307,15 @@ export function MapLibreCanvas({
     mapRef.current = map
 
     return () => {
+      if (residentialUpdateFrameRef.current !== null) {
+        window.cancelAnimationFrame(residentialUpdateFrameRef.current)
+        residentialUpdateFrameRef.current = null
+      }
       hoverPopupRef.current?.remove()
       map.remove()
       mapRef.current = null
     }
-  }, [onSelect, onTileLoadingChange, profile, updateResidentialRadiusSource])
+  }, [onSelect, onTileLoadingChange, profile, scheduleResidentialRadiusUpdate])
 
   useEffect(() => {
     const map = mapRef.current
@@ -236,13 +324,37 @@ export function MapLibreCanvas({
       return
     }
 
+    const currentTileSourceKeys = activeTransitTileSourceKeysRef.current
+    const nextTileSourceKeys = transitTileSourceKeys(tileModes, profile)
+
+    if (!transitTileSourcesChanged(currentTileSourceKeys, nextTileSourceKeys)) {
+      return
+    }
+
     onTileLoadingChange(true)
-    removeTransitTileLayers(map)
-    addTransitTileLayers(map, tileModes, profile)
-    applyRouteLayerState(map)
+
+    if (currentTileSourceKeys.railRoutes !== nextTileSourceKeys.railRoutes) {
+      removeRailRouteTileLayers(map)
+      addRailRouteTileLayers(map, tileModes, profile)
+    }
+
+    if (currentTileSourceKeys.routes !== nextTileSourceKeys.routes) {
+      removeRouteTileLayers(map)
+      addRouteTileLayers(map, tileModes, profile)
+    }
+
+    if (currentTileSourceKeys.stops !== nextTileSourceKeys.stops) {
+      removeStopTileLayers(map)
+      addStopTileLayers(map, tileModes, profile)
+    }
+
+    activeTransitTileSourceKeysRef.current = nextTileSourceKeys
+    applyRouteLayerState(map, selectedTimeWindowsRef.current)
     applyStopLayerState(map, selectedTimeWindowsRef.current)
+    residentialSourceDataKeyRef.current = 'stale'
+    scheduleResidentialRadiusUpdate()
     map.triggerRepaint()
-  }, [mapReady, onTileLoadingChange, profile, tileModes])
+  }, [mapReady, onTileLoadingChange, profile, scheduleResidentialRadiusUpdate, tileModes])
 
   useEffect(() => {
     const map = mapRef.current
@@ -275,9 +387,90 @@ export function MapLibreCanvas({
       return
     }
 
-    applyRouteLayerState(map)
+    applyRouteLayerState(map, selectedTimeWindows)
     onTileLoadingChange(true)
-  }, [mapReady, onTileLoadingChange])
+  }, [mapReady, onTileLoadingChange, selectedTimeWindows])
+
+  useEffect(() => {
+    const map = mapRef.current
+
+    if (!mapReady || !map) {
+      return
+    }
+
+    if (activePoiLayer !== 'schools') {
+      removeSchoolTileLayer(map)
+      return
+    }
+
+    if (!map.getLayer('regionfinder-schools-symbol')) {
+      addSchoolTileLayer(map)
+      onTileLoadingChange(true)
+    }
+
+    const showSchoolHoverPopup = (event: maplibregl.MapLayerMouseEvent) => {
+      const feature = event.features?.[0]
+      const id = stringFeatureProperty(feature?.properties?.id)
+      const fallbackName = stringFeatureProperty(feature?.properties?.name)
+      const hoverKey = `school:${id ?? fallbackName ?? event.lngLat.toString()}`
+
+      if (currentHoverFeatureRef.current === hoverKey) {
+        hoverPopupRef.current?.setLngLat(event.lngLat)
+        return
+      }
+
+      currentHoverFeatureRef.current = hoverKey
+      const popup =
+        hoverPopupRef.current ??
+        new maplibregl.Popup({
+          closeButton: false,
+          closeOnClick: false,
+          offset: 12,
+          className: 'school-hover-map-popup',
+        })
+      hoverPopupRef.current = popup
+
+      popup
+        .setLngLat(event.lngLat)
+        .setDOMContent(
+          createSchoolHoverPopupContent({
+            name: fallbackName ?? 'Weiterführende Schule',
+            schoolTypeLabel: stringFeatureProperty(feature?.properties?.school_type_label),
+            schoolCategory: stringFeatureProperty(feature?.properties?.school_category),
+          }),
+        )
+        .addTo(map)
+    }
+
+    const handleMouseEnter = (event: maplibregl.MapLayerMouseEvent) => {
+      map.getCanvas().style.cursor = 'pointer'
+      showSchoolHoverPopup(event)
+    }
+    const handleMouseLeave = () => {
+      map.getCanvas().style.cursor = ''
+      currentHoverFeatureRef.current = null
+      hoverPopupRef.current?.remove()
+    }
+    const handleSourceData = (event: maplibregl.MapSourceDataEvent) => {
+      if (event.sourceId === 'regionfinder-schools' && map.isSourceLoaded('regionfinder-schools')) {
+        onTileLoadingChange(false)
+      }
+    }
+
+    map.on('mouseenter', 'regionfinder-schools-symbol', handleMouseEnter)
+    map.on('mousemove', 'regionfinder-schools-symbol', showSchoolHoverPopup)
+    map.on('mouseleave', 'regionfinder-schools-symbol', handleMouseLeave)
+    map.on('sourcedata', handleSourceData)
+
+    return () => {
+      map.off('mouseenter', 'regionfinder-schools-symbol', handleMouseEnter)
+      map.off('mousemove', 'regionfinder-schools-symbol', showSchoolHoverPopup)
+      map.off('mouseleave', 'regionfinder-schools-symbol', handleMouseLeave)
+      map.off('sourcedata', handleSourceData)
+      handleMouseLeave()
+      removeSchoolTileLayer(map)
+    }
+  }, [activePoiLayer, mapReady, onTileLoadingChange])
 
   useEffect(() => {
     const map = mapRef.current
@@ -288,9 +481,10 @@ export function MapLibreCanvas({
     }
 
     applyStopLayerState(map, selectedTimeWindows)
-    updateResidentialRadiusSource()
+    residentialSourceDataKeyRef.current = 'stale'
+    scheduleResidentialRadiusUpdate()
     map.triggerRepaint()
-  }, [mapReady, selectedTimeWindows, updateResidentialRadiusSource])
+  }, [mapReady, scheduleResidentialRadiusUpdate, selectedTimeWindows])
 
   useEffect(() => {
     const map = mapRef.current
@@ -301,8 +495,9 @@ export function MapLibreCanvas({
       return
     }
 
-    updateResidentialRadiusSource()
-  }, [mapReady, residentialRadiusMeters, showResidentialRegions, updateResidentialRadiusSource])
+    residentialSourceDataKeyRef.current = 'stale'
+    scheduleResidentialRadiusUpdate()
+  }, [mapReady, residentialRadiusMeters, scheduleResidentialRadiusUpdate, showResidentialRegions])
 
   return (
     <div className="maplibre-map-shell">
@@ -312,4 +507,33 @@ export function MapLibreCanvas({
       </div>
     </div>
   )
+}
+
+function stopSelectionPreview(event: maplibregl.MapLayerMouseEvent): ApiStopSelectionPreview | null {
+  const feature = event.features?.[0]
+  const publicId = stringFeatureProperty(feature?.properties?.public_id)
+
+  if (!publicId) {
+    return null
+  }
+
+  const name = stringFeatureProperty(feature?.properties?.name) ?? 'StopPlace'
+  const fastestSeconds = numericFeatureProperty(feature?.properties?.fastest_seconds)
+  const routeLabels = stringFeatureProperty(feature?.properties?.route_labels)
+    ?.split(', ')
+    .map((label) => label.trim())
+    .filter(Boolean) ?? []
+  const routeCount = numericFeatureProperty(feature?.properties?.route_count)
+  const coordinates = feature?.geometry.type === 'Point' ? feature.geometry.coordinates : null
+  const lon = typeof coordinates?.[0] === 'number' ? coordinates[0] : event.lngLat.lng
+  const lat = typeof coordinates?.[1] === 'number' ? coordinates[1] : event.lngLat.lat
+
+  return {
+    publicId,
+    name,
+    coordinate: { lat, lon },
+    fastestSeconds,
+    routeLabels,
+    routeCount,
+  }
 }

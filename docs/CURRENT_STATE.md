@@ -4,12 +4,7 @@ Stand: 2026-06-25 nach Regionfinder V2 Produktionsintegration, API-/MapLibre-UX-
 
 ## Produktstand
 
-Regionfinder besitzt zwei Modi:
-
-- `api`: produktiver V2-Pfad mit Fastify, PostgreSQL/PostGIS/pgRouting, MOTIS-Metriken, DB-Echtzeitvergleich, MapLibre und MVT-Kacheln.
-- `legacy`: alter Leaflet/HVV-JSON-/Seed-Router-Pfad als Vergleich und Fallback.
-
-Der API-Modus ist der aktuelle Hauptpfad. Der Browser lädt dort keine vollständigen Fahrplan-JSONs und führt keine kanonischen Fahrzeitberechnungen mehr aus.
+Regionfinder besitzt einen produktiven V2-Pfad mit Fastify, PostgreSQL/PostGIS/pgRouting, MOTIS-Metriken, DB-Echtzeitvergleich, MapLibre und MVT-Kacheln. Der Browser lädt keine vollständigen Fahrplan-JSONs und führt keine kanonischen Fahrzeitberechnungen mehr aus.
 
 ## Aktiver Produktionssnapshot
 
@@ -66,7 +61,7 @@ Typischer lokaler Produktionsmodus:
 ```bash
 docker compose up -d postgis
 DATABASE_URL=postgres://regionfinder:regionfinder@localhost:55432/regionfinder REGIONFINDER_API_PORT=4001 npm run dev:api
-VITE_REGIONFINDER_DATA_MODE=api VITE_REGIONFINDER_API_BASE_URL=http://127.0.0.1:4001 npm run dev -- --host 127.0.0.1 --port 5176
+VITE_REGIONFINDER_API_BASE_URL=http://127.0.0.1:4001 npm run dev -- --host 127.0.0.1 --port 5176
 ```
 
 Frontend: `http://localhost:5176/`.
@@ -101,7 +96,7 @@ Aktuelle UI-Funktionen im API-Modus:
 - Reisezeitfenster filtern sichtbare StopPlaces anhand von `fastest_seconds`. Wenn einzelne Fenster deaktiviert sind, verschwinden StopPlaces außerhalb der aktiven Fenster aus der Karte.
 - Der maximale Umstiegsfilter und `Unerreichbare anzeigen` sind im API-Modus entfernt; standardmäßig werden alle verfügbaren Ziele der aktiven Layer gezeigt.
 - Die frühere Sidebar-Suche und Suchtrefferliste ist im API-Modus entfernt. Das Detailpanel wird über Klick auf einen StopPlace in der Karte geöffnet. Der API-Endpunkt `/api/v1/stops/search` bleibt als technische Schnittstelle bestehen, ist aber nicht mehr Teil der aktuellen Sidebar-UX.
-- Wohnregionen sind geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele. Der Radius nutzt den Legacy-Faktor `0,75 km/min`; Optionen sind 5, 10, 15 und 20 Minuten.
+- Wohnregionen sind geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele. Der Radius nutzt den Schätzfaktor `0,75 km/min`; Optionen sind 5, 10, 15 und 20 Minuten.
 - Reisezeitfenster und Stationskreise nutzen dieselbe Farbskala: 30 min grün, 45 min teal, 60 min ocker, 75 min orange, 90 min rot.
 
 ## DB-Echtzeitverbindungen und Direktverbindungen
@@ -170,26 +165,10 @@ Wichtige Einschränkung: Viele S-/Regional-Patterns sind zwar OSM-geroutet, erre
 - Ohne `DATABASE_URL` bricht der API-Start ab, außer `REGIONFINDER_USE_FIXTURE_API=1` ist explizit gesetzt.
 - Fixtures bleiben für Tests und lokale isolierte Entwicklung verfügbar.
 - `PostgresRepository` delegiert an fokussierte Query-Module unter `server/db/queries/`; neue SQL-Blöcke sollen dort statt in der Adapterklasse liegen.
-- `src/App.tsx` lädt API- und Legacy-Pfad lazy. `src/ApiApp.tsx` ist nur noch API-Layout/Verdrahtung; Hooks, MapLibre-Canvas, Layerdefinitionen, Formatter und Detailpanel-Komponenten liegen in `src/apiApp/`.
+- `src/App.tsx` startet `src/ApiApp.tsx`. `src/ApiApp.tsx` ist API-Layout/Verdrahtung; Hooks, MapLibre-Canvas, Layerdefinitionen, Formatter und Detailpanel-Komponenten liegen in `src/apiApp/`.
 - `MapLibreCanvas` wird lazy geladen, damit MapLibre nicht im API-Shell-Chunk landet.
 - Der große MapLibre-Lazy-Chunk ist akzeptiert; Vite nutzt `chunkSizeWarningLimit: 1100`, damit der bewusst isolierte MapLibre-Chunk keine Warnung mehr erzeugt.
-- Generierte Legacy-HVV-Artefakte unter `public/data/hvv/` sind nicht versioniert. Produktionsbuilds brechen ab, wenn dort generierte Dateien liegen.
 - Playwright ist als Dev-Dependency verfügbar; lokale Browser-Smoke-Tests benötigen einmalig `npx playwright install chromium`.
-
-## Legacy-Modus
-
-Der Legacy-Pfad bleibt erhalten:
-
-- `src/legacy/LegacyApp.tsx`
-- Leaflet/React-Leaflet
-- lokal generierte, nicht versionierte HVV-Artefakte in `public/data/hvv/`
-- Seed-Router und Browser-Worker
-
-Legacy-UX-Konventionen bleiben gültig:
-
-- HVV-Haltestellenklicks pannen/zoomen die Karte nicht.
-- Details stehen rechts im Panel, nicht in Leaflet-Popups.
-- `stop-times.json` darf nicht direkt im React-Frontend geladen werden.
 
 ## Verifikation
 

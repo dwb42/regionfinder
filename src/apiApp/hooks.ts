@@ -1,12 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ApiMetrics, ApiSnapshot, ApiStopDetails } from '../api/contracts'
-import { fetchCurrentSnapshot, fetchRealtimeItineraries, fetchStopDetails, fetchStopMetrics } from '../data/api'
-import { displayDate, realtimeErrorMessage } from './formatters'
-import { type MapUpdateState, type RealtimeItineraryState } from './config'
+import { fetchCurrentSnapshot, fetchDrivingRoute, fetchRealtimeItineraries, fetchStopDetails, fetchStopMetrics } from '../data/api'
+import { displayDate, drivingRouteErrorMessage, realtimeErrorMessage } from './formatters'
+import { type DrivingRouteState, type MapUpdateState, type RealtimeItineraryState } from './config'
 
 export function useMapUpdateStatus() {
   const [mapUpdateState, setMapUpdateState] = useState<MapUpdateState>('idle')
+  const mapUpdateStateRef = useRef<MapUpdateState>('idle')
   const timerRef = useRef<number | null>(null)
+
+  const setStatus = useCallback((state: MapUpdateState) => {
+    mapUpdateStateRef.current = state
+    setMapUpdateState(state)
+  }, [])
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -17,14 +23,13 @@ export function useMapUpdateStatus() {
 
   const handleMapTileLoadingChange = useCallback(
     (isLoading: boolean) => {
-      clearTimer()
-
       if (isLoading) {
-        setMapUpdateState('loading')
+        clearTimer()
+        setStatus('loading')
         const completeTimer = window.setTimeout(() => {
-          setMapUpdateState('complete')
+          setStatus('complete')
           const idleTimer = window.setTimeout(() => {
-            setMapUpdateState('idle')
+            setStatus('idle')
             timerRef.current = null
           }, 1400)
           timerRef.current = idleTimer
@@ -33,14 +38,19 @@ export function useMapUpdateStatus() {
         return
       }
 
-      setMapUpdateState('complete')
+      if (mapUpdateStateRef.current !== 'loading') {
+        return
+      }
+
+      clearTimer()
+      setStatus('complete')
       const idleTimer = window.setTimeout(() => {
-        setMapUpdateState('idle')
+        setStatus('idle')
         timerRef.current = null
       }, 1400)
       timerRef.current = idleTimer
     },
-    [clearTimer],
+    [clearTimer, setStatus],
   )
 
   useEffect(() => clearTimer, [clearTimer])
@@ -98,24 +108,48 @@ export function useSelectedStopDetails({
     response: null,
     error: null,
   })
+  const [drivingRoute, setDrivingRoute] = useState<DrivingRouteState>({
+    status: 'idle',
+    response: null,
+    error: null,
+  })
+  const previousPublicIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!selectedPublicId) {
+      previousPublicIdRef.current = null
       return
     }
 
     let cancelled = false
     const publicId = selectedPublicId
+    const isNewSelection = previousPublicIdRef.current !== publicId
+    previousPublicIdRef.current = publicId
 
     async function loadDetails() {
       setStatus('Details werden geladen')
+      if (isNewSelection) {
+        setSelectedStop(null)
+        setMetrics(null)
+      }
       setRealtimeItineraries({ status: 'loading', response: null, error: null })
+      if (isNewSelection) {
+        setDrivingRoute({ status: 'loading', response: null, error: null })
+      }
       const realtimeRequest = fetchRealtimeItineraries(publicId, displayDate(), departureTime, profile)
         .then((response) => ({ response, error: null }))
         .catch((error: unknown) => ({
           response: null,
           error: realtimeErrorMessage(error),
         }))
+      const drivingRouteRequest = isNewSelection
+        ? fetchDrivingRoute(publicId)
+            .then((response) => ({ response, error: null }))
+            .catch((error: unknown) => ({
+              response: null,
+              error: drivingRouteErrorMessage(error),
+            }))
+        : null
 
       try {
         const [details, currentMetrics] = await Promise.all([
@@ -130,6 +164,7 @@ export function useSelectedStopDetails({
         }
 
         const realtimeResult = await realtimeRequest
+        const drivingRouteResult = await drivingRouteRequest
 
         if (!cancelled) {
           setRealtimeItineraries(
@@ -137,11 +172,19 @@ export function useSelectedStopDetails({
               ? { status: 'ready', response: realtimeResult.response, error: null }
               : { status: 'error', response: null, error: realtimeResult.error },
           )
+          if (drivingRouteResult) {
+            setDrivingRoute(
+              drivingRouteResult.response
+                ? { status: 'ready', response: drivingRouteResult.response, error: null }
+                : { status: 'error', response: null, error: drivingRouteResult.error },
+            )
+          }
         }
       } catch (error) {
         if (!cancelled) {
           setStatus(error instanceof Error ? error.message : String(error))
           setRealtimeItineraries({ status: 'idle', response: null, error: null })
+          setDrivingRoute({ status: 'idle', response: null, error: null })
         }
       }
     }
@@ -157,7 +200,8 @@ export function useSelectedStopDetails({
     setSelectedStop(null)
     setMetrics(null)
     setRealtimeItineraries({ status: 'idle', response: null, error: null })
+    setDrivingRoute({ status: 'idle', response: null, error: null })
   }, [])
 
-  return { selectedStop, metrics, realtimeItineraries, clearDetails }
+  return { selectedStop, metrics, realtimeItineraries, drivingRoute, clearDetails }
 }

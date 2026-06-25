@@ -7,17 +7,19 @@ Produktiver lokaler Standard:
 ```bash
 docker compose up -d postgis
 DATABASE_URL=postgres://regionfinder:regionfinder@localhost:55432/regionfinder npm run db:migrate
-DATABASE_URL=postgres://regionfinder:regionfinder@localhost:55432/regionfinder REGIONFINDER_API_PORT=4001 npm run dev:api
-VITE_REGIONFINDER_DATA_MODE=api VITE_REGIONFINDER_API_BASE_URL=http://127.0.0.1:4001 npm run dev -- --host 127.0.0.1 --port 5176
+npm run dev
 ```
+
+`npm run dev` startet API und Frontend gemeinsam. Lokale Defaults sind PostGIS
+`postgres://regionfinder:regionfinder@localhost:55432/regionfinder`, API-Port `4001`,
+Frontend-Port `5176` und `VITE_REGIONFINDER_API_BASE_URL=http://127.0.0.1:4001`.
 
 Der Datenbankcontainer basiert auf `pgrouting/pgrouting:16-3.5-4.0`, damit die Migrationen `pgrouting` und OSM-Schienenrekonstruktion nutzen können.
 
 Fixture-/Testmodus:
 
 ```bash
-REGIONFINDER_USE_FIXTURE_API=1 npm run dev:api
-VITE_REGIONFINDER_DATA_MODE=api npm run dev
+REGIONFINDER_USE_FIXTURE_API=1 npm run dev
 ```
 
 Fixture-Daten werden nur explizit mit `REGIONFINDER_USE_FIXTURE_API=1` verwendet. Ohne `DATABASE_URL` und ohne dieses Flag bricht der API-Start ab.
@@ -101,7 +103,7 @@ Secrets liegen nur in Environment-Variablen. `.env.example` enthält Beispielwer
 
 ## Betriebshinweise Frontend/API
 
-- `npm run dev:api` startet `tsx server/index.ts` ohne Watch-Restart; nach Servercodeänderungen API neu starten.
+- `npm run dev` startet API und Frontend gemeinsam. `npm run dev:api` startet nur `tsx server/index.ts` ohne Watch-Restart; nach Servercodeänderungen API neu starten.
 - Vite-HMR kann bei Änderungen an MapLibre-Quellen oder Hook-Dependency-Strukturen alte Browserzustände halten. In diesem Fall Browser hart neu laden oder den Vite-Prozess neu starten.
 - Bei Kartenfilter-Problemen prüfen, ob Tile-Requests `?modes=...` enthalten.
 - Bei Reisezeitfarben/Hover-Metriken prüfen, ob Stop-Tile-Requests zusätzlich `?profile=regular_tue_thu` oder das aktive Profil enthalten.

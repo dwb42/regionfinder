@@ -34,6 +34,11 @@ export const tileQuerySchema = z.object({
   profile: z.string().min(1).default('regular_tue_thu'),
 })
 
+export const schoolTileQuerySchema = z.object({
+  categories: z.string().optional(),
+  states: z.string().optional(),
+})
+
 export const routePatternParamsSchema = z.object({
   id: z.string().min(1),
 })
