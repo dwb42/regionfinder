@@ -6,6 +6,7 @@ import { DbTransportRestProvider } from '../realtime/dbTransportRestProvider'
 async function withApp(fetchImpl?: typeof fetch, backend: 'bahn-web' | 'db-transport-rest' = 'db-transport-rest') {
   const app = await buildApp({
     repository: new FixtureRepository(),
+    logger: false,
     realtimeItineraryProvider: fetchImpl
       ? new DbTransportRestProvider({
           baseUrl: 'https://db.test',

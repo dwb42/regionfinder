@@ -48,6 +48,8 @@ Stand: 2026-06-24
 - `src/App.tsx` schaltet per `VITE_REGIONFINDER_DATA_MODE=api|legacy`.
 - Der API-Modus lädt keine HVV-Großdateien, sondern Snapshot, Suche, Details, Metriken, Itineraries und MVT-Tiles.
 
+Aktueller Stand: `src/App.tsx` ist nur noch ein lazy Modus-Switch mit API-Default. Legacy liegt in `src/legacy/LegacyApp.tsx`; API-Hooks, MapLibre-Canvas, Layer und Formatter liegen unter `src/apiApp/`.
+
 ### Tests
 
 - Neue Unit-Tests für GTFS-Zeit, Service-Dates, Route Patterns, Shape-Sortierung, Shape-Distanz, Gesamtreisezeit, Durchschnitt, Median, P90, Coverage und Veröffentlichungsschwellen.
@@ -73,7 +75,7 @@ Stand: 2026-06-24
 ## Datenquellenstatus
 
 - Tatsächlich validiert: synthetischer GTFS-Feed unter `fixtures/gtfs/synthetic`.
-- Tatsächlich über Legacy vorhanden: HVV-Artefakte unter `public/data/hvv/`.
+- Historisch über Legacy vorhanden: HVV-Artefakte unter `public/data/hvv/`. Aktuell sind diese Artefakte lokal generierbar, aber nicht versioniert und werden durch den Produktionsbuild-Guard aus `dist/` herausgehalten.
 - Nicht vorhanden: DELFI-Vollsnapshot, ZHV-Datei, OSM-PBF, produktive Verwaltungsgrenzen.
 - Implementierte Adapter/Schnittstellen: `DELFI_GTFS_PATH`, `ZHV_STOPS_PATH`, `OSM_PBF_PATH`, `ADMIN_BOUNDARIES_PATH`.
 - Datenmengen synthetisch: 8 Stops, 2 Routes, 5 Trips, 12 Stop-Times, 2 Kalenderdienste, 3 Calendar-Date-Ausnahmen/Einträge, 8 Shape-Punkte.

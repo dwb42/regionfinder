@@ -10,7 +10,8 @@ Projektbezogene Hinweise für zukünftige Coding-Sessions.
   - API: `http://127.0.0.1:4001`
   - Frontend: `http://localhost:5176/`
 - Playwright ist als Dev-Dependency installiert; lokale UI-Smoke-Tests brauchen einmalig `npx playwright install chromium`.
-- `public/data/hvv/` enthält große generierte Legacy-Artefakte. `stop-times.json` ist sehr groß und darf nicht unbedacht im Browser geladen werden.
+- `public/data/hvv/` ist nur Platzhalter für lokal generierte Legacy-Artefakte. Die JSON-Artefakte sind ignoriert; `stop-times.json` ist sehr groß und darf nicht in Browser-/Produktionsbuilds geraten.
+- `npm run build` führt vorher `scripts/assert-no-public-hvv-artifacts.mjs` aus und bricht ab, wenn generierte Dateien unter `public/data/hvv/` liegen. Nur für bewusst erzeugte Legacy-Artefakt-Builds `REGIONFINDER_ALLOW_PUBLIC_HVV_ARTIFACTS=1` setzen.
 - Große Produktionsdaten, Routinggraphen und Reports liegen unter `data/` und sind überwiegend per `.gitignore` ausgeschlossen.
 
 ## Standardprüfung
@@ -29,7 +30,7 @@ PostGIS:
 
 ```bash
 docker compose up -d postgis
-npm run db:migrate
+DATABASE_URL=postgres://regionfinder:regionfinder@localhost:55432/regionfinder npm run db:migrate
 ```
 
 Der Compose-DB-Container nutzt `pgrouting/pgrouting:16-3.5-4.0`, nicht das reine PostGIS-Image. pgRouting wird für die OSM-Schienenrekonstruktion benötigt.
@@ -39,6 +40,12 @@ Produktiver API-Modus:
 ```bash
 DATABASE_URL=postgres://regionfinder:regionfinder@localhost:55432/regionfinder REGIONFINDER_API_PORT=4001 npm run dev:api
 VITE_REGIONFINDER_DATA_MODE=api VITE_REGIONFINDER_API_BASE_URL=http://127.0.0.1:4001 npm run dev -- --host 127.0.0.1 --port 5176
+```
+
+Ohne `DATABASE_URL` startet die API nicht automatisch mit Fixtures. Für isolierte Tests/Demos muss Fixture explizit gesetzt werden:
+
+```bash
+REGIONFINDER_USE_FIXTURE_API=1 npm run dev:api
 ```
 
 Wenn `server/` geändert wurde, den API-Prozess neu starten. Wenn MapLibre-Quellen oder Hook-Strukturen geändert wurden, den Browser hart neu laden statt sich allein auf HMR zu verlassen.
@@ -90,10 +97,13 @@ Benannte Korridore stehen in `pipeline/rail_network.py`. Aktuell sind viele S-/R
 - Route-MVTs sollen `route_color` liefern. Das Frontend nutzt echte GTFS-Farben bevorzugt und Fallbackfarben nach Modus.
 - Route-MVTs nutzen `route_pattern_display_geometries`. Hochkonfidente `osm_reconstructed`-Geometrien dürfen als Anzeigegeometrie verwendet werden; `osm_reconstructed_low_confidence` und `stop_sequence_approximation` nicht als präzise Strecke darstellen. Im aktuellen Standardlayer sind beide ausgeblendet, weil Low-Confidence noch Fehlkorridore erzeugen kann.
 - Stop-Metriken können `?date=YYYY-MM-DD` erhalten; dann liefert die API `directConnectionCount` als tagesgenaue Anzahl direkter Trips ohne Umstieg.
-- DB-Echtzeitverbindungen laufen ausschließlich serverseitig über `server/realtime/dbTransportRestProvider.ts`; keine direkten DB-/bahn.de-Requests aus React.
+- DB-Echtzeitverbindungen laufen ausschließlich serverseitig über `server/realtime/dbTransportRestProvider.ts`; keine direkten DB-/bahn.de-Requests aus React. Die Implementierung ist in `server/realtime/` in Provider-Orchestrierung, bahn.de-/db.transport-Clients, Stop-Mapping, Journey-Mapping und Cache aufgeteilt.
 - Standard-Realtime-Backend ist `bahn-web`; `REGIONFINDER_REALTIME_PROVIDER=db-transport-rest` erzwingt den Wrapper `v6.db.transport.rest`. Ursprung bleibt Hamburg Hbf (`REGIONFINDER_ORIGIN_DB_STOP_ID=8002549`).
 - Realtime-Fehlercodes im UI freundlich behandeln: `db_stop_unmapped` und `realtime_unavailable` dürfen das Detailpanel nicht zerstören.
 - Der API-Modus darf nicht stillschweigend auf Fixture-Daten zurückfallen.
+- `PostgresRepository` ist nur Adapter auf das Repository-Interface. SQL gehört in fokussierte Module unter `server/db/queries/`.
+- API-Frontend-Code liegt unter `src/apiApp/`: Hooks, MapLibre-Canvas, Layerdefinitionen, Formatter und Detailpanel-Komponenten. `src/ApiApp.tsx` bleibt Layout/Verdrahtung.
+- `MapLibreCanvas` wird lazy geladen. Große MapLibre-Abhängigkeiten nicht wieder statisch in den App-Shell importieren.
 
 ## UX-Konventionen
 

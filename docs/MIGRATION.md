@@ -4,12 +4,12 @@
 
 Legacy:
 
-- `src/App.tsx`
+- `src/legacy/LegacyApp.tsx`
 - Leaflet/React-Leaflet
 - `src/data/hvv.ts`
 - `src/data/reachabilityWorker.ts`
 - `src/domain/gtfsReachability.ts`
-- statische JSON-Artefakte in `public/data/hvv/`
+- lokal generierte, nicht versionierte JSON-Artefakte in `public/data/hvv/`
 
 Der alte Browser-Worker bleibt verfügbar, ist aber nicht mehr Zielarchitektur.
 
@@ -29,6 +29,8 @@ Feature-Flag:
 VITE_REGIONFINDER_DATA_MODE=api
 VITE_REGIONFINDER_DATA_MODE=legacy
 ```
+
+Ohne Feature-Flag startet das Frontend im API-Modus. Der Legacy-Pfad wird lazy geladen.
 
 Aktueller Status:
 
@@ -67,4 +69,4 @@ Der Worker darf erst entfernt werden, wenn:
 
 ## Datenmigration
 
-Legacy-HVV-JSONs werden nicht in PostGIS migriert. Sie bleiben Integrationstest-/Vergleichsartefakte. Der neue kanonische Import erfolgt aus DELFI-GTFS plus ZHV/OSM/Admin-Grenzen.
+Legacy-HVV-JSONs werden nicht in PostGIS migriert und nicht versioniert. Sie bleiben lokal generierbare Vergleichsartefakte. Der neue kanonische Import erfolgt aus DELFI-GTFS plus ZHV/OSM/Admin-Grenzen.

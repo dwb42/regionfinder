@@ -31,7 +31,7 @@ Aktueller Status: kein echter ZHV-Voll-Export lag lokal vor. Die aktive Produkti
 
 ## HVV
 
-HVV bleibt regionale Enrichment- und Integrationstestquelle. Der bestehende Importer `npm run import:hvv` erzeugt Legacy-JSONs unter `public/data/hvv/`. HVV wird nicht ungeprüft mit DELFI-Fahrten gemischt.
+HVV bleibt regionale Enrichment- und Integrationstestquelle. Der bestehende Importer `npm run import:hvv` erzeugt lokale Legacy-JSONs unter `public/data/hvv/`. Diese Artefakte sind nicht versioniert und dürfen nicht in Produktionsbuilds gelangen; der Build-Guard bricht ohne `REGIONFINDER_ALLOW_PUBLIC_HVV_ARTIFACTS=1` ab, wenn dort generierte Dateien liegen. HVV wird nicht ungeprüft mit DELFI-Fahrten gemischt.
 
 ## Regionale Enrichment-Feeds
 

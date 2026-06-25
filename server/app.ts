@@ -17,6 +17,7 @@ import {
 export type BuildAppOptions = {
   repository: RegionfinderRepository
   realtimeItineraryProvider?: RealtimeItineraryProvider
+  logger?: boolean
 }
 
 function notFound(message: string) {
@@ -51,7 +52,7 @@ async function firstResolved<T>(ids: string[], resolve: (publicId: string) => Pr
 
 export async function buildApp(options: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: true,
+    logger: options.logger ?? true,
   })
   const realtimeItineraryProvider = options.realtimeItineraryProvider ?? new DbTransportRestProvider()
 

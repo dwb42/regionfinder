@@ -108,7 +108,7 @@ Der Metrikendpunkt `GET /api/v1/stops/:publicId/metrics?profile=...&date=YYYY-MM
 Technische Entscheidungen:
 
 - Die Realtime-Abfrage läuft ausschließlich serverseitig; der React-Client ruft nur die Regionfinder-API auf.
-- Der Provider sitzt in `server/realtime/dbTransportRestProvider.ts` und transformiert externe Antworten in `ApiItineraryResponse`.
+- Der Provider-Orchestrator sitzt in `server/realtime/dbTransportRestProvider.ts`; Clients, Stop-Mapping, Journey-Mapping und TTL-Cache liegen in separaten Modulen unter `server/realtime/`.
 - Standard-Backend ist aktuell `bahn-web`, weil `v6.db.transport.rest` in der Live-Prüfung instabil war und direkte Node-Requests an bahn.de geblockt werden können. Das Backend nutzt kontrolliert `curl` mit Cookie-Warmup als Fallback.
 - `REGIONFINDER_REALTIME_PROVIDER=db-transport-rest` schaltet explizit auf den Wrapper `v6.db.transport.rest`; `DB_TRANSPORT_REST_BASE_URL` konfiguriert dessen Basis-URL.
 - Ursprung ist per Default Hamburg Hbf über `REGIONFINDER_ORIGIN_DB_STOP_ID=8002549`.
@@ -161,16 +161,21 @@ Wichtige Einschränkung: Viele S-/Regional-Patterns sind zwar OSM-geroutet, erre
 - `npm run rail:reconstruct` filtert OSM-Schienen, lädt sie mit osm2pgsql in `staging_osm_rail_*`, baut `rail_edges`/`rail_vertices`, snappt StopPlaces und erzeugt `route_pattern_rail_matches`.
 - Match-Nachläufe werden bevorzugt mit `--corridor`/`--routes` gefahren; große `RAIL`- oder Norddeutschland-Komplettläufe sind lokal weiterhin zu teuer.
 - Der API-Modus darf nicht stillschweigend auf Fixture-Daten zurückfallen.
+- Ohne `DATABASE_URL` bricht der API-Start ab, außer `REGIONFINDER_USE_FIXTURE_API=1` ist explizit gesetzt.
 - Fixtures bleiben für Tests und lokale isolierte Entwicklung verfügbar.
+- `PostgresRepository` delegiert an fokussierte Query-Module unter `server/db/queries/`; neue SQL-Blöcke sollen dort statt in der Adapterklasse liegen.
+- `src/App.tsx` lädt API- und Legacy-Pfad lazy. `src/ApiApp.tsx` ist nur noch API-Layout/Verdrahtung; Hooks, MapLibre-Canvas, Layerdefinitionen, Formatter und Detailpanel-Komponenten liegen in `src/apiApp/`.
+- `MapLibreCanvas` wird lazy geladen, damit MapLibre nicht im API-Shell-Chunk landet.
+- Generierte Legacy-HVV-Artefakte unter `public/data/hvv/` sind nicht versioniert. Produktionsbuilds brechen ab, wenn dort generierte Dateien liegen.
 - Playwright ist als Dev-Dependency verfügbar; lokale Browser-Smoke-Tests benötigen einmalig `npx playwright install chromium`.
 
 ## Legacy-Modus
 
 Der Legacy-Pfad bleibt erhalten:
 
-- `src/App.tsx`
+- `src/legacy/LegacyApp.tsx`
 - Leaflet/React-Leaflet
-- statische HVV-Artefakte in `public/data/hvv/`
+- lokal generierte, nicht versionierte HVV-Artefakte in `public/data/hvv/`
 - Seed-Router und Browser-Worker
 
 Legacy-UX-Konventionen bleiben gültig:

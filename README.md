@@ -1,9 +1,9 @@
 # Regionfinder
 
-Regionfinder ist inzwischen eine zweigleisige Anwendung:
+Regionfinder ist inzwischen eine API-first-Anwendung mit optionalem Legacy-Pfad:
 
 - **API-/Produktionsmodus**: React 19, Vite, TypeScript, MapLibre, Fastify, PostgreSQL/PostGIS/pgRouting, MOTIS-Metriken, DB-Echtzeitvergleich und Mapbox Vector Tiles.
-- **Legacy-Modus**: die ursprüngliche Leaflet/HVV-JSON-Anwendung bleibt als Vergleichs- und Fallbackpfad erhalten.
+- **Legacy-Modus**: die ursprüngliche Leaflet/HVV-JSON-Anwendung bleibt als explizit aktivierbarer Vergleichspfad erhalten und wird separat geladen.
 
 Der produktive Pfad nutzt den aktiven DELFI-Snapshot `delfi-bb69c7e2c8d5` aus PostGIS. Der alte Browser-Worker ist nicht mehr die kanonische Routing- oder Metriklogik.
 
@@ -12,7 +12,7 @@ Der produktive Pfad nutzt den aktiven DELFI-Snapshot `delfi-bb69c7e2c8d5` aus Po
 ```bash
 npm install
 docker compose up -d postgis
-npm run db:migrate
+DATABASE_URL=postgres://regionfinder:regionfinder@localhost:55432/regionfinder npm run db:migrate
 ```
 
 Produktiver API-/Frontend-Modus mit lokalem PostGIS:
@@ -36,11 +36,15 @@ REGIONFINDER_USE_FIXTURE_API=1 npm run dev:api
 VITE_REGIONFINDER_DATA_MODE=api npm run dev
 ```
 
+Ohne `DATABASE_URL` startet die API nicht automatisch mit Fixtures. Fixture-Daten sind nur mit `REGIONFINDER_USE_FIXTURE_API=1` aktiv.
+
 Legacy-Modus:
 
 ```bash
 VITE_REGIONFINDER_DATA_MODE=legacy npm run dev
 ```
+
+Ohne `VITE_REGIONFINDER_DATA_MODE` startet das Frontend im API-Modus.
 
 ## Befehle
 
@@ -52,7 +56,7 @@ npm run test                        # Vitest
 npm run lint                        # ESLint
 npm run check                       # Build, Tests und Lint
 npx playwright install chromium     # Browser-Binary fuer lokale Playwright-Smoke-Tests
-npm run db:migrate                  # PostGIS-Migrationen
+DATABASE_URL=... npm run db:migrate # PostGIS-Migrationen
 npm run import:hvv                  # Legacy-HVV-JSON-Artefakte
 npm run pipeline:import:synthetic   # synthetischen GTFS-Fixture-Snapshot importieren
 npm run rail:reconstruct            # OSM-Schienen importieren und Route-Patterns rekonstruieren
@@ -127,7 +131,9 @@ Der Realtime-Endpunkt wird serverseitig geladen. Standard ist aktuell das bahn.d
 
 ## Frontend
 
-`src/ApiApp.tsx` ist der produktive API-Modus.
+`src/ApiApp.tsx` ist das Layout und die Verdrahtung des produktiven API-Modus.
+
+Der Frontend-Einstieg lädt den API- und Legacy-Pfad lazy. Innerhalb des API-Modus ist die MapLibre-Canvas separat geladen, damit die restliche API-UI nicht im großen MapLibre-Chunk landet.
 
 Wichtige UX-Entscheidungen:
 
@@ -158,19 +164,21 @@ Wichtige UX-Entscheidungen:
 
 Der Legacy-Modus nutzt weiterhin:
 
-- `src/App.tsx`
+- `src/legacy/LegacyApp.tsx`
 - Leaflet/React-Leaflet
 - `src/data/hvv.ts`
-- statische Artefakte unter `public/data/hvv/`
+- lokal generierte statische Artefakte unter `public/data/hvv/`
 - den alten Browser-Worker/Seed-Router
 
-`public/data/hvv/stop-times.json` ist groß und darf nicht direkt im React-Frontend geladen werden.
+Die generierten Legacy-HVV-Artefakte sind nicht versioniert. `public/data/hvv/stop-times.json` ist groß und darf nicht direkt im React-Frontend geladen werden.
 
 HVV-Artefakte regenerieren:
 
 ```bash
 npm run import:hvv -- --download
 ```
+
+Der Produktionsbuild bricht ab, wenn generierte Dateien unter `public/data/hvv/` liegen, weil Vite diese sonst nach `dist/` kopieren würde. Für einen bewusst erzeugten Legacy-Artefakt-Build kann die Prüfung mit `REGIONFINDER_ALLOW_PUBLIC_HVV_ARTIFACTS=1` übersteuert werden.
 
 ## Daten und Artefakte
 

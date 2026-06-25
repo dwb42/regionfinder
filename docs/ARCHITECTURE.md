@@ -7,13 +7,16 @@ Hinweis: Diese Datei beschreibt den Legacy-MVP und bleibt als Referenz erhalten.
 Der aktuelle V2-Pfad besteht aus:
 
 - `server/`: Fastify-API für Snapshots, StopPlaces, Metriken, lokale Itineraries, DB-Echtzeit-Itineraries, Route Patterns und MVT-Kacheln.
+- `server/db/queries/`: fokussierte PostGIS-Query-Module; `PostgresRepository` ist nur noch Adapter auf das Repository-Interface.
+- `server/realtime/`: DB-/bahn.de-Clients, Stop-Mapping, Journey-Mapping und Cache für DB-Echtzeit.
 - `db/migrations/`: PostGIS-Schema, Admin-Grenzen, Snapshot-Aktivierung.
 - `pipeline/`: Produktionsquellen, DELFI-Import, MOTIS/R5-Orchestrierung, Metrikberechnung und OSM-Schienenrekonstruktion.
-- `src/ApiApp.tsx`: MapLibre-Frontend.
+- `src/ApiApp.tsx`: API-Frontend-Layout.
+- `src/apiApp/`: API-Frontend-Hooks, MapLibre-Canvas, Layerdefinitionen, Formatter und Detailpanel-Komponenten.
 - `src/data/api.ts`: API-Client.
 - `src/api/contracts.ts`: gemeinsame Antworttypen.
 
-Die Karte lädt im API-Modus StopPlaces und Route Patterns ausschließlich als Vector Tiles:
+Die Karte lädt im API-Modus StopPlaces und Route Patterns ausschließlich als Vector Tiles. Die MapLibre-Canvas wird im Frontend lazy geladen:
 
 - `GET /api/v1/tiles/stops/{z}/{x}/{y}.mvt?modes=...`
 - `GET /api/v1/tiles/routes/{z}/{x}/{y}.mvt?modes=...`
@@ -48,7 +51,8 @@ Die App ist ein Vite/React/TypeScript-Projekt mit Leaflet-Karte. Sie trennt drei
 
 ## Wichtige Dateien
 
-- `src/App.tsx`: Haupt-UI, Leaflet-Layer, Auswahlzustand, HVV-Reisezeit-Näherung.
+- `src/legacy/LegacyApp.tsx`: Legacy-UI, Leaflet-Layer, Auswahlzustand, HVV-Reisezeit-Näherung.
+- `src/App.tsx`: kleiner Modus-Switch, lädt API- und Legacy-Pfad lazy.
 - `src/App.css`: Layout und Detailpanel-/Layer-Styling.
 - `src/domain/types.ts`: zentrale Domain-Typen für Stations, Routes, GTFS-Import und HVV-Artefakte.
 - `src/domain/reachability.ts`: Seed-Router und Seed-Datenvalidierung.
@@ -57,7 +61,7 @@ Die App ist ein Vite/React/TypeScript-Projekt mit Leaflet-Karte. Sie trennt drei
 - `src/data/railway.ts`: Seed-Linien und Service-Patterns.
 - `src/data/hvv.ts`: Hook zum Laden von HVV-Frontend-Artefakten.
 - `scripts/import-hvv-gtfs.mjs`: Node-Importer für HVV GTFS Static.
-- `public/data/hvv/*.json`: erzeugte HVV-Artefakte.
+- `public/data/hvv/*.json`: lokal erzeugte, nicht versionierte HVV-Artefakte.
 
 ## Domain-Modell
 
@@ -170,7 +174,7 @@ Das ist bewusst keine fahrplanexakte Berechnung. Der spätere GTFS-Router soll d
 
 ## Performance-Entscheidungen
 
-- `stop-times.json` nicht im Browser laden.
+- `stop-times.json` nicht im Browser laden und nicht in Produktionsbuilds kopieren.
 - Bus/Fähre default aus, um die Karte lesbar zu halten.
 - Linien werden als repräsentative Route pro GTFS-Route angezeigt, nicht als jede Fahrt.
 - Shapes werden aus `routes.json` direkt geladen; das ist deutlich kleiner als vollständige Stop-Times.

@@ -5,7 +5,7 @@
 ```bash
 docker compose up -d postgis
 cp .env.example .env
-npm run db:migrate
+DATABASE_URL=postgres://regionfinder:regionfinder@localhost:55432/regionfinder npm run db:migrate
 ```
 
 Der lokale DB-Dienst nutzt das pgRouting-Image `pgrouting/pgrouting:16-3.5-4.0`. Das ist Voraussetzung für `db/migrations/004_rail_network.sql` und die OSM-Schienenrekonstruktion.
@@ -51,7 +51,7 @@ REGIONFINDER_USE_FIXTURE_API=1 npm run dev:api
 npm run dev
 ```
 
-Im produktiven Pfad wird `DATABASE_URL` gesetzt und `REGIONFINDER_USE_FIXTURE_API` weggelassen. Der API-Modus darf nicht stillschweigend auf Fixtures zurückfallen.
+Im produktiven Pfad wird `DATABASE_URL` gesetzt und `REGIONFINDER_USE_FIXTURE_API` weggelassen. Der API-Modus fällt nicht stillschweigend auf Fixtures zurück; ohne `DATABASE_URL` bricht der API-Start ab.
 
 Produktiver API-/Frontend-Modus mit aktivem PostGIS-Snapshot:
 

@@ -1,0 +1,56 @@
+[
+  {
+    "id": "stop-place-hamburg-hbf",
+    "name": "Hamburg Hbf",
+    "coordinates": { "lat": 53.552733, "lon": 10.006909 },
+    "type": "hauptbahnhof",
+    "modes": ["ICE", "RE", "S"],
+    "stopIds": ["hvv-stop-hamburg-hbf"],
+    "layerIds": ["regional", "s-bahn"]
+  },
+  {
+    "id": "stop-place-hamburg-harburg",
+    "name": "Hamburg-Harburg",
+    "coordinates": { "lat": 53.456, "lon": 9.991 },
+    "type": "regional",
+    "modes": ["RE", "S"],
+    "stopIds": ["hvv-stop-harburg"],
+    "layerIds": ["regional", "s-bahn"]
+  },
+  {
+    "id": "stop-place-elmshorn",
+    "name": "Elmshorn",
+    "coordinates": { "lat": 53.753, "lon": 9.653 },
+    "type": "regional",
+    "modes": ["RE", "RB"],
+    "stopIds": ["hvv-stop-elmshorn"],
+    "layerIds": ["regional"]
+  },
+  {
+    "id": "stop-place-kaltenkirchen",
+    "name": "Kaltenkirchen",
+    "coordinates": { "lat": 53.835, "lon": 9.959 },
+    "type": "regional",
+    "modes": ["AKN"],
+    "stopIds": ["hvv-stop-kaltenkirchen"],
+    "layerIds": ["s-bahn"]
+  },
+  {
+    "id": "stop-place-molln",
+    "name": "Mölln",
+    "coordinates": { "lat": 53.628, "lon": 10.687 },
+    "type": "regional",
+    "modes": ["RE"],
+    "stopIds": ["hvv-stop-molln"],
+    "layerIds": ["regional"]
+  },
+  {
+    "id": "stop-place-ratzeburg",
+    "name": "Ratzeburg",
+    "coordinates": { "lat": 53.699, "lon": 10.758 },
+    "type": "regional",
+    "modes": ["RE", "BUS"],
+    "stopIds": ["hvv-stop-ratzeburg-rail", "hvv-stop-ratzeburg-bus-1", "hvv-stop-ratzeburg-bus-2"],
+    "layerIds": ["regional", "bus"]
+  }
+]

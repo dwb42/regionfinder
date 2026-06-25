@@ -40,11 +40,11 @@ Statuswerte stehen in `db/migrations/001_core_schema.sql`: `created`, `raw_valid
 - Batchmetriken: `motis_one_to_all` und `r5py` sind zertifizierte Engines. Mindestens ein abgeschlossener Lauf einer zertifizierten Engine ist ein Aktivierungs-Gate. R5/r5py bleibt Vergleichs- und Performance-Engine, blockiert aber keinen Snapshot, wenn MOTIS den Produktionslauf abgeschlossen hat.
 - Lokale Verbindungsauskunft: `ItineraryProvider`-Format ist über `src/api/contracts.ts` festgelegt. Die Produktions-API kann reale MOTIS-`/api/v5/plan`-Antworten aus dem lokalen Graph in das interne Antwortformat transformieren.
 - DB-Echtzeitvergleich: `RealtimeItineraryProvider` liefert dasselbe `ApiItineraryResponse`-Format über `GET /api/v1/stops/:publicId/realtime-itineraries`. Die Abfrage läuft serverseitig; der Client erhält nur normalisierte Alternativen und Fehlercodes. Die UI steuert die Startzeit im Detailpanel und bietet `Frühere`/`Spätere`-Navigation.
-- Fixture-Provider: `server/db/fixtureRepository.ts` liefert lokale Testverbindungen ohne externe Fahrplanauskunft.
+- Fixture-Provider: `server/db/fixtureRepository.ts` liefert lokale Testverbindungen ohne externe Fahrplanauskunft. Fixture-Modus wird nur explizit mit `REGIONFINDER_USE_FIXTURE_API=1` aktiviert; ohne `DATABASE_URL` darf der API-Start nicht still auf Fixtures fallen.
 
 ## DB-Echtzeitprovider
 
-Implementierung: `server/realtime/dbTransportRestProvider.ts`.
+Implementierung: `server/realtime/dbTransportRestProvider.ts` als Provider-Orchestrator. Clients, Stop-Mapping, Journey-Mapping und TTL-Cache liegen in separaten Modulen unter `server/realtime/`.
 
 Konfiguration:
 
@@ -89,7 +89,15 @@ Request-Validierung liegt in `server/schemas.ts`, gemeinsame Antworttypen in `sr
 
 ## Frontend
 
-`VITE_REGIONFINDER_DATA_MODE=api` aktiviert `src/ApiApp.tsx` mit MapLibre und API-Zugriff. `legacy` hält den bisherigen Leaflet/HVV-JSON-Pfad verfügbar. Der Browser soll im API-Modus keine großen Fahrplandateien laden.
+`VITE_REGIONFINDER_DATA_MODE=api` aktiviert den API-Pfad mit MapLibre und API-Zugriff. Ohne Feature-Flag ist `api` der Default. `legacy` hält den bisherigen Leaflet/HVV-JSON-Pfad verfügbar. `src/App.tsx` lädt API und Legacy lazy; innerhalb des API-Pfads wird `MapLibreCanvas` separat lazy geladen. Der Browser soll im API-Modus keine großen Fahrplandateien laden.
+
+Frontend-Code im API-Pfad ist nach Zuständigkeit aufgeteilt:
+
+- `src/ApiApp.tsx`: Layout und Verdrahtung.
+- `src/apiApp/hooks.ts`: API-Startup, Suchmetriken, Detailpanel-Daten und Map-Update-Status.
+- `src/apiApp/MapLibreCanvas.tsx`: imperative MapLibre-Integration.
+- `src/apiApp/mapLayers.ts`: MapLibre-Styles, Layer, MVT-URLs und Feature-Popup-Inhalte.
+- `src/apiApp/formatters.ts` und `src/apiApp/ItineraryComponents.tsx`: Anzeigeformatierung und Detailpanel-Bausteine.
 
 Aktueller API-Modus:
 

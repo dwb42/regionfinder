@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:api": "tsx server/index.ts",
+    "prebuild": "node scripts/assert-no-public-hvv-artifacts.mjs",
     "build": "tsc -b && vite build",
     "import:hvv": "node scripts/import-hvv-gtfs.mjs",
     "db:migrate": "tsx scripts/migrate-db.ts",

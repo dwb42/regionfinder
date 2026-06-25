@@ -6,7 +6,7 @@ Produktiver lokaler Standard:
 
 ```bash
 docker compose up -d postgis
-npm run db:migrate
+DATABASE_URL=postgres://regionfinder:regionfinder@localhost:55432/regionfinder npm run db:migrate
 DATABASE_URL=postgres://regionfinder:regionfinder@localhost:55432/regionfinder REGIONFINDER_API_PORT=4001 npm run dev:api
 VITE_REGIONFINDER_DATA_MODE=api VITE_REGIONFINDER_API_BASE_URL=http://127.0.0.1:4001 npm run dev -- --host 127.0.0.1 --port 5176
 ```
@@ -19,6 +19,8 @@ Fixture-/Testmodus:
 REGIONFINDER_USE_FIXTURE_API=1 npm run dev:api
 VITE_REGIONFINDER_DATA_MODE=api npm run dev
 ```
+
+Fixture-Daten werden nur explizit mit `REGIONFINDER_USE_FIXTURE_API=1` verwendet. Ohne `DATABASE_URL` und ohne dieses Flag bricht der API-Start ab.
 
 MOTIS ist als Compose-Profil vorbereitet:
 

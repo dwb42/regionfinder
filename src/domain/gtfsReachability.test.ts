@@ -6,7 +6,7 @@ import { calculateGtfsReachability, prepareReachabilityIndex } from './gtfsReach
 import type { HvvReachabilityIndex, StopPlace } from './types'
 
 function readArtifact<T>(name: string): T {
-  return JSON.parse(readFileSync(resolve('public/data/hvv', name), 'utf8')) as T
+  return JSON.parse(readFileSync(resolve('fixtures/hvv', name), 'utf8')) as T
 }
 
 describe('StopPlace artifacts', () => {

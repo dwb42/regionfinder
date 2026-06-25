@@ -40,10 +40,11 @@ Zum Zeitpunkt dieses historischen Plans hingen die vollständigen Produktionsdat
    - Fastify-Server mit Health/Readiness.
    - `/api/v1/snapshots/current`, Stop-Suche, Stop-Details, Metriken, Itineraries, Route-Patterns, MVT-Endpunkte.
    - Zod-Validierung und gemeinsame TypeScript-Typen.
-   - Postgres-Repository mit Fixture-Fallback für Tests.
+   - Historischer Plan: Postgres-Repository mit Fixture-Fallback für Tests.
+   - Aktueller Stand: Fixture-Modus wird nur explizit mit `REGIONFINDER_USE_FIXTURE_API=1` aktiviert; ohne `DATABASE_URL` bricht der API-Start ab.
 
 5. Frontend
-   - Feature-Flag `VITE_REGIONFINDER_DATA_MODE=legacy|api`.
+   - Feature-Flag `VITE_REGIONFINDER_DATA_MODE=legacy|api`; aktueller Default ohne Flag ist `api`.
    - Legacy-Leaflet bleibt erhalten.
    - Neuer MapLibre-Modus lädt Metadaten, Stop-Suche, Detaildaten, Metriken und Tiles über API.
    - Basiskartenquelle ist konfigurierbar.
