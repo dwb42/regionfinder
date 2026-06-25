@@ -74,12 +74,10 @@ Primaere Engine fuer den aktuellen Produktionssnapshot ist MOTIS one-to-all. R5/
 
 ```bash
 DATABASE_URL=postgres://regionfinder:regionfinder@localhost:55432/regionfinder \
-REGIONFINDER_PRODUCTION_DATES=2026-07-07 \
-REGIONFINDER_MOTIS_MAX_TRAVEL_MINUTES=240 \
 npm run metrics:compute:production
 ```
 
-Hinweis: `REGIONFINDER_MOTIS_MAX_TRAVEL_MINUTES=240` war in der lokalen 16-GB-/Docker-Umgebung der ausgefuehrte Produktionshorizont. Das fachliche Zielprofil bleibt bei 12 Stunden; der 12-Stunden-One-to-all-Lauf expandierte deutschlandweit auf mehr als 400.000 technische Orte pro Sample und ist als Performance-Restarbeit dokumentiert.
+Das aktive Profil `regular_tue_thu` verwendet als repräsentativen Werktag `2026-09-15`, sampled 00:00 bis GTFS 28:00 alle 5 Minuten und begrenzt die Maximaldauer auf 120 Minuten. Der Batch berechnet nur die schnellste planmäßige Reisezeit zum exakten StopPlace. Er setzt keinen finalen Fußweg zu Nachbarhaltestellen und berechnet keine Median-/P90-/Transferaggregate.
 
 ## OSM-Schienenrekonstruktion
 
@@ -144,14 +142,14 @@ Readiness:
 curl http://127.0.0.1:4001/ready
 ```
 
-Gefilterte Tile-Prüfung ohne Bus/Fähre:
+Gefilterte Tile-Prüfung ohne Bus:
 
 ```bash
 curl -o /tmp/routes.mvt \
   'http://127.0.0.1:4001/api/v1/tiles/routes/8/135/82.mvt?modes=ICE%2CIC%2CEC%2CRE%2CRB%2CRAIL%2CS%2CAKN%2CU'
 ```
 
-Die API-Modus-Karte muss bei deaktiviertem `Bus` und `Fähre` gefilterte MVT-URLs mit `?modes=...` anfragen. Der Client entfernt und erneuert die MapLibre-Quellen beim Umschalten, damit alte ungefilterte Tiles nicht im Cache sichtbar bleiben.
+Die API-Modus-Karte muss bei deaktiviertem `Bus` gefilterte MVT-URLs mit `?modes=...` anfragen. Der Client entfernt und erneuert die MapLibre-Quellen beim Umschalten, damit alte ungefilterte Tiles nicht im Cache sichtbar bleiben.
 
 Stop-Tiles müssen zusätzlich das aktive Routingprofil enthalten, damit Reisezeitfarben und Hover-Metriken aus dem passenden Metric Run stammen:
 
@@ -163,7 +161,7 @@ curl -o /tmp/stops.mvt \
 DB-Echtzeitprüfung:
 
 ```bash
-curl 'http://127.0.0.1:4001/api/v1/stops/de%3A01060%3A37985%3A1%3A8000526/realtime-itineraries?date=2026-07-07&time=08%3A00&profile=regular_tue_thu'
+curl 'http://127.0.0.1:4001/api/v1/stops/de%3A01060%3A37985%3A1%3A8000526/realtime-itineraries?date=2026-09-15&time=08%3A00&profile=regular_tue_thu'
 ```
 
 Erwartung: normalisierte `ApiItineraryResponse` mit bis zu drei Alternativen ab Hamburg Hbf. Fehlercodes sind `db_stop_unmapped` für nicht gemappte Ziele und `realtime_unavailable` für Upstream-/Timeoutprobleme.
@@ -171,7 +169,7 @@ Erwartung: normalisierte `ApiItineraryResponse` mit bis zu drei Alternativen ab 
 Tagesgenaue Direktverbindungen im Metrikblock prüfen:
 
 ```bash
-curl 'http://127.0.0.1:4001/api/v1/stops/de%3A01060%3A37985%3A1%3A8000526/metrics?profile=regular_tue_thu&date=2026-07-07'
+curl 'http://127.0.0.1:4001/api/v1/stops/de%3A01060%3A37985%3A1%3A8000526/metrics?profile=regular_tue_thu&date=2026-09-15'
 ```
 
 Erwartung: `directConnectionCount` enthält die Anzahl fahrplanmäßiger direkter Trips ohne Umstieg am angegebenen Datum.

@@ -1,6 +1,6 @@
 # Production Data Integration Report
 
-Stand: 2026-06-24
+Stand: 2026-06-25
 
 ## Ergebnis
 
@@ -10,20 +10,23 @@ Die Aktivierung basiert auf der zertifizierten Produktions-Metrikengine `motis_o
 
 Aktiver Metriklauf:
 
-- Metric Run: `c63c2468-e7c8-4260-9ac7-abc2f75d7e02`
+- Metric Run: `4d9f96b5-f905-42cd-a5e1-2283e9b7bd7d`
 - Engine: `motis_one_to_all`
 - Engine-Version: `motis-v2.10.2`
 - Profil: `regular_tue_thu`
-- Sample-Basis: 2026-07-07, 05:00 bis GTFS 25:00, alle 5 Minuten
-- Samples: 240
+- Metric Definition: `2026-06-25.fastest-day-exact-stop`
+- Repräsentativer Werktag: 2026-09-15
+- Sample-Basis: 00:00 bis GTFS 28:00, alle 5 Minuten
+- Samples: 336
+- Maximaldauer: 120 Minuten
 - Ziel-StopPlaces: 95.870
-- Erreichbare Ziel-StopPlaces: 63.195
-- Nicht erreichbare Ziel-StopPlaces: 32.675
-- Verarbeitete MOTIS-Ergebniszuordnungen: 8.264.001
+- Erreichbare Ziel-StopPlaces: 30.737
+- Nicht erreichbare Ziel-StopPlaces: 65.133
+- Verarbeitete MOTIS-Ergebniszuordnungen: 3.761.902
 - Rohsample-Artefakt: `data/processed/metrics/delfi-bb69c7e2c8d5/regular_tue_thu/motis-one-to-all-samples.jsonl.gz`
-- Rohsample-SHA-256: `66f9e5fa29e04ce3bc3ed34cfaf3c26d88cd13b1635ed6d3610e8f06883a897a`
+- Rohsample-SHA-256: `5a90086e9d08d59fdd4f650e053889585483f47a218abcb2fc39a37529708884`
 
-Abweichung: Der lokal ausgeführte MOTIS-One-to-all-Horizont betraegt 240 Minuten. Der urspruengliche 12-Stunden-Horizont wurde getestet, expandierte aber pro Sample deutschlandweit auf mehr als 400.000 technische Orte und war in der lokalen 16-GB-/Docker-Umgebung nicht als Vollsampling praktikabel. Diese Performance-Luecke ist als technische Restarbeit dokumentiert; die aktivierten Metriken sind trotzdem reale MOTIS-Metriken aus dem echten DELFI-/OSM-Graph, keine Fixtures und keine Schaetzwerte.
+Semantik: Die Produktmetrik ist `fastestSeconds`, die schnellste planmäßige Gesamtreisezeit vom Hamburg-Hbf-Origin zum exakten Ziel-StopPlace über alle Samples des repräsentativen Werktags. MOTIS darf einen initialen Fußweg zum Einstieg nutzen, aber keinen finalen Fußweg von einer Nachbarhaltestelle zum Ziel. Median, P90, Reachability-Quoten, Transferaggregate und `directConnectionRatio` werden im aktuellen Produktvertrag nicht mehr berechnet oder veröffentlicht; die alten `od_metrics`-Spalten bleiben nur aus Schema-Kompatibilität bestehen.
 
 ## Quellen
 
@@ -207,9 +210,9 @@ Gepruefte Endpunkte:
 - `GET /ready`: `{"status":"ready","snapshotId":"delfi-bb69c7e2c8d5"}`
 - `GET /api/v1/snapshots/current`: DELFI-Snapshot, DELFI-Hash und OSM-Hash korrekt.
 - `GET /api/v1/stops/search`: reale Ziele in Hamburg, Schleswig-Holstein und Niedersachsen gefunden; Mecklenburg-Vorpommern ist ueber DB-Zaehlung abgedeckt.
-- `GET /api/v1/stops/de:01002:49079/metrics?profile=regular_tue_thu`: reale Kiel-Hbf-Metriken aus `motis_one_to_all`.
-- `GET /api/v1/stops/de:01002:49079/itineraries?date=2026-07-07&time=08:00&profile=regular_tue_thu`: reale MOTIS-Verbindung Hamburg Hbf -> Kiel Hbf.
-- `GET /api/v1/stops/de:01060:37985:1:8000526/realtime-itineraries?date=2026-07-07&time=08:00&profile=regular_tue_thu`: DB-Echtzeitvergleich Hamburg Hbf -> Altengörs mit drei normalisierten Alternativen.
+- `GET /api/v1/stops/de:01002:49079/metrics?profile=regular_tue_thu&date=2026-09-15`: reale Kiel-Hbf-Metriken aus `motis_one_to_all` plus tagesgenaue Direktverbindungszahl.
+- `GET /api/v1/stops/de:01002:49079/itineraries?date=2026-09-15&time=08:00&profile=regular_tue_thu`: reale MOTIS-Verbindung Hamburg Hbf -> Kiel Hbf.
+- `GET /api/v1/stops/de:01060:37985:1:8000526/realtime-itineraries?date=2026-09-15&time=08:00&profile=regular_tue_thu`: DB-Echtzeitvergleich Hamburg Hbf -> Altengörs mit normalisierten Alternativen, sofern das externe Backend den Zielort auflösen kann.
 - `GET /api/v1/route-patterns/723cebcb-90e7-4336-878f-bdb4bfc2f635`: reales Route Pattern mit offizieller GTFS-Shape.
 - `GET /api/v1/tiles/stops/8/135/83.mvt`: reale MVT-Kachel, 416.615 Bytes.
 - `GET /api/v1/tiles/stops/{z}/{x}/{y}.mvt?modes=...`: serverseitig nach Verkehrsmitteln gefilterte StopPlace-Kacheln.
@@ -228,7 +231,8 @@ Nachgezogene UI-/Kartenfunktionen:
 
 - Basiskarten-Umschalter zwischen CARTO/OSM-Straßenkarte und Esri-Satellit; beide Modi verwenden ein CARTO-Ortslabel-Overlay.
 - StopPlaces aus MVT-Kacheln sind anklickbar und laden das API-Detailpanel.
-- Verkehrsmittel-Checkboxen filtern Suchtreffer, Marker und MVT-Kacheln.
+- Verkehrsmittel-Checkboxen filtern die MVT-Kacheln.
+- Die frühere Sidebar-Suche und Suchtrefferliste ist im API-UI entfernt. StopPlace-Details werden über Klick auf MVT-StopPlaces in der Karte geöffnet.
 - Stop-MVT-Kacheln liefern Reisezeitmetrik, Stop-Priorität und kompakte Linienlabels für Styling/Hover und akzeptieren `profile`.
 - MapLibre-Vector-Tile-Sources werden bei Moduswechsel entfernt und neu angelegt; `setTiles()` allein reicht nicht, weil alte ungefilterte Tiles sonst sichtbar bleiben können.
 - Route Patterns verwenden echte GTFS-Farben aus `routes.color`, falls vorhanden; die Route-MVTs liefern dafür `route_color`.
@@ -237,13 +241,15 @@ Nachgezogene UI-/Kartenfunktionen:
 - `osm_reconstructed_low_confidence` und `stop_sequence_approximation` bleiben im Standardlayer ausgeblendet; niedrigkonfidente OSM-Rekonstruktionen sind Diagnosematerial fuer gezielte Korridorarbeit.
 - Das Detailpanel zeigt `DB Echtzeit` als Verbindungsabschnitt und rendert bis zu drei Live-Alternativen mit Plattformen, Verspätungen, Ausfallstatus und Remarks.
 - Reisezeitfenster und Stop-Kreise nutzen dieselbe 30/45/60/75/90-Farbskala.
+- Reisezeitfenster filtern sichtbare MVT-StopPlaces anhand von `fastest_seconds`.
+- Wohnregionen sind geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele, mit Legacy-Faktor `0,75 km/min` und 5/10/15/20-Minuten-Schaltflächen.
 - Playwright ist als Dev-Dependency verfügbar und wurde für einen lokalen UI-Smoke-Test gegen API `4001` und Frontend `5176` genutzt.
 
-Bus-only-Ziel:
+Beispiel-Busziel nach dem aktuellen Profil:
 
-- StopPlace: `de:03353:56000::430166`, `Bf. Meckelfeld`, `DE-NI`, Modi `BUS`
-- Metrik: schnellste Zeit 1.200 s, Durchschnitt 2.804,68 s, Median 2.880 s, P90 3.840 s, Quote 235/240
-- Itinerary: reale MOTIS-Verbindung mit S3, Walking-Leg und Bus 443.
+- StopPlace: `de:01053:85184::851841`, `Niendorf/Stecknitz, Zum Herrenhaus`, Modi `BUS`
+- Metrik: schnellste Zeit 4.080 s / 68 min
+- Gegenrichtung/zweite Plattform `de:01053:85184::851846`: schnellste Zeit 4.140 s / 69 min
 
 ## Produktionsverifikation
 
@@ -251,8 +257,6 @@ Produktionsmetriken:
 
 ```bash
 DATABASE_URL=postgres://regionfinder:regionfinder@localhost:55432/regionfinder \
-REGIONFINDER_PRODUCTION_DATES=2026-07-07 \
-REGIONFINDER_MOTIS_MAX_TRAVEL_MINUTES=240 \
 npm run metrics:compute:production
 ```
 
@@ -261,9 +265,11 @@ Ergebnis:
 ```text
 status: completed
 engine: motis_one_to_all
-sample_count: 240
+metric_run_id: 4d9f96b5-f905-42cd-a5e1-2283e9b7bd7d
+sample_count: 336
 target_stop_places: 95870
-reachable_stop_places: 63195
+reachable_stop_places: 30737
+unreachable_stop_places: 65133
 ```
 
 Ausgeführt:
@@ -291,7 +297,7 @@ npm run lint
 Ergebnis:
 
 - Build erfolgreich.
-- Tests erfolgreich: 7 Testdateien, 27 Tests.
+- Tests erfolgreich: 9 Testdateien, 41 Tests.
 - Lint erfolgreich.
 
 ## Regionale Feeds
@@ -309,12 +315,12 @@ Ergebnis:
 
 - R5-TransportNetwork fuer den vollstaendigen Deutschland-PBF wurde nicht fertig gebaut.
 - Reale R5-Batchmetriken wurden nicht berechnet; R5 bleibt optionale Vergleichsengine.
-- Der fachliche 12-Stunden-Horizont ist fuer MOTIS-One-to-all in dieser lokalen Umgebung noch nicht performant abgeschlossen. Aktiviert ist ein realer 240-Minuten-MOTIS-Lauf.
+- Der aktuelle Produktlauf begrenzt die Maximaldauer fachlich auf 120 Minuten. Längere Erreichbarkeitsfragen sind bewusst außerhalb der aktuellen Produktmetrik.
 - ZHV-Vollintegration wurde nicht ausgefuehrt; keine Zugangsdaten oder lokale ZHV-Exportdatei lagen vor.
 
 ## Nächste technische Schritte
 
 1. R5 mit höherem Docker-RAM-Limit oder auf einer Linux-Maschine mit mehr Speicher erneut ausführen.
-2. MOTIS-One-to-all fuer 12 Stunden durch raeumliche Zielpartitionierung oder serverseitige Zielmengenfilterung beschleunigen.
+2. Nicht erreichbare StopPlaces des 120-Minuten-Produktlaufs nach Ursache clustern: außerhalb Zeitfenster, fehlender Service am Referenztag, MOTIS-Graph-/Transferluecke oder Stop-Mapping.
 3. R5 und MOTIS anhand identischer Samples cross-validieren.
 4. ZHV-Export nach Bereitstellung echter Zugangsdaten importieren.

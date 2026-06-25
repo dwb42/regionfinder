@@ -37,7 +37,7 @@ Statuswerte stehen in `db/migrations/001_core_schema.sql`: `created`, `raw_valid
 
 ## Routing-Engines
 
-- Batchmetriken: `motis_one_to_all` und `r5py` sind zertifizierte Engines. Mindestens ein abgeschlossener Lauf einer zertifizierten Engine ist ein Aktivierungs-Gate. R5/r5py bleibt Vergleichs- und Performance-Engine, blockiert aber keinen Snapshot, wenn MOTIS den Produktionslauf abgeschlossen hat.
+- Batchmetriken: `motis_one_to_all` berechnet aktuell die Produktmetrik `fastestSeconds` als schnellste planmäßige Gesamtreisezeit zum exakten Ziel-StopPlace. Der Batch nutzt ein repräsentatives Werktagsprofil, 120 Minuten Maximaldauer, Transit und initialen Fußweg zum Einstieg, aber keinen finalen Fußweg zu Nachbarhaltestellen. R5/r5py bleibt Vergleichs- und Performance-Engine, blockiert aber keinen Snapshot, wenn MOTIS den Produktionslauf abgeschlossen hat.
 - Lokale Verbindungsauskunft: `ItineraryProvider`-Format ist über `src/api/contracts.ts` festgelegt. Die Produktions-API kann reale MOTIS-`/api/v5/plan`-Antworten aus dem lokalen Graph in das interne Antwortformat transformieren.
 - DB-Echtzeitvergleich: `RealtimeItineraryProvider` liefert dasselbe `ApiItineraryResponse`-Format über `GET /api/v1/stops/:publicId/realtime-itineraries`. Die Abfrage läuft serverseitig; der Client erhält nur normalisierte Alternativen und Fehlercodes. Die UI steuert die Startzeit im Detailpanel und bietet `Frühere`/`Spätere`-Navigation.
 - Fixture-Provider: `server/db/fixtureRepository.ts` liefert lokale Testverbindungen ohne externe Fahrplanauskunft. Fixture-Modus wird nur explizit mit `REGIONFINDER_USE_FIXTURE_API=1` aktiviert; ohne `DATABASE_URL` darf der API-Start nicht still auf Fixtures fallen.
@@ -94,7 +94,7 @@ Request-Validierung liegt in `server/schemas.ts`, gemeinsame Antworttypen in `sr
 Frontend-Code im API-Pfad ist nach Zuständigkeit aufgeteilt:
 
 - `src/ApiApp.tsx`: Layout und Verdrahtung.
-- `src/apiApp/hooks.ts`: API-Startup, Suchmetriken, Detailpanel-Daten und Map-Update-Status.
+- `src/apiApp/hooks.ts`: API-Startup, Detailpanel-Daten und Map-Update-Status.
 - `src/apiApp/MapLibreCanvas.tsx`: imperative MapLibre-Integration.
 - `src/apiApp/mapLayers.ts`: MapLibre-Styles, Layer, MVT-URLs und Feature-Popup-Inhalte.
 - `src/apiApp/formatters.ts` und `src/apiApp/ItineraryComponents.tsx`: Anzeigeformatierung und Detailpanel-Bausteine.
@@ -103,16 +103,19 @@ Aktueller API-Modus:
 
 - StopPlaces und Route Patterns werden über MapLibre-Vector-Tile-Sources geladen.
 - Stop- und Route-Tile-Endpunkte akzeptieren `modes` als CSV-Queryparameter. Stop-Tiles akzeptieren zusätzlich `profile`, damit Metrikfarben aus dem passenden Metric Run kommen.
-- Die Layer-Checkboxen (`Regional/Fern`, `S-Bahn/AKN`, `U-Bahn`, `Bus`, `Fähre`) filtern nicht nur Suchtreffer, sondern auch die MVT-Quellen.
+- Die Layer-Checkboxen (`Regional/Fern`, `S-Bahn/AKN`, `U-Bahn`, `Bus`) filtern die MVT-Quellen.
 - Der Client entfernt und erneuert die MapLibre-Quellen bei Moduswechseln, damit keine alten ungefilterten Tiles im MapLibre-Cache sichtbar bleiben.
 - StopPlace-MVT-Features sind anklickbar und öffnen das Detailpanel.
+- Die frühere Sidebar-Suche und Suchtrefferliste ist im API-UI entfernt; der Suchendpunkt bleibt nur technische API-Oberfläche.
 - Basiskarten sind CARTO/OSM-Straßenkarte und Esri-Satellit. Beide nutzen ein gemeinsames CARTO-Ortslabel-Overlay, damit Ortsnamen in beiden Modi sichtbar sind.
 - Das Detailpanel rendert DB-Echtzeitverbindungen unter der Überschrift `DB Echtzeit`; lokale `/itineraries` werden dort nicht als eigener Block angezeigt.
-- Der Metrikblock zeigt eine tagesgenaue Direktverbindungszahl aus `directConnectionCount`, wenn `metrics` mit `date=YYYY-MM-DD` abgefragt wird.
+- Der Metrikblock zeigt `fastestSeconds` und eine tagesgenaue Direktverbindungszahl aus `directConnectionCount`, wenn `metrics` mit `date=YYYY-MM-DD` abgefragt wird.
 - Datenstand und technische StopPlace-Details sind einklappbar.
 - Route Patterns verwenden echte GTFS-Route-Farben aus `routes.color`, wenn vorhanden; sonst Fallbackfarben nach Modus.
 - Hochkonfidente OSM-Rekonstruktionen werden im Standardlayer angezeigt. Niedrigkonfidente Rekonstruktionen und Stopfolgen-Approximationen bleiben im Standardlayer ausgeblendet, bis ihre Qualität visuell belastbar ist.
 - Reisezeitfenster-Chips und Stop-Kreise verwenden dieselbe Farbskala: 30 min grün, 45 min teal, 60 min ocker, 75 min orange, 90 min rot.
+- Reisezeitfenster filtern MVT-StopFeatures anhand von `fastest_seconds`. Umstiegsfilter und `Unerreichbare anzeigen` sind nicht Teil der aktuellen API-UI.
+- Wohnregionen sind geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele. Der Radius verwendet den Legacy-Faktor `0,75 km/min`; UI-Optionen sind 5/10/15/20 Minuten.
 
 ## Tile-Datenvertrag
 
@@ -128,6 +131,8 @@ Stop-MVT `stops` enthält mindestens:
 - `is_bus_only`
 - `stop_priority`
 - `geom`
+
+`fastest_seconds` stammt aus dem neuesten abgeschlossenen Metric Run des angefragten Profils. Die API-Metrikantwort ist schlanker als die historische `od_metrics`-Tabelle und veröffentlicht keine Median-/P90-/Reachability- oder Transferaggregate mehr.
 
 Route-MVT `routes` enthält mindestens:
 

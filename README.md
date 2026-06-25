@@ -101,12 +101,17 @@ Aktive Produktionsmetriken:
 
 - Engine: `motis_one_to_all`
 - MOTIS-Version: `v2.10.2`
-- Metric Run: `c63c2468-e7c8-4260-9ac7-abc2f75d7e02`
+- Metric Run: `4d9f96b5-f905-42cd-a5e1-2283e9b7bd7d`
 - Profil: `regular_tue_thu`
-- Sample-Basis: 2026-07-07, 05:00 bis GTFS 25:00, alle 5 Minuten
+- Semantik: schnellste planmäßige Reisezeit zum exakten StopPlace an einem repräsentativen Werktag
+- Repräsentativer Tag: Dienstag, 2026-09-15
+- Sample-Basis: 00:00 bis GTFS 28:00, alle 5 Minuten
+- Maximaldauer: 120 Minuten
+- Samples: 336
 - Ziel-StopPlaces: 95.870
+- Erreichbare Ziel-StopPlaces: 30.737
 
-Hinweis: Der lokale Produktionslauf nutzt einen MOTIS-Reisehorizont von 240 Minuten. Das fachliche Zielprofil bleibt 12 Stunden; der vollständige 12-Stunden-Lauf ist als Performance-Restarbeit dokumentiert.
+Die API-Metrik veröffentlicht nur `fastestSeconds` und optional `directConnectionCount`. Median, P90, Reachability-Quoten, Transferaggregate und `directConnectionRatio` sind keine Produktmetriken mehr. Die alten Spalten bleiben aus Schema-Kompatibilität in `od_metrics`, werden im aktuellen Lauf aber bewusst nicht befüllt.
 
 ## API
 
@@ -150,14 +155,16 @@ Wichtige UX-Entscheidungen:
   - `S-Bahn/AKN`
   - `U-Bahn`
   - `Bus`
-  - `Fähre`
-- Default: Schienenlayer sichtbar, Bus/Fähre aus.
+- Default: Schienenlayer sichtbar, Bus aus.
 - Route Patterns werden farbig dargestellt:
   - bevorzugt echte GTFS-Route-Farbe aus PostGIS/MVT (`route_color`)
   - Fallbackfarbe nach Modus
 - Hochkonfidente OSM-Schienenrekonstruktionen (`osm_reconstructed`, Confidence `>= 0.70`) ersetzen GTFS-Geometrien im Standardlayer.
 - Niedrigkonfidente OSM-Rekonstruktionen (`osm_reconstructed_low_confidence`) und `stop_sequence_approximation` bleiben im Standardlayer ausgeblendet, weil sie noch sichtbare Fehlkorridore erzeugen können.
-- Reisezeitfenster, Umstiegsfilter, unerreichbare Ziele und Wohnregion-Radius sind im API-Modus wieder verfügbar.
+- Reisezeitfenster filtern die sichtbaren StopPlaces direkt über `fastest_seconds` aus den MVT-Features.
+- Der frühere Umstiegsfilter und `Unerreichbare anzeigen` sind aus dem API-UI entfernt; standardmäßig werden alle verfügbaren Ziele innerhalb der aktiven Layer angezeigt.
+- Die frühere Sidebar-StopPlace-Suche und Suchtrefferliste ist im API-UI entfernt. Das Detailpanel wird über Klick auf einen StopPlace in der Karte geöffnet.
+- Wohnregionen sind als geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele verfügbar. Der Radius nutzt den Legacy-Faktor `0,75 km/min` und die Optionen 5/10/15/20 Minuten.
 - Reisezeitfenster und Stationskreise verwenden dieselbe 5-stufige Farbskala: 30 min grün, 45 min teal, 60 min ocker, 75 min orange, 90 min rot.
 
 ## Legacy-HVV-Pfad

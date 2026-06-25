@@ -70,26 +70,7 @@ export type ApiMetrics = {
   profileId: string
   metricDefinitionVersion: string
   fastestSeconds: number | null
-  averageSeconds: number | null
-  medianSeconds: number | null
-  p90Seconds: number | null
-  p90Publishable: boolean
-  medianPublishable: boolean
-  totalSampleCount: number
-  reachableSampleCount: number
-  unreachableSampleCount: number
-  reachabilityRatio: number
-  directConnectionRatio: number | null
   directConnectionCount: number | null
-  minimumTransfers: number | null
-  medianTransfers: number | null
-  averageInitialWaitSeconds: number | null
-  averageWalkSeconds: number | null
-  averageInVehicleSeconds: number | null
-  firstConnectionAt: string | null
-  lastConnectionAt: string | null
-  maxServiceGapSeconds: number | null
-  quantileMethod: 'nearest-rank-p90'
 }
 
 export type ApiItineraryLeg = {

@@ -46,8 +46,6 @@ Aus dem Legacy-Frontend wurden im API-Modus nachgezogen:
 
 - Verkehrsmittel-Layer-Toggles.
 - Reisezeitfenster.
-- maximaler Umstiegsfilter.
-- unerreichbare Ziele anzeigen/verbergen.
 - Wohnregion-Radius.
 - Basiskarten-Umschalter Straße/Satellit.
 - Detailpanel bei Stationsklick.
@@ -56,6 +54,8 @@ Aus dem Legacy-Frontend wurden im API-Modus nachgezogen:
 - DB-Echtzeitblock statt des früheren lokalen `Konkrete Verbindung`/`Unser System`-Vergleichs im API-Detailpanel.
 
 Wichtiger Unterschied: Die API-Karte lädt StopPlaces und Route Patterns über MVT-Kacheln. Die Layer-Toggles filtern deshalb serverseitig über `?modes=...`; der Client muss die MapLibre-Sources bei Filterwechseln neu anlegen, um Tile-Cache-Reste zu vermeiden.
+
+Nicht aus dem Legacy-/Zwischenstand übernommen sind der maximale Umstiegsfilter, `Unerreichbare anzeigen` und die Sidebar-Suchtrefferliste. Das API-UI zeigt verfügbare Ziele standardmäßig auf der Karte; Details werden über Klick auf StopPlaces geöffnet.
 
 ## Abschaltung des Workers
 

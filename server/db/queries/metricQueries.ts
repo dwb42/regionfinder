@@ -13,49 +13,13 @@ export async function findStopMetrics(
     origin_stop_place_id: string
     destination_stop_place_id: string
     fastest_seconds: number | null
-    average_seconds: string | null
-    median_seconds: string | null
-    p90_seconds: number | null
-    p90_publishable: boolean
-    median_publishable: boolean
-    total_sample_count: number
-    reachable_sample_count: number
-    unreachable_sample_count: number
-    reachability_ratio: string
-    direct_connection_ratio: string | null
-    minimum_transfers: number | null
-    median_transfers: string | null
-    average_initial_wait_seconds: string | null
-    average_walk_seconds: string | null
-    average_in_vehicle_seconds: string | null
-    first_connection_at: string | null
-    last_connection_at: string | null
-    max_service_gap_seconds: number | null
   }>(
     `
     SELECT snap.id AS snapshot_internal_id,
            snap.public_id AS snapshot_id,
            odm.origin_stop_place_id,
            odm.destination_stop_place_id,
-           odm.fastest_seconds,
-           odm.average_seconds,
-           odm.median_seconds,
-           odm.p90_seconds,
-           odm.p90_publishable,
-           odm.median_publishable,
-           odm.total_sample_count,
-           odm.reachable_sample_count,
-           odm.unreachable_sample_count,
-           odm.reachability_ratio,
-           odm.direct_connection_ratio,
-           odm.minimum_transfers,
-           odm.median_transfers,
-           odm.average_initial_wait_seconds,
-           odm.average_walk_seconds,
-           odm.average_in_vehicle_seconds,
-           odm.first_connection_at::text,
-           odm.last_connection_at::text,
-           odm.max_service_gap_seconds
+           odm.fastest_seconds
     FROM od_metrics odm
     JOIN metric_runs mr ON mr.id = odm.metric_run_id
     JOIN data_snapshots snap ON snap.id = mr.snapshot_id AND snap.is_active = true
@@ -85,28 +49,9 @@ export async function findStopMetrics(
   return {
     snapshotId: row.snapshot_id,
     profileId: profile,
-    metricDefinitionVersion: '2026-06-24.nearest-rank-p90',
+    metricDefinitionVersion: '2026-06-25.fastest-day-exact-stop',
     fastestSeconds: row.fastest_seconds,
-    averageSeconds: row.average_seconds === null ? null : Number(row.average_seconds),
-    medianSeconds: row.median_seconds === null ? null : Number(row.median_seconds),
-    p90Seconds: row.p90_seconds,
-    p90Publishable: row.p90_publishable,
-    medianPublishable: row.median_publishable,
-    totalSampleCount: row.total_sample_count,
-    reachableSampleCount: row.reachable_sample_count,
-    unreachableSampleCount: row.unreachable_sample_count,
-    reachabilityRatio: Number(row.reachability_ratio),
-    directConnectionRatio: row.direct_connection_ratio === null ? null : Number(row.direct_connection_ratio),
     directConnectionCount,
-    minimumTransfers: row.minimum_transfers,
-    medianTransfers: row.median_transfers === null ? null : Number(row.median_transfers),
-    averageInitialWaitSeconds: row.average_initial_wait_seconds === null ? null : Number(row.average_initial_wait_seconds),
-    averageWalkSeconds: row.average_walk_seconds === null ? null : Number(row.average_walk_seconds),
-    averageInVehicleSeconds: row.average_in_vehicle_seconds === null ? null : Number(row.average_in_vehicle_seconds),
-    firstConnectionAt: row.first_connection_at,
-    lastConnectionAt: row.last_connection_at,
-    maxServiceGapSeconds: row.max_service_gap_seconds,
-    quantileMethod: 'nearest-rank-p90',
   }
 }
 

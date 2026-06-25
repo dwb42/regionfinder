@@ -1,15 +1,6 @@
-import type { ApiItineraryLeg, ApiItineraryResponse, ApiMetrics, ApiStopDetails, ApiStopSearchResult } from '../api/contracts'
+import type { ApiItineraryLeg, ApiItineraryResponse, ApiMetrics, ApiStopDetails } from '../api/contracts'
 import { ApiError } from '../data/api'
-import { defaultDepartureTime, travelTimeWindows, type TravelTimeWindow } from './config'
-
-export function filterMetricSeconds(metric: ApiMetrics | null | undefined): number | null {
-  return metric?.medianSeconds ?? metric?.fastestSeconds ?? null
-}
-
-export function travelTimeBucket(seconds: number): TravelTimeWindow | null {
-  const minutesValue = Math.ceil(seconds / 60)
-  return travelTimeWindows.find((window) => minutesValue <= window) ?? null
-}
+import { defaultDepartureTime } from './config'
 
 export function minutes(value: number | null): string {
   if (value === null) {
@@ -127,7 +118,7 @@ export function directConnectionCount(metric: ApiMetrics | null): string {
 }
 
 export function displayDate(): string {
-  return '2026-07-07'
+  return '2026-09-15'
 }
 
 export function metricTooltip(label: string): string {
@@ -151,8 +142,4 @@ export function legLabel(leg: ApiItineraryLeg): string {
   }
 
   return leg.legType
-}
-
-export function stopMatchesModes(stop: ApiStopSearchResult, allowedModes: string[]): boolean {
-  return allowedModes.length > 0 && stop.modes.some((mode) => allowedModes.includes(mode))
 }

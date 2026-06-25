@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ApiMetrics, ApiSnapshot, ApiStopDetails, ApiStopSearchResult } from '../api/contracts'
-import { fetchCurrentSnapshot, fetchRealtimeItineraries, fetchStopDetails, fetchStopMetrics, searchStops } from '../data/api'
+import type { ApiMetrics, ApiSnapshot, ApiStopDetails } from '../api/contracts'
+import { fetchCurrentSnapshot, fetchRealtimeItineraries, fetchStopDetails, fetchStopMetrics } from '../data/api'
 import { displayDate, realtimeErrorMessage } from './formatters'
-import { initialSearchQuery, type MapUpdateState, type RealtimeItineraryState } from './config'
+import { type MapUpdateState, type RealtimeItineraryState } from './config'
 
 export function useMapUpdateStatus() {
   const [mapUpdateState, setMapUpdateState] = useState<MapUpdateState>('idle')
@@ -50,7 +50,6 @@ export function useMapUpdateStatus() {
 
 export function useApiStartup() {
   const [snapshot, setSnapshot] = useState<ApiSnapshot | null>(null)
-  const [searchResults, setSearchResults] = useState<ApiStopSearchResult[]>([])
   const [status, setStatus] = useState('API wird geladen')
 
   useEffect(() => {
@@ -59,11 +58,9 @@ export function useApiStartup() {
     async function load() {
       try {
         const current = await fetchCurrentSnapshot()
-        const results = await searchStops(initialSearchQuery, { limit: 24 })
 
         if (!cancelled) {
           setSnapshot(current)
-          setSearchResults(results)
           setStatus('bereit')
         }
       } catch (error) {
@@ -80,41 +77,7 @@ export function useApiStartup() {
     }
   }, [])
 
-  return { snapshot, searchResults, setSearchResults, status, setStatus }
-}
-
-export function useSearchResultMetrics(searchResults: ApiStopSearchResult[], profile: string) {
-  const [resultMetrics, setResultMetrics] = useState<Record<string, ApiMetrics | null>>({})
-
-  useEffect(() => {
-    let cancelled = false
-
-    async function loadMetrics() {
-      const entries = await Promise.all(
-        searchResults.map(async (stop) => {
-          const stopMetrics = await fetchStopMetrics(stop.publicId, profile).catch(() => null)
-
-          return [stop.publicId, stopMetrics] as const
-        }),
-      )
-
-      if (!cancelled) {
-        setResultMetrics(Object.fromEntries(entries))
-      }
-    }
-
-    if (searchResults.length === 0) {
-      return undefined
-    }
-
-    void loadMetrics()
-
-    return () => {
-      cancelled = true
-    }
-  }, [profile, searchResults])
-
-  return searchResults.length === 0 ? {} : resultMetrics
+  return { snapshot, status, setStatus }
 }
 
 export function useSelectedStopDetails({

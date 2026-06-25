@@ -94,7 +94,6 @@ describe('Regionfinder API', () => {
     expect(response.statusCode).toBe(200)
     expect(response.json()).toMatchObject({
       directConnectionCount: 18,
-      directConnectionRatio: 0.75,
     })
   })
 

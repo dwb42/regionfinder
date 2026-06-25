@@ -1,10 +1,10 @@
 import { lazy, Suspense, useMemo, useState } from 'react'
-import { Clock, Layers, MapPin, Satellite, Search, SlidersHorizontal, X, TrainFront } from 'lucide-react'
-import { searchStops } from './data/api'
+import { Clock, Layers, Satellite, X, TrainFront } from 'lucide-react'
 import { MetricCard, RealtimeItineraryBlock } from './apiApp/ItineraryComponents'
 import {
   defaultDepartureTime,
   defaultProfile,
+  estimatedResidentialRadiusKmPerMinute,
   modeLayerDefinitions,
   residentialRadiusOptions,
   travelTimeChipStyle,
@@ -16,17 +16,14 @@ import {
 import {
   directConnectionCount,
   earliestAlternativeDepartureMinutes,
-  filterMetricSeconds,
   latestAlternativeDepartureMinutes,
   metricTooltip,
   minutes,
   minutesToClockTime,
   shiftClockTime,
-  stopMatchesModes,
   stopRouteLabel,
-  travelTimeBucket,
 } from './apiApp/formatters'
-import { useApiStartup, useMapUpdateStatus, useSearchResultMetrics, useSelectedStopDetails } from './apiApp/hooks'
+import { useApiStartup, useMapUpdateStatus, useSelectedStopDetails } from './apiApp/hooks'
 import { modesForLayers } from './apiApp/mapLayers'
 
 const MapLibreCanvas = lazy(() =>
@@ -34,19 +31,15 @@ const MapLibreCanvas = lazy(() =>
 )
 
 function ApiApp() {
-  const { snapshot, searchResults, setSearchResults, status, setStatus } = useApiStartup()
-  const [searchQuery, setSearchQuery] = useState('Hamburg')
+  const { snapshot, setStatus } = useApiStartup()
   const [selectedPublicId, setSelectedPublicId] = useState<string | null>(null)
   const [departureTime, setDepartureTime] = useState(defaultDepartureTime)
   const profile = defaultProfile
   const [activeModeLayers, setActiveModeLayers] = useState<ModeLayerId[]>(['regional', 's-bahn', 'u-bahn'])
   const [selectedTimeWindows, setSelectedTimeWindows] = useState<TravelTimeWindow[]>(travelTimeWindows)
-  const [maxTransfers, setMaxTransfers] = useState(2)
-  const [showUnreachable, setShowUnreachable] = useState(true)
   const [mapBaseLayer, setMapBaseLayer] = useState<MapBaseLayer>('street')
   const [showResidentialRegions, setShowResidentialRegions] = useState(false)
   const [residentialRadiusMinutes, setResidentialRadiusMinutes] = useState(15)
-  const resultMetrics = useSearchResultMetrics(searchResults, profile)
   const { mapUpdateState, handleMapTileLoadingChange } = useMapUpdateStatus()
   const { selectedStop, metrics, realtimeItineraries, clearDetails } = useSelectedStopDetails({
     selectedPublicId,
@@ -57,49 +50,12 @@ function ApiApp() {
 
   const allowedModes = useMemo(() => modesForLayers(activeModeLayers, modeLayerDefinitions), [activeModeLayers])
   const tileModes = useMemo(() => (activeModeLayers.length === 0 ? ['__none__'] : allowedModes), [activeModeLayers.length, allowedModes])
-  const residentialRadiusMeters = residentialRadiusMinutes * 60 * 80
-  const visibleSearchResults = useMemo(
-    () =>
-      searchResults.filter((stop) => {
-        if (!stopMatchesModes(stop, allowedModes)) {
-          return false
-        }
-
-        const stopMetrics = resultMetrics[stop.publicId]
-
-        if (!showUnreachable && (!stopMetrics || stopMetrics.reachableSampleCount === 0)) {
-          return false
-        }
-
-        const transfers = stopMetrics?.medianTransfers ?? stopMetrics?.minimumTransfers
-
-        if (transfers !== null && transfers !== undefined && transfers > maxTransfers) {
-          return false
-        }
-
-        const seconds = filterMetricSeconds(stopMetrics)
-        const bucket = seconds === null ? null : travelTimeBucket(seconds)
-
-        return bucket === null || selectedTimeWindows.includes(bucket)
-      }),
-    [allowedModes, maxTransfers, resultMetrics, searchResults, selectedTimeWindows, showUnreachable],
-  )
+  const residentialRadiusMeters = residentialRadiusMinutes * estimatedResidentialRadiusKmPerMinute * 1000
 
   const selectedRouteLabels = useMemo(
     () => Array.from(new Set(selectedStop?.servedRoutes.map(stopRouteLabel) ?? [])).slice(0, 12),
     [selectedStop],
   )
-
-  async function submitSearch() {
-    setStatus('Suche läuft')
-    try {
-      const results = await searchStops(searchQuery, { modes: allowedModes, limit: 24 })
-      setSearchResults(results)
-      setStatus('bereit')
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error))
-    }
-  }
 
   function toggleModeLayer(id: ModeLayerId) {
     setActiveModeLayers((current) =>
@@ -142,51 +98,6 @@ function ApiApp() {
         </div>
 
         <div className="control-group">
-          <label htmlFor="api-search">
-            <Search size={16} />
-            StopPlace-Suche
-          </label>
-          <div className="api-search-row">
-            <input
-              id="api-search"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  void submitSearch()
-                }
-              }}
-            />
-            <button type="button" onClick={() => void submitSearch()}>
-              <Search size={16} />
-            </button>
-          </div>
-          <div className="station-meta">{status}</div>
-        </div>
-
-        <div className="api-result-list">
-          {visibleSearchResults.map((stop) => (
-            <button
-              key={stop.publicId}
-              type="button"
-              className={stop.publicId === selectedPublicId ? 'api-stop-result active' : 'api-stop-result'}
-              onClick={() => setSelectedPublicId(stop.publicId)}
-            >
-              <MapPin size={15} />
-              <span>
-                <strong>{stop.name}</strong>
-                <small>
-                  {stop.stateCode ?? 'ohne Bundesland'} · {stop.modes.join(', ')}
-                  {resultMetrics[stop.publicId]
-                    ? ` · ${minutes(filterMetricSeconds(resultMetrics[stop.publicId]))}`
-                    : ''}
-                </small>
-              </span>
-            </button>
-          ))}
-        </div>
-
-        <div className="control-group">
           <div className="label-like">
             <Layers size={16} />
             ÖPNV-Layer
@@ -202,33 +113,6 @@ function ApiApp() {
                 <span>{definition.label}</span>
               </label>
             ))}
-          </div>
-        </div>
-
-        <div className="control-group">
-          <label htmlFor="api-max-transfers">
-            <SlidersHorizontal size={16} />
-            Filter
-          </label>
-          <div className="control-row">
-            <select
-              id="api-max-transfers"
-              value={maxTransfers}
-              onChange={(event) => setMaxTransfers(Number(event.target.value))}
-            >
-              <option value={0}>0 Umstiege</option>
-              <option value={1}>max. 1 Umstieg</option>
-              <option value={2}>max. 2 Umstiege</option>
-              <option value={3}>max. 3 Umstiege</option>
-            </select>
-            <label className="toggle-row">
-              <input
-                type="checkbox"
-                checked={showUnreachable}
-                onChange={(event) => setShowUnreachable(event.target.checked)}
-              />
-              Unerreichbare anzeigen
-            </label>
           </div>
         </div>
 
@@ -274,17 +158,6 @@ function ApiApp() {
             ))}
           </div>
         </div>
-
-        <div className="summary-strip">
-          <div>
-            <strong>{visibleSearchResults.length}</strong>
-            <span>sichtbare StopPlaces</span>
-          </div>
-          <div>
-            <strong>{searchResults.length}</strong>
-            <span>Suchtreffer geladen</span>
-          </div>
-        </div>
       </aside>
 
       <section className="api-map-section" aria-label="Karte">
@@ -301,9 +174,9 @@ function ApiApp() {
         <Suspense fallback={<div className="maplibre-map-shell"><div className="maplibre-map" /></div>}>
           <MapLibreCanvas
             selectedStop={selectedStop}
-            visibleStops={visibleSearchResults}
             mapBaseLayer={mapBaseLayer}
             tileModes={tileModes}
+            selectedTimeWindows={selectedTimeWindows}
             showResidentialRegions={showResidentialRegions}
             residentialRadiusMeters={residentialRadiusMeters}
             profile={profile}

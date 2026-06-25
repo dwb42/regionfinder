@@ -1,7 +1,7 @@
 import type { Polygon } from 'geojson'
-import type { ExpressionSpecification, Map, StyleSpecification } from 'maplibre-gl'
+import type { ExpressionSpecification, FilterSpecification, Map, StyleSpecification } from 'maplibre-gl'
 import { apiBaseUrl } from '../data/api'
-import { travelTimeWindowColors, type ModeLayerId } from './config'
+import { travelTimeWindowColors, travelTimeWindows, type ModeLayerId, type TravelTimeWindow } from './config'
 import { minutes } from './formatters'
 
 export const mapLibreBaseStyle: StyleSpecification = {
@@ -158,6 +158,37 @@ function routeGeometryFilter(): ExpressionSpecification {
 
 export function applyRouteLayerState(map: Map) {
   map.setFilter('regionfinder-routes-line', routeGeometryFilter())
+}
+
+function stopTravelTimeFilter(selectedWindows: TravelTimeWindow[]): FilterSpecification | null {
+  if (selectedWindows.length === travelTimeWindows.length) {
+    return null
+  }
+
+  const selectedWindowSet = new Set(selectedWindows)
+  const windowFilters = travelTimeWindows
+    .map((window, index) => {
+      if (!selectedWindowSet.has(window)) {
+        return null
+      }
+
+      const previousWindow = index === 0 ? null : travelTimeWindows[index - 1]
+
+      return previousWindow === null
+        ? (['<=', ['get', 'fastest_seconds'], window * 60] as FilterSpecification)
+        : ([
+            'all',
+            ['>', ['get', 'fastest_seconds'], previousWindow * 60],
+            ['<=', ['get', 'fastest_seconds'], window * 60],
+          ] as FilterSpecification)
+    })
+    .filter((filter): filter is FilterSpecification => filter !== null)
+
+  return ['any', ['!', ['has', 'fastest_seconds']], ...windowFilters] as FilterSpecification
+}
+
+export function applyStopLayerState(map: Map, selectedWindows: TravelTimeWindow[]) {
+  map.setFilter('regionfinder-stops-symbol', stopTravelTimeFilter(selectedWindows))
 }
 
 export function addTransitTileLayers(map: Map, modes: string[], profile: string) {

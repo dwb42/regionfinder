@@ -43,7 +43,7 @@ Der Standardpfad `bahn-web` nutzt einen kontrollierten `curl`-Fallback mit Cooki
 Live-Prüfung:
 
 ```bash
-curl 'http://127.0.0.1:4001/api/v1/stops/de%3A01060%3A37985%3A1%3A8000526/realtime-itineraries?date=2026-07-07&time=08%3A00&profile=regular_tue_thu'
+curl 'http://127.0.0.1:4001/api/v1/stops/de%3A01060%3A37985%3A1%3A8000526/realtime-itineraries?date=2026-09-15&time=08%3A00&profile=regular_tue_thu'
 ```
 
 Erwartung: `alternatives` enthält bis zu drei normalisierte Verbindungen ab Hamburg Hbf. Nicht gemappte DB-Ziele liefern `404` mit `error: "db_stop_unmapped"`; Upstream-Probleme liefern `502` mit `error: "realtime_unavailable"`.
@@ -53,7 +53,7 @@ Der Standardpfad kann bahn.de-Web-Location-IDs im Format `A=...` verwenden. Der 
 Tagesgenaue Direktverbindungen werden über den normalen Metrikendpunkt geprüft:
 
 ```bash
-curl 'http://127.0.0.1:4001/api/v1/stops/de%3A01060%3A37985%3A1%3A8000526/metrics?profile=regular_tue_thu&date=2026-07-07'
+curl 'http://127.0.0.1:4001/api/v1/stops/de%3A01060%3A37985%3A1%3A8000526/metrics?profile=regular_tue_thu&date=2026-09-15'
 ```
 
 `directConnectionCount` zählt direkte fahrplanmäßige Trips am angegebenen Datum zwischen Hamburg Hbf und dem Ziel-StopPlace.

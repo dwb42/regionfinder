@@ -31,7 +31,9 @@ Basiskarten im API-Modus:
 - CARTO/OSM-Straßenkarte ohne Labels plus CARTO-Ortslabel-Overlay.
 - Esri World Imagery als Satellit plus dasselbe CARTO-Ortslabel-Overlay.
 
-StopPlaces aus MVTs sind anklickbar; der Klick lädt Details, tagesgenaue Metriken und DB-Echtzeitverbindungen. Der Realtime-Endpunkt `GET /api/v1/stops/:publicId/realtime-itineraries` wird serverseitig über `server/realtime/dbTransportRestProvider.ts` bedient und normalisiert externe DB-/bahn.de-Antworten in `ApiItineraryResponse`.
+StopPlaces aus MVTs sind anklickbar; der Klick lädt Details, tagesgenaue Metriken und DB-Echtzeitverbindungen. Das API-UI hat keine Sidebar-Suchtrefferliste mehr; der technische Suchendpunkt bleibt für externe oder spätere Nutzung erhalten. Der Realtime-Endpunkt `GET /api/v1/stops/:publicId/realtime-itineraries` wird serverseitig über `server/realtime/dbTransportRestProvider.ts` bedient und normalisiert externe DB-/bahn.de-Antworten in `ApiItineraryResponse`.
+
+Produktive Stop-Metriken werden mit `motis_one_to_all` als schnellste planmäßige Reisezeit zum exakten StopPlace berechnet. Der aktuelle Metric Contract veröffentlicht `fastestSeconds` und optional `directConnectionCount`; historische Median-/P90-/Reachability- und Transferfelder sind keine API-Produktmetriken mehr.
 
 ## Überblick
 

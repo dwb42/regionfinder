@@ -68,6 +68,6 @@ Qualitätsgrenzen:
 
 - Der MobilityData GTFS Validator lief auf dem DELFI-Produktionsfeed in der lokalen Umgebung in einen Java-Heap-OOM und ist deshalb kein bestandenes Gate für diesen Snapshot.
 - ZHV-Vollintegration ist noch zugangsbeschränkt; die aktive Baseline nutzt DELFI-DHIDs und interne IDs für fehlende DHIDs.
-- Der ausgeführte MOTIS-Produktionshorizont beträgt 240 Minuten statt des fachlichen 12-Stunden-Ziels.
+- Der aktuelle MOTIS-Produktionslauf begrenzt die fachliche Maximaldauer bewusst auf 120 Minuten. StopPlaces außerhalb dieses Fensters bleiben ohne `fastestSeconds`.
 - HVV-Legacy-Artefakte bleiben separat und werden nicht ungeprüft als zweite Fahrplanwahrheit mit DELFI gemischt.
 - Der aktuelle Standard-Realtime-Pfad nutzt die bahn.de-Web-API mit `curl`-Fallback; das ist eine pragmatische serverseitige Integration und kein zertifiziertes DB-Marketplace-Produkt.

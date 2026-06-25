@@ -43,17 +43,21 @@ Aktive Metrikengine:
 
 - `motis_one_to_all`
 - MOTIS `v2.10.2`
-- Metric Run `c63c2468-e7c8-4260-9ac7-abc2f75d7e02`
+- Metric Run `4d9f96b5-f905-42cd-a5e1-2283e9b7bd7d`
 - Profil `regular_tue_thu`
-- Datum 2026-07-07
-- Samplefenster 05:00 bis GTFS 25:00
+- Metric Definition `2026-06-25.fastest-day-exact-stop`
+- Repräsentativer Werktag 2026-09-15
+- Samplefenster 00:00 bis GTFS 28:00
 - Intervall 5 Minuten
-- 240 Samples
+- 336 Samples
+- Maximaldauer 7.200 Sekunden / 120 Minuten
 - 95.870 Ziel-StopPlaces
+- 30.737 erreichbare Ziel-StopPlaces
+- 65.133 nicht erreichbare Ziel-StopPlaces
 
 R5/r5py wurde real gestartet, ist aber für den vollständigen Deutschland-PBF in der lokalen Umgebung nicht fertig gebaut worden. R5 ist optionaler Vergleichsweg und kein Aktivierungs-Gate, solange `motis_one_to_all` erfolgreich abgeschlossen ist.
 
-Bekannte Abweichung: Der ausgeführte MOTIS-Produktionshorizont beträgt 240 Minuten. Das fachliche Ziel bleibt 12 Stunden; der 12-Stunden-Lauf ist als Performance-Restarbeit dokumentiert.
+Produktmetrik ist ausschließlich die schnellste planmäßige Gesamtreisezeit zum exakten Ziel-StopPlace. Der MOTIS-One-to-all-Request erlaubt Transit und initialen Fußweg zum Einstieg, aber keinen finalen Fußweg zu Nachbarhaltestellen (`postTransitModes` wird nicht gesetzt). Maximaldauer, Umstiege und Verkehrsmittel sind fachlich UI-Filter; der Batch begrenzt nur durch das 120-Minuten-Zeitfenster. Median, P90, Reachability-Quoten, Transferaggregate und `directConnectionRatio` werden nicht mehr als Produktmetriken berechnet oder über die API veröffentlicht.
 
 ## Entwicklungsumgebung
 
@@ -73,7 +77,6 @@ Es können mehrere Vite-Server parallel laufen. Vor UI-Prüfungen den tatsächli
 
 Aktuelle UI-Funktionen im API-Modus:
 
-- StopPlace-Suche über API.
 - Klick auf StopPlaces aus MapLibre-Vektor-Tiles lädt Detaildaten in das rechte Panel.
 - Detailpanel zeigt Metriken, DB-Echtzeitverbindungen, bedienende Linien, Datenstand und StopPlace-Details.
 - Datenstand und technische StopPlace-Details sind einklappbare Abschnitte, damit der Normalzustand mehr Raum fuer die Karte und die Verbindungsauskunft laesst.
@@ -88,22 +91,24 @@ Aktuelle UI-Funktionen im API-Modus:
   - `S-Bahn/AKN`
   - `U-Bahn`
   - `Bus`
-  - `Fähre`
-- Default: `Regional/Fern`, `S-Bahn/AKN`, `U-Bahn` aktiv; `Bus`, `Fähre` aus.
+- Default: `Regional/Fern`, `S-Bahn/AKN`, `U-Bahn` aktiv; `Bus` aus.
 - MVT-Kacheln werden serverseitig per `modes` gefiltert.
 - Stop-MVTs enthalten zusätzlich Reisezeitmetrik, Stop-Priorität und kompakte Linienlabels für Hover/Styling; sie werden mit dem aktiven Routingprofil angefragt.
 - Beim Umschalten der Modi entfernt der Client die MapLibre-Vector-Tile-Sources und legt sie neu an, damit keine alten ungefilterten Tiles aus dem Cache sichtbar bleiben.
 - Route Patterns verwenden echte GTFS-Farben aus `routes.color`, falls vorhanden; sonst Modus-Fallbackfarben.
 - Route-Pattern-Geometrien kommen über die View `route_pattern_display_geometries`. Hochkonfidente OSM-Rekonstruktionen ersetzen GTFS-Fallbacks.
 - Niedrigkonfidente OSM-Rekonstruktionen und `stop_sequence_approximation` werden im Standardlayer ausgeblendet. Sie bleiben als Qualitätszustände in den Daten erhalten, werden aber nicht als präzise Strecke dargestellt, weil sie noch sichtbare Fehlkorridore erzeugen können.
-- Reisezeitfenster, maximaler Umstiegsfilter, unerreichbare Ziele und Wohnregion-Radius sind im API-Modus verfügbar.
+- Reisezeitfenster filtern sichtbare StopPlaces anhand von `fastest_seconds`. Wenn einzelne Fenster deaktiviert sind, verschwinden StopPlaces außerhalb der aktiven Fenster aus der Karte.
+- Der maximale Umstiegsfilter und `Unerreichbare anzeigen` sind im API-Modus entfernt; standardmäßig werden alle verfügbaren Ziele der aktiven Layer gezeigt.
+- Die frühere Sidebar-Suche und Suchtrefferliste ist im API-Modus entfernt. Das Detailpanel wird über Klick auf einen StopPlace in der Karte geöffnet. Der API-Endpunkt `/api/v1/stops/search` bleibt als technische Schnittstelle bestehen, ist aber nicht mehr Teil der aktuellen Sidebar-UX.
+- Wohnregionen sind geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele. Der Radius nutzt den Legacy-Faktor `0,75 km/min`; Optionen sind 5, 10, 15 und 20 Minuten.
 - Reisezeitfenster und Stationskreise nutzen dieselbe Farbskala: 30 min grün, 45 min teal, 60 min ocker, 75 min orange, 90 min rot.
 
 ## DB-Echtzeitverbindungen und Direktverbindungen
 
 Der Endpunkt `GET /api/v1/stops/:publicId/realtime-itineraries?date=YYYY-MM-DD&time=HH:mm&profile=...` liefert bis zu drei Live-Alternativen ab Hamburg Hbf zur ausgewählten Station. Die Abfrage verwendet die UI-Abfahrtszeit, nicht `now`.
 
-Der Metrikendpunkt `GET /api/v1/stops/:publicId/metrics?profile=...&date=YYYY-MM-DD` liefert zusätzlich `directConnectionCount`: die fahrplanmäßige Anzahl direkter Trips ohne Umstieg am gewählten repräsentativen Datum. Das ersetzt im Detailpanel die frühere Hochrechnung aus `directConnectionRatio * reachableSampleCount`.
+Der Metrikendpunkt `GET /api/v1/stops/:publicId/metrics?profile=...&date=YYYY-MM-DD` liefert `fastestSeconds` und zusätzlich `directConnectionCount`: die fahrplanmäßige Anzahl direkter Trips ohne Umstieg am angegebenen Datum. Das ersetzt im Detailpanel die frühere Hochrechnung aus `directConnectionRatio * reachableSampleCount`.
 
 Technische Entscheidungen:
 
@@ -117,7 +122,7 @@ Technische Entscheidungen:
 - Nicht auflösbare Ziele liefern `404 db_stop_unmapped`; Upstream-/Timeoutfehler liefern `502 realtime_unavailable`.
 - Für alte DHID-ähnliche PublicIds wird serverseitig ein Alias unterstützt: `de:01060:37985:18000526` kann auf `de:01060:37985:1:8000526` aufgelöst werden.
 
-Die API-Typen in `src/api/contracts.ts` enthalten optionale Live-Felder auf Legs: Planzeiten, Verspätungen, Ausfallstatus und Remarks. `ApiItinerary` enthält optional `refreshToken`, `realtimeSource` und `realtimeFetchedAt`; `ApiMetrics` enthält optional `directConnectionCount`.
+Die API-Typen in `src/api/contracts.ts` enthalten optionale Live-Felder auf Legs: Planzeiten, Verspätungen, Ausfallstatus und Remarks. `ApiItinerary` enthält optional `refreshToken`, `realtimeSource` und `realtimeFetchedAt`; `ApiMetrics` ist bewusst schlank und enthält nur `snapshotId`, `profileId`, `metricDefinitionVersion`, `fastestSeconds` und optional `directConnectionCount`.
 
 ## OSM-Schienenrekonstruktion
 
@@ -157,6 +162,7 @@ Wichtige Einschränkung: Viele S-/Regional-Patterns sind zwar OSM-geroutet, erre
 - Gemeinsame API-Antworttypen liegen in `src/api/contracts.ts`.
 - Stop- und Route-Tiles akzeptieren `?modes=...`; Stop-Tiles akzeptieren zusätzlich `?profile=...`.
 - Stop-Metriken akzeptieren zusätzlich `?date=YYYY-MM-DD`, wenn eine tagesgenaue Direktverbindungszahl gebraucht wird.
+- Aktueller Default-Referenztag im API-Frontend ist `2026-09-15`, passend zum Produktions-Metrikprofil.
 - Route-Tiles liefern `route_color`, normalisiert auf `#RRGGBB`, wenn eine echte GTFS-Farbe existiert.
 - `npm run rail:reconstruct` filtert OSM-Schienen, lädt sie mit osm2pgsql in `staging_osm_rail_*`, baut `rail_edges`/`rail_vertices`, snappt StopPlaces und erzeugt `route_pattern_rail_matches`.
 - Match-Nachläufe werden bevorzugt mit `--corridor`/`--routes` gefahren; große `RAIL`- oder Norddeutschland-Komplettläufe sind lokal weiterhin zu teuer.
@@ -166,6 +172,7 @@ Wichtige Einschränkung: Viele S-/Regional-Patterns sind zwar OSM-geroutet, erre
 - `PostgresRepository` delegiert an fokussierte Query-Module unter `server/db/queries/`; neue SQL-Blöcke sollen dort statt in der Adapterklasse liegen.
 - `src/App.tsx` lädt API- und Legacy-Pfad lazy. `src/ApiApp.tsx` ist nur noch API-Layout/Verdrahtung; Hooks, MapLibre-Canvas, Layerdefinitionen, Formatter und Detailpanel-Komponenten liegen in `src/apiApp/`.
 - `MapLibreCanvas` wird lazy geladen, damit MapLibre nicht im API-Shell-Chunk landet.
+- Der große MapLibre-Lazy-Chunk ist akzeptiert; Vite nutzt `chunkSizeWarningLimit: 1100`, damit der bewusst isolierte MapLibre-Chunk keine Warnung mehr erzeugt.
 - Generierte Legacy-HVV-Artefakte unter `public/data/hvv/` sind nicht versioniert. Produktionsbuilds brechen ab, wenn dort generierte Dateien liegen.
 - Playwright ist als Dev-Dependency verfügbar; lokale Browser-Smoke-Tests benötigen einmalig `npx playwright install chromium`.
 

@@ -31,7 +31,7 @@ ORIGIN_PUBLIC_ID = os.environ.get("REGIONFINDER_ORIGIN_PUBLIC_ID", "de:02000:109
 ORIGIN_MOTIS_ID = os.environ.get("REGIONFINDER_ORIGIN_MOTIS_ID", f"gtfs_{ORIGIN_PUBLIC_ID}")
 STATES = ("DE-HH", "DE-SH", "DE-MV", "DE-NI")
 ENGINE_KEY = "motis_one_to_all"
-METRIC_DEFINITION_VERSION = "2026-06-24.nearest-rank-p90"
+METRIC_DEFINITION_VERSION = "2026-06-25.fastest-day-exact-stop"
 
 
 @dataclass(frozen=True)
@@ -156,10 +156,8 @@ class MotisOneToAllMetricEngine:
                     "maxTravelTime": str(max_minutes),
                     "time": local_iso,
                     "arriveBy": "false",
-                    "maxTransfers": str(context.profile["max_transfers"]),
                     "transitModes": "TRANSIT",
                     "preTransitModes": "WALK",
-                    "postTransitModes": "WALK",
                     "useRoutedTransfers": "true",
                 }
                 url = f"{context.motis_base_url}/api/v1/one-to-all?{urllib.parse.urlencode(params)}"
@@ -241,27 +239,6 @@ def sample_times(profile: dict) -> list[datetime]:
     if sample_limit:
         times = times[: int(sample_limit)]
     return times
-
-
-def median_seconds(values: list[int]) -> float | None:
-    if not values:
-        return None
-    ordered = sorted(values)
-    mid = len(ordered) // 2
-    if len(ordered) % 2:
-        return float(ordered[mid])
-    return (ordered[mid - 1] + ordered[mid]) / 2
-
-
-def p90_nearest_rank(values: list[int]) -> int | None:
-    if not values:
-        return None
-    ordered = sorted(values)
-    return ordered[math.ceil(0.9 * len(ordered)) - 1]
-
-
-def average(values: list[int]) -> float | None:
-    return None if not values else sum(values) / len(values)
 
 
 def sha256_file(path: Path) -> str:
@@ -502,7 +479,7 @@ def main() -> None:
                         json.dumps(
                             {
                                 "metric_definition_version": METRIC_DEFINITION_VERSION,
-                                "quantile_method": "nearest-rank-p90",
+                                "metric_semantics": "fastest_exact_stop_on_representative_weekday",
                                 "engine_resolution_seconds": engine.capabilities.duration_resolution_seconds,
                                 "sample_dates": sorted({sample.date().isoformat() for sample in requested_times}),
                                 "sample_start": profile["sample_start"],
@@ -510,12 +487,9 @@ def main() -> None:
                                 "sample_interval_seconds": profile["sample_interval_seconds"],
                                 "profile_max_trip_duration_seconds": profile["max_trip_duration_seconds"],
                                 "motis_max_travel_minutes": motis_max_travel_minutes,
-                                "motis_horizon_note": (
-                                    "Effective MOTIS one-to-all horizon is lower than the profile horizon; "
-                                    "destinations requiring more time are counted unreachable in this run."
-                                    if motis_max_travel_minutes * 60 < int(profile["max_trip_duration_seconds"])
-                                    else "Effective MOTIS horizon matches the profile horizon."
-                                ),
+                                "max_transfers_product_filter": False,
+                                "mode_product_filter": False,
+                                "post_transit_walk_to_neighbor_stop": False,
                                 "r5_optional": True,
                                 "r5_build_status": json.loads(Path("data/reports/r5-build.json").read_text(encoding="utf-8")).get("status")
                                 if Path("data/reports/r5-build.json").exists()
@@ -543,14 +517,6 @@ def main() -> None:
                     reachable = len(accumulator.values)
                     unreachable = total - reachable
                     ratio = reachable / total if total else 0.0
-                    med = median_seconds(accumulator.values)
-                    p90 = p90_nearest_rank(accumulator.values)
-                    transfer_med = median_seconds(accumulator.transfer_counts)
-                    direct_ratio = (
-                        sum(1 for transfers in accumulator.transfer_counts if transfers == 0) / len(accumulator.transfer_counts)
-                        if accumulator.transfer_counts
-                        else None
-                    )
                     rows.append(
                         (
                             metric_run_id,
@@ -561,14 +527,14 @@ def main() -> None:
                             unreachable,
                             ratio,
                             min(accumulator.values) if accumulator.values else None,
-                            average(accumulator.values),
-                            med if ratio >= 0.5 else None,
-                            p90 if ratio >= 0.9 else None,
-                            ratio >= 0.9,
-                            ratio >= 0.5,
-                            min(accumulator.transfer_counts) if accumulator.transfer_counts else None,
-                            transfer_med,
-                            direct_ratio,
+                            None,
+                            None,
+                            None,
+                            False,
+                            False,
+                            None,
+                            None,
+                            None,
                             None,
                             None,
                             None,
@@ -607,7 +573,7 @@ def main() -> None:
                                 "metric_engine": engine.engine_key,
                                 "metric_engine_version": engine.engine_version,
                                 "metric_definition_version": METRIC_DEFINITION_VERSION,
-                                "quantile_method": "nearest-rank-p90",
+                                "metric_semantics": "fastest_exact_stop_on_representative_weekday",
                                 "osm_sha256": quality_report.get("osm_sha256")
                                 or json.loads(Path("data/source-manifest.json").read_text(encoding="utf-8"))["sources"][2]["sha256"],
                                 "motis_graph_status": "built",
@@ -657,7 +623,8 @@ def main() -> None:
                     "motis_max_travel_minutes": motis_max_travel_minutes,
                     "notes": [
                         "MOTIS one-to-all duration is stored as total scheduled travel time from requested departure.",
-                        "Leg breakdown metrics unavailable from one-to-all are stored as null.",
+                        "Only fastest exact-stop travel time is a product metric; robustness and transfer aggregates are intentionally null.",
+                        "Direct connection counts are computed from scheduled trips per requested service date by the API.",
                         "R5 is treated as optional comparison engine for this snapshot.",
                     ],
                 }

@@ -1,12 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FeatureCollection, Polygon } from 'geojson'
 import maplibregl, { type Map } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import type { ApiStopDetails, ApiStopSearchResult } from '../api/contracts'
-import type { MapBaseLayer } from './config'
+import type { ApiStopDetails } from '../api/contracts'
+import type { MapBaseLayer, TravelTimeWindow } from './config'
 import {
   addTransitTileLayers,
   applyRouteLayerState,
+  applyStopLayerState,
   circlePolygon,
   createStopHoverPopupContent,
   mapLibreBaseStyle,
@@ -17,9 +18,9 @@ import {
 
 export function MapLibreCanvas({
   selectedStop,
-  visibleStops,
   mapBaseLayer,
   tileModes,
+  selectedTimeWindows,
   showResidentialRegions,
   residentialRadiusMeters,
   profile,
@@ -27,9 +28,9 @@ export function MapLibreCanvas({
   onTileLoadingChange,
 }: {
   selectedStop: ApiStopDetails | null
-  visibleStops: ApiStopSearchResult[]
   mapBaseLayer: MapBaseLayer
   tileModes: string[]
+  selectedTimeWindows: TravelTimeWindow[]
   showResidentialRegions: boolean
   residentialRadiusMeters: number
   profile: string
@@ -39,10 +40,70 @@ export function MapLibreCanvas({
   const containerRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<Map | null>(null)
   const initialTileModesRef = useRef(tileModes)
+  const selectedTimeWindowsRef = useRef(selectedTimeWindows)
   const hoverPopupRef = useRef<maplibregl.Popup | null>(null)
   const currentHoverPublicIdRef = useRef<string | null>(null)
+  const residentialSettingsRef = useRef({ showResidentialRegions, residentialRadiusMeters })
   const [mapReady, setMapReady] = useState(false)
   const [zoomLevel, setZoomLevel] = useState(8.4)
+
+  const updateResidentialRadiusSource = useCallback(() => {
+    const map = mapRef.current
+    const source = map?.getSource('regionfinder-residential-radius') as maplibregl.GeoJSONSource | undefined
+
+    if (!map || !source) {
+      return
+    }
+
+    const { showResidentialRegions, residentialRadiusMeters } = residentialSettingsRef.current
+    const stops: Array<{ publicId: string; name: string; lon: number; lat: number }> = []
+
+    if (showResidentialRegions && map.getLayer('regionfinder-stops-symbol')) {
+      const seen = new Set<string>()
+      const features = map.queryRenderedFeatures({ layers: ['regionfinder-stops-symbol'] })
+
+      for (const feature of features) {
+        if (feature.geometry.type !== 'Point') {
+          continue
+        }
+
+        const publicId = feature.properties?.public_id
+        const name = feature.properties?.name
+        const [lon, lat] = feature.geometry.coordinates
+
+        if (
+          typeof publicId !== 'string' ||
+          seen.has(publicId) ||
+          typeof lon !== 'number' ||
+          typeof lat !== 'number'
+        ) {
+          continue
+        }
+
+        seen.add(publicId)
+        stops.push({
+          publicId,
+          name: typeof name === 'string' ? name : 'StopPlace',
+          lon,
+          lat,
+        })
+      }
+    }
+
+    const collection: FeatureCollection<Polygon, { publicId: string; name: string }> = {
+      type: 'FeatureCollection',
+      features: stops.map((stop) => ({
+        type: 'Feature',
+        properties: {
+          publicId: stop.publicId,
+          name: stop.name,
+        },
+        geometry: circlePolygon(stop.lon, stop.lat, residentialRadiusMeters),
+      })),
+    }
+
+    source.setData(collection)
+  }, [])
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -62,10 +123,12 @@ export function MapLibreCanvas({
     })
     map.on('idle', () => {
       onTileLoadingChange(false)
+      updateResidentialRadiusSource()
     })
     map.on('load', () => {
       addTransitTileLayers(map, initialTileModesRef.current, profile)
       applyRouteLayerState(map)
+      applyStopLayerState(map, selectedTimeWindowsRef.current)
       map.on('click', 'regionfinder-stops-symbol', (event) => {
         const publicId = event.features?.[0]?.properties?.public_id
 
@@ -130,25 +193,31 @@ export function MapLibreCanvas({
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
       })
-      map.addLayer({
-        id: 'regionfinder-residential-radius-fill',
-        type: 'fill',
-        source: 'regionfinder-residential-radius',
-        paint: {
-          'fill-color': '#0f766e',
-          'fill-opacity': 0.11,
+      map.addLayer(
+        {
+          id: 'regionfinder-residential-radius-fill',
+          type: 'fill',
+          source: 'regionfinder-residential-radius',
+          paint: {
+            'fill-color': '#fbbf24',
+            'fill-opacity': 0.16,
+          },
         },
-      })
-      map.addLayer({
-        id: 'regionfinder-residential-radius-line',
-        type: 'line',
-        source: 'regionfinder-residential-radius',
-        paint: {
-          'line-color': '#0f766e',
-          'line-width': 1.5,
-          'line-dasharray': [2, 2],
+        'regionfinder-routes-line',
+      )
+      map.addLayer(
+        {
+          id: 'regionfinder-residential-radius-line',
+          type: 'line',
+          source: 'regionfinder-residential-radius',
+          paint: {
+            'line-color': '#f59e0b',
+            'line-width': 2,
+            'line-dasharray': [4, 3],
+          },
         },
-      })
+        'regionfinder-stops-symbol',
+      )
       setMapReady(true)
     })
     mapRef.current = map
@@ -158,7 +227,7 @@ export function MapLibreCanvas({
       map.remove()
       mapRef.current = null
     }
-  }, [onSelect, onTileLoadingChange, profile])
+  }, [onSelect, onTileLoadingChange, profile, updateResidentialRadiusSource])
 
   useEffect(() => {
     const map = mapRef.current
@@ -171,6 +240,7 @@ export function MapLibreCanvas({
     removeTransitTileLayers(map)
     addTransitTileLayers(map, tileModes, profile)
     applyRouteLayerState(map)
+    applyStopLayerState(map, selectedTimeWindowsRef.current)
     map.triggerRepaint()
   }, [mapReady, onTileLoadingChange, profile, tileModes])
 
@@ -211,29 +281,28 @@ export function MapLibreCanvas({
 
   useEffect(() => {
     const map = mapRef.current
+    selectedTimeWindowsRef.current = selectedTimeWindows
+
+    if (!mapReady || !map || !map.getLayer('regionfinder-stops-symbol')) {
+      return
+    }
+
+    applyStopLayerState(map, selectedTimeWindows)
+    updateResidentialRadiusSource()
+    map.triggerRepaint()
+  }, [mapReady, selectedTimeWindows, updateResidentialRadiusSource])
+
+  useEffect(() => {
+    const map = mapRef.current
+
+    residentialSettingsRef.current = { showResidentialRegions, residentialRadiusMeters }
 
     if (!mapReady || !map || !map.getSource('regionfinder-residential-radius')) {
       return
     }
 
-    const source = map.getSource('regionfinder-residential-radius') as maplibregl.GeoJSONSource
-    const stops = selectedStop ? [selectedStop] : Array.isArray(visibleStops) ? visibleStops : []
-    const collection: FeatureCollection<Polygon, { publicId: string; name: string }> = {
-      type: 'FeatureCollection',
-      features: showResidentialRegions
-        ? stops.map((stop) => ({
-            type: 'Feature',
-            properties: {
-              publicId: stop.publicId,
-              name: stop.name,
-            },
-            geometry: circlePolygon(stop.coordinate.lon, stop.coordinate.lat, residentialRadiusMeters),
-          }))
-        : [],
-    }
-
-    source.setData(collection)
-  }, [mapReady, residentialRadiusMeters, selectedStop, showResidentialRegions, visibleStops])
+    updateResidentialRadiusSource()
+  }, [mapReady, residentialRadiusMeters, showResidentialRegions, updateResidentialRadiusSource])
 
   return (
     <div className="maplibre-map-shell">

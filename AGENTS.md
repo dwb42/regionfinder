@@ -64,7 +64,9 @@ Produktionsdaten:
 
 - aktiver Snapshot: `delfi-bb69c7e2c8d5`
 - kanonische Fahrplanquelle: DELFI-GTFS
-- aktuelle Produktionsmetriken: `motis_one_to_all`
+- aktuelle Produktionsmetriken: `motis_one_to_all`, Definition `2026-06-25.fastest-day-exact-stop`
+- aktueller Metric Run: `4d9f96b5-f905-42cd-a5e1-2283e9b7bd7d`
+- Profil `regular_tue_thu`: repräsentativer Werktag `2026-09-15`, 00:00 bis GTFS 28:00, 5-Minuten-Samples, Maximaldauer 120 Minuten
 - R5/r5py: optionaler Vergleichsweg, kein Aktivierungs-Gate
 
 Details stehen in `docs/PRODUCTION_DATA_INTEGRATION_REPORT.md`.
@@ -97,6 +99,8 @@ Benannte Korridore stehen in `pipeline/rail_network.py`. Aktuell sind viele S-/R
 - Route-MVTs sollen `route_color` liefern. Das Frontend nutzt echte GTFS-Farben bevorzugt und Fallbackfarben nach Modus.
 - Route-MVTs nutzen `route_pattern_display_geometries`. Hochkonfidente `osm_reconstructed`-Geometrien dürfen als Anzeigegeometrie verwendet werden; `osm_reconstructed_low_confidence` und `stop_sequence_approximation` nicht als präzise Strecke darstellen. Im aktuellen Standardlayer sind beide ausgeblendet, weil Low-Confidence noch Fehlkorridore erzeugen kann.
 - Stop-Metriken können `?date=YYYY-MM-DD` erhalten; dann liefert die API `directConnectionCount` als tagesgenaue Anzahl direkter Trips ohne Umstieg.
+- `ApiMetrics` ist absichtlich schlank: `fastestSeconds` plus optional `directConnectionCount`. Median, P90, Reachability-Quoten, Transferaggregate und `directConnectionRatio` sind keine aktuellen Produktmetriken mehr.
+- Produktionsmetriken gelten für den exakten Ziel-StopPlace. Der MOTIS-Batch nutzt initialen Fußweg zum Einstieg, aber keinen finalen Fußweg zu Nachbarhaltestellen.
 - DB-Echtzeitverbindungen laufen ausschließlich serverseitig über `server/realtime/dbTransportRestProvider.ts`; keine direkten DB-/bahn.de-Requests aus React. Die Implementierung ist in `server/realtime/` in Provider-Orchestrierung, bahn.de-/db.transport-Clients, Stop-Mapping, Journey-Mapping und Cache aufgeteilt.
 - Standard-Realtime-Backend ist `bahn-web`; `REGIONFINDER_REALTIME_PROVIDER=db-transport-rest` erzwingt den Wrapper `v6.db.transport.rest`. Ursprung bleibt Hamburg Hbf (`REGIONFINDER_ORIGIN_DB_STOP_ID=8002549`).
 - Realtime-Fehlercodes im UI freundlich behandeln: `db_stop_unmapped` und `realtime_unavailable` dürfen das Detailpanel nicht zerstören.
@@ -104,6 +108,7 @@ Benannte Korridore stehen in `pipeline/rail_network.py`. Aktuell sind viele S-/R
 - `PostgresRepository` ist nur Adapter auf das Repository-Interface. SQL gehört in fokussierte Module unter `server/db/queries/`.
 - API-Frontend-Code liegt unter `src/apiApp/`: Hooks, MapLibre-Canvas, Layerdefinitionen, Formatter und Detailpanel-Komponenten. `src/ApiApp.tsx` bleibt Layout/Verdrahtung.
 - `MapLibreCanvas` wird lazy geladen. Große MapLibre-Abhängigkeiten nicht wieder statisch in den App-Shell importieren.
+- Der große lazy MapLibre-Chunk ist bewusst isoliert; Vite nutzt `chunkSizeWarningLimit: 1100`.
 
 ## UX-Konventionen
 
@@ -111,16 +116,20 @@ API-Modus:
 
 - Initiale Karte: Hamburg/Norddeutschland, produktiver DELFI-Snapshot im Datenstand-Badge.
 - Default-Layer: `Regional/Fern`, `S-Bahn/AKN`, `U-Bahn`.
-- `Bus` und `Fähre` sind standardmäßig deaktiviert.
-- Klick auf StopPlace aus MVT oder Suchliste aktualisiert das rechte Detailpanel.
+- `Bus` ist standardmäßig deaktiviert. `Fähre` ist im API-UI aktuell nicht als eigener Layer-Schalter verfügbar.
+- Klick auf StopPlace aus MVT aktualisiert das rechte Detailpanel.
+- Die frühere Sidebar-Suche/Suchtrefferliste ist im API-UI entfernt; Detailpanel-Öffnung erfolgt über die Karte.
 - Basiskarten-Umschalter: CARTO/OSM-Straßenkarte und Esri-Satellit; beide mit CARTO-Ortslabel-Overlay.
 - Detailpanel-Überschrift für Verbindungen ist `DB Echtzeit`, nicht `Konkrete Verbindung`; der alte lokale `Unser System`-Block ist im API-Detailpanel entfernt.
 - Die DB-Echtzeit-Startzeit sitzt im Detailpanel mit `Frühere`-/`Spätere`-Buttons. Die Sidebar enthält keine separate Abfahrtszeitsteuerung mehr.
 - Datenstand und technische StopPlace-Details sind einklappbar.
 - DB-Echtzeit zeigt bis zu drei Alternativen mit Wunschzeit, erster Abfahrt, Ankunft, Dauer, Legs, Plattform, Verspätung, Ausfall und Remarks.
 - Reisezeitfenster und Station-Kreise nutzen dieselbe Farbskala: 30 grün, 45 teal, 60 ocker, 75 orange, 90 rot.
+- Reisezeitfenster filtern sichtbare MVT-StopPlaces anhand `fastest_seconds`.
+- Umstiegsfilter und `Unerreichbare anzeigen` sind im API-UI entfernt; verfügbare Ziele werden standardmäßig gezeigt und nur über Layer/Reisezeitfenster eingeschränkt.
+- Wohnregionen sind geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele; Radius = Minuten * `0,75 km`, Optionen 5/10/15/20 Minuten.
 - Zoom-Control sitzt links oben in der Map-Card; Zoomstufe sichtbar anzeigen.
-- Suchliste, Marker und MVT-Kacheln müssen konsistent nach aktiven Modi gefiltert sein.
+- MVT-Kacheln und abgeleitete Overlays müssen konsistent nach aktiven Modi und Reisezeitfenstern gefiltert sein.
 
 Legacy-Modus:
 
@@ -136,11 +145,6 @@ Legacy-Modus:
 ## Nächster fachlicher Schwerpunkt
 
 - Performance und Qualität der Produktions-MVTs verbessern: Clustering/Generalisierung, weniger Linienchaos bei niedrigen Zoomstufen.
-- 12-Stunden-Produktionshorizont für MOTIS one-to-all oder alternative Batchstrategie.
+- Qualität/Abdeckung der 120-Minuten-Produktionsmetrik verbessern und nicht erreichbare StopPlaces nach Ursache clustern.
 - R5/r5py als Vergleichsengine wiederaufnehmen, wenn Ressourcen/Graphbau geklärt sind.
-- Wohnregion-Funktion:
-  1. Bahnlimit bestimmen.
-  2. Erreichbare Bahnhöfe bestimmen.
-  3. Auto-Anschlusslimit anwenden.
-  4. Zunächst geschätzte Radien/Raster anzeigen.
-  5. Später echte Auto-Isochronen via OSRM, Valhalla oder OpenRouteService.
+- Wohnregion-Funktion: aktuelle Version zeigt geschätzte Radien; spätere Version soll echte Auto-Isochronen via OSRM, Valhalla oder OpenRouteService nutzen.
