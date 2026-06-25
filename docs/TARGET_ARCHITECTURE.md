@@ -16,6 +16,7 @@ Pipeline (Python)
   -> Snapshots importieren und normalisieren
   -> zertifizierte Batchmetriken berechnen: MOTIS one-to-all primaer, R5/r5py optional
   -> OSM-Schienen importieren und Route-Pattern-Anzeigegeometrien rekonstruieren
+  -> offizielle Schulstandorte als snapshot-unabhängige POIs importieren
   -> Qualitätsberichte und Artefakt-Hashes speichern
 ```
 
@@ -27,7 +28,8 @@ Pipeline (Python)
 4. Eine zertifizierte Metrikengine berechnet Metriken ueber konkrete Fahrplandaten und gewuenschte Abfahrtszeitpunkte.
    Fuer den Produktionssnapshot `delfi-bb69c7e2c8d5` ist `motis_one_to_all` die aktive Engine.
 5. Ein Snapshot wird erst nach bestandenen Gates aktiv.
-6. Das Frontend lädt im API-Modus nur API-Antworten und MVT-Kacheln.
+6. Snapshot-unabhängige Zusatzdaten wie Schulen werden in eigenen Tabellen importiert und über eigene MVT-Endpunkte bereitgestellt.
+7. Das Frontend lädt im API-Modus nur API-Antworten und MVT-Kacheln.
 
 ## Snapshot-Lebenszyklus
 
@@ -80,10 +82,12 @@ Implementiert:
 - `GET /api/v1/stops/:publicId/metrics`
 - `GET /api/v1/stops/:publicId/itineraries`
 - `GET /api/v1/stops/:publicId/realtime-itineraries`
+- `GET /api/v1/stops/:publicId/driving-route`
 - `GET /api/v1/route-patterns/:id`
 - `GET /api/v1/tiles/stops/{z}/{x}/{y}.mvt`
 - `GET /api/v1/tiles/routes/{z}/{x}/{y}.mvt`
 - `GET /api/v1/tiles/rail-network/{z}/{x}/{y}.mvt`
+- `GET /api/v1/tiles/schools/{z}/{x}/{y}.mvt`
 
 Request-Validierung liegt in `server/schemas.ts`, gemeinsame Antworttypen in `src/api/contracts.ts`.
 
@@ -116,6 +120,10 @@ Aktueller API-Modus:
 - Reisezeitfenster-Chips und Stop-Kreise verwenden dieselbe Farbskala: 30 min grün, 45 min teal, 60 min ocker, 75 min orange, 90 min rot.
 - Reisezeitfenster filtern MVT-StopFeatures anhand von `fastest_seconds`. Umstiegsfilter und `Unerreichbare anzeigen` sind nicht Teil der aktuellen API-UI.
 - Wohnregionen sind geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele. Der Radius verwendet den Schätzfaktor `0,75 km/min`; UI-Optionen sind 5/10/15/20 Minuten.
+- Zusatzlayer werden im Sidebar-Block `anzeigen` geführt. Der Schools-Layer ist in zwei Checkboxen getrennt: `Gymnasium` und `andere weiterf. Schulen`. Beide sind standardmäßig aktiv.
+- Schul-POIs werden als eigener MVT-Layer geladen, nicht durch ÖPNV-Modi oder Reisezeitfenster gefiltert. Das Frontend filtert sie ausschließlich über `categories` und legt die MapLibre-Quelle bei Kategorienwechsel neu an.
+- Gymnasien sind in der Karte farblich hervorgehoben; andere weiterführende Schulen sind neutral markiert. Hover zeigt Name und offizielle Schulart. Klick öffnet im ersten Schritt kein Detailpanel.
+- Die Karte besitzt eine metrische Maßstabsleiste unten rechts.
 
 ## Tile-Datenvertrag
 
@@ -159,6 +167,22 @@ Rail-Network-MVT `rail-network` enthält OSM-Schienenkanten aus `rail_edges` mit
 - `usage`
 - `is_service`
 - `geom`
+
+Schools-MVT `schools` enthält POIs aus der snapshot-unabhängigen Tabelle `schools`:
+
+- `id`
+- `name`
+- `school_category`
+- `school_type_label`
+- `state_code`
+- `geom`
+
+Queryparameter:
+
+- `categories`: CSV aus `gymnasium`, `comprehensive`, `waldorf`, `vocational`, `upper_secondary`
+- `states`: CSV aus `HH`, `SH`, `MV`, `NI`
+
+Schools-Tiles werden unabhängig von Routingprofil, Reisezeitfenstern und Verkehrsmittel-Layern geladen.
 
 ## OSM-Schienenmatching
 

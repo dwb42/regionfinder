@@ -64,6 +64,19 @@ Qualitätsgrenzen:
 - Das Frontend muss diese Fehler lokal im DB-Echtzeitblock anzeigen und das Detailpanel weiter nutzbar lassen.
 - Realtime-Legs dürfen optionale Planzeiten, Ist-Zeiten, Verspätungen, Ausfallstatus und Remarks enthalten; fehlende Plattformen oder Zeiten sind zulässig.
 
+## Schulen-POI-Qualität
+
+Der Schools-Layer ist ein Karten-POI-Layer, keine Routingmetrik. Er darf keine DELFI-/MOTIS-Metriken überschreiben und ist unabhängig vom aktiven Fahrplansnapshot.
+
+Qualitätsregeln:
+
+- Primärquellen sind offizielle Schulstandortdaten der Länder `HH`, `SH`, `MV`, `NI`; OSM ist keine Primärquelle.
+- Nur Standorte mit WGS84-Punktgeometrie werden importiert und in MVTs ausgegeben.
+- Kategorien werden auf `gymnasium`, `comprehensive`, `waldorf`, `vocational`, `upper_secondary` normalisiert; die offizielle Quellbezeichnung bleibt in `school_type_label` erhalten.
+- SH-Schularten/Bildungsgänge sind Bitmasken und müssen als solche dekodiert werden. Freie Trägerschaft allein ist keine Schulform; Waldorf wird nur über Name/Schulbezeichnung erkannt.
+- Standorte ohne Koordinate müssen vor Import explizit ergänzt oder ausgeschlossen werden. Geocoding-Fallbacks sind in der Doku/Reports nachvollziehbar zu halten und bei Quellupdates erneut zu prüfen.
+- `source_id + source_school_id` ist der Deduplizierungsschlüssel. Mehrere Standorte einer Schule bleiben getrennte POIs, wenn die Quelle getrennte Standort-IDs liefert.
+
 ## Bekannte Einschränkungen
 
 - Der MobilityData GTFS Validator lief auf dem DELFI-Produktionsfeed in der lokalen Umgebung in einen Java-Heap-OOM und ist deshalb kein bestandenes Gate für diesen Snapshot.

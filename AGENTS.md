@@ -61,6 +61,21 @@ Produktionsdaten:
 
 Details stehen in `docs/PRODUCTION_DATA_INTEGRATION_REPORT.md`.
 
+Weiterführende Schulen:
+
+```bash
+npm run schools:import
+```
+
+Das Script importiert offizielle Schulstandortdaten in die snapshot-unabhängige Tabelle `schools`. Erwartete lokale Quellen:
+
+- `data/raw/schools/hamburg.geojson|csv`
+- `data/raw/schools/schleswig-holstein.geojson|csv`
+- `data/raw/schools/mecklenburg-vorpommern.geojson|csv`
+- `data/raw/schools/niedersachsen.geojson|csv`
+
+Aktueller importierter Stand: 1.466 darstellbare Standorte in `HH`, `SH`, `MV`, `NI`. Kategorien: `gymnasium`, `comprehensive`, `waldorf`, `vocational`, `upper_secondary`. SH-Quelle ist TSV mit Schulart-Bitmasken; der Importer dekodiert diese. Für GML/Shapefile-Quellen vorher per GDAL nach EPSG:4326-GeoJSON konvertieren. Wenige SH-Standorte ohne Koordinaten sind per Adress-Geocoding ergänzt; bei Datenaktualisierung diese Fallbacks prüfen.
+
 OSM-Schienenrekonstruktion:
 
 ```bash
@@ -84,6 +99,7 @@ Benannte Korridore stehen in `pipeline/rail_network.py`. Aktuell sind viele S-/R
 - Der API-Modus lädt Verkehrsdaten über Fastify/PostGIS/MVT, nicht über große JSON-Dateien.
 - Keine vollständigen GTFS-StopTimes direkt in React laden.
 - StopPlaces und Route Patterns im API-Modus über Vector Tiles aus PostGIS laden.
+- Weiterführende Schulen sind snapshot-unabhängige POIs in `schools` und werden über `/api/v1/tiles/schools/{z}/{x}/{y}.mvt?categories=...&states=...` geladen.
 - Tile-Endpunkte mit `?modes=...` filtern, wenn UI-Layer aktiv/deaktiv sind. Stop-Tiles zusätzlich mit `?profile=...` anfragen, damit Reisezeitfarben und Hover-Metriken zum Routingprofil passen.
 - Bei Moduswechseln MapLibre-Vector-Tile-Sources entfernen und neu anlegen; `setTiles()` allein kann alte ungefilterte Tiles sichtbar lassen.
 - Route-MVTs sollen `route_color` liefern. Das Frontend nutzt echte GTFS-Farben bevorzugt und Fallbackfarben nach Modus.
@@ -120,6 +136,9 @@ API-Modus:
 - Wohnregionen sind geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele; Radius = Minuten * `0,75 km`, Optionen 5/10/15/20 Minuten.
 - Zoom-Control sitzt links oben in der Map-Card; Zoomstufe sichtbar anzeigen.
 - MVT-Kacheln und abgeleitete Overlays müssen konsistent nach aktiven Modi und Reisezeitfenstern gefiltert sein.
+- Zusatzlayer `anzeigen` sitzt unten in der Sidebar. Weiterführende Schulen sind getrennt schaltbar als `Gymnasium` und `andere weiterf. Schulen`; beide sind standardmäßig aktiv.
+- Schulmarker werden nicht durch Reisezeitfenster oder ÖPNV-Modi gefiltert. Gymnasien sind blau hervorgehoben, andere weiterführende Schulen neutral. Hover zeigt Name und Schulart; Klick öffnet aktuell kein Detailpanel.
+- Die Karte zeigt unten rechts eine metrische Maßstabsleiste.
 
 ## Nächster fachlicher Schwerpunkt
 

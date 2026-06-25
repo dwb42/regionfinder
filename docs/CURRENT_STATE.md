@@ -1,6 +1,6 @@
 # Current State
 
-Stand: 2026-06-25 nach Regionfinder V2 Produktionsintegration, API-/MapLibre-UX-Nachzug, DB-Echtzeitintegration und erstem OSM-Schienenkorridor-Matching.
+Stand: 2026-06-25 nach Regionfinder V2 Produktionsintegration, API-/MapLibre-UX-Nachzug, DB-Echtzeitintegration, erstem OSM-Schienenkorridor-Matching und Schools-POI-Layer.
 
 ## Produktstand
 
@@ -31,6 +31,35 @@ Importierte Grenzen:
 - `DE-MV`
 - `DE-NI`
 - `DE-HB`
+
+## Zusatzdaten: weiterführende Schulen
+
+Die Karte enthält einen snapshot-unabhängigen POI-Datenbestand `schools` mit offiziellen Schulstandorten aus den vier definierten Bundesländern. OSM ist kein Primärdatensatz für Schulen.
+
+Aktueller importierter Stand:
+
+- Gesamt: 1.466 darstellbare Standorte
+- `HH`: 260
+- `SH`: 411
+- `MV`: 133
+- `NI`: 662
+
+Normalisierte Kategorien:
+
+- `gymnasium`
+- `comprehensive`
+- `waldorf`
+- `vocational`
+- `upper_secondary`
+
+Quellen:
+
+- Hamburg: Transparenzportal/GeoHub `Schulstammdaten und Schülerzahlen der Hamburger Schulen`
+- Schleswig-Holstein: OpenData-SH `Schulen`, TSV/CSV mit Schulart-/Bildungsgang-Bitmasken
+- Mecklenburg-Vorpommern: Geoportal.MV WFS `Schulverzeichnis in M-V`
+- Niedersachsen: LSN Schulstandorte-Shapefiles für allgemeinbildende und berufsbildende Schulen
+
+Das Importskript `pipeline/schools.py` liest CSV/TSV, GeoJSON und ZIPs mit CSV/GeoJSON. Für GML/Shapefile-Quellen werden die Daten vorab per GDAL nach EPSG:4326-GeoJSON konvertiert. Schleswig-Holstein nutzt Bitmasken; der Import dekodiert daraus Gymnasium, Gemeinschaftsschule/Gesamtschule und berufsbildende Schule. Wenige relevante SH-Standorte ohne Koordinaten wurden über Adress-Geocoding ergänzt; diese Ergänzungen müssen bei Datenaktualisierungen erneut geprüft werden.
 
 ## Produktionsmetriken
 
@@ -98,6 +127,12 @@ Aktuelle UI-Funktionen im API-Modus:
 - Die frühere Sidebar-Suche und Suchtrefferliste ist im API-Modus entfernt. Das Detailpanel wird über Klick auf einen StopPlace in der Karte geöffnet. Der API-Endpunkt `/api/v1/stops/search` bleibt als technische Schnittstelle bestehen, ist aber nicht mehr Teil der aktuellen Sidebar-UX.
 - Wohnregionen sind geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele. Der Radius nutzt den Schätzfaktor `0,75 km/min`; Optionen sind 5, 10, 15 und 20 Minuten.
 - Reisezeitfenster und Stationskreise nutzen dieselbe Farbskala: 30 min grün, 45 min teal, 60 min ocker, 75 min orange, 90 min rot.
+- Metrische Maßstabsleiste unten rechts in der Karte.
+- Zusatzlayer `anzeigen` am unteren Ende der Sidebar:
+  - `Gymnasium`
+  - `andere weiterf. Schulen`
+- Beide Schul-Checkboxen sind standardmäßig aktiv. Der Client lädt Schools-MVTs über `categories=...` neu, wenn eine Checkbox umgeschaltet wird.
+- Schulmarker sind reine Karten-POIs ohne Detailpanel-Klick. Hover zeigt Name und offizielle Schulart. Gymnasien sind blau hervorgehoben; andere weiterführende Schulen bleiben neutral.
 
 ## DB-Echtzeitverbindungen und Direktverbindungen
 
@@ -156,6 +191,7 @@ Wichtige Einschränkung: Viele S-/Regional-Patterns sind zwar OSM-geroutet, erre
 - Fastify validiert Requests mit Zod-Schemas.
 - Gemeinsame API-Antworttypen liegen in `src/api/contracts.ts`.
 - Stop- und Route-Tiles akzeptieren `?modes=...`; Stop-Tiles akzeptieren zusätzlich `?profile=...`.
+- Schools-Tiles akzeptieren `?categories=...&states=...` und nutzen den MVT-Layernamen `schools`.
 - Stop-Metriken akzeptieren zusätzlich `?date=YYYY-MM-DD`, wenn eine tagesgenaue Direktverbindungszahl gebraucht wird.
 - Aktueller Default-Referenztag im API-Frontend ist `2026-09-15`, passend zum Produktions-Metrikprofil.
 - Route-Tiles liefern `route_color`, normalisiert auf `#RRGGBB`, wenn eine echte GTFS-Farbe existiert.
@@ -169,6 +205,34 @@ Wichtige Einschränkung: Viele S-/Regional-Patterns sind zwar OSM-geroutet, erre
 - `MapLibreCanvas` wird lazy geladen, damit MapLibre nicht im API-Shell-Chunk landet.
 - Der große MapLibre-Lazy-Chunk ist akzeptiert; Vite nutzt `chunkSizeWarningLimit: 1100`, damit der bewusst isolierte MapLibre-Chunk keine Warnung mehr erzeugt.
 - Playwright ist als Dev-Dependency verfügbar; lokale Browser-Smoke-Tests benötigen einmalig `npx playwright install chromium`.
+
+## Schools-Datenmodell und API
+
+`db/migrations/009_schools.sql` legt die Tabelle `schools` an:
+
+- `source_id`, `source_school_id`
+- `name`
+- `school_category`
+- `school_type_label`
+- `state_code`
+- `address`, `website`
+- `geometry(Point, 4326)`
+- `raw_properties`
+- `imported_at`
+
+Wichtige Constraints und Indizes:
+
+- `UNIQUE (source_id, source_school_id)`
+- GiST auf `geometry`
+- B-Tree auf `school_category` und `state_code`
+
+Repository und SQL folgen dem bestehenden Pattern: `PostgresRepository` delegiert an `server/db/queries/tileQueries.ts`. Der Endpunkt lautet:
+
+```text
+GET /api/v1/tiles/schools/{z}/{x}/{y}.mvt?categories=gymnasium,comprehensive,waldorf,vocational,upper_secondary&states=HH,SH,MV,NI
+```
+
+MVT-Properties: `id`, `name`, `school_category`, `school_type_label`, `state_code`.
 
 ## Verifikation
 

@@ -7,13 +7,13 @@ import {
   defaultProfile,
   estimatedResidentialRadiusKmPerMinute,
   modeLayerDefinitions,
-  poiLayerDefinitions,
   residentialRadiusOptions,
+  schoolPoiLayerDefinitions,
   travelTimeChipStyle,
   travelTimeWindows,
   type MapBaseLayer,
   type ModeLayerId,
-  type PoiLayerId,
+  type SchoolPoiLayerId,
   type TravelTimeWindow,
 } from './apiApp/config'
 import {
@@ -42,7 +42,10 @@ function ApiApp() {
   const [activeModeLayers, setActiveModeLayers] = useState<ModeLayerId[]>(['regional', 's-bahn', 'u-bahn'])
   const [selectedTimeWindows, setSelectedTimeWindows] = useState<TravelTimeWindow[]>(travelTimeWindows)
   const [mapBaseLayer, setMapBaseLayer] = useState<MapBaseLayer>('street')
-  const [activePoiLayer, setActivePoiLayer] = useState<PoiLayerId>('none')
+  const [activeSchoolPoiLayers, setActiveSchoolPoiLayers] = useState<SchoolPoiLayerId[]>([
+    'gymnasium',
+    'other-secondary',
+  ])
   const [showResidentialRegions, setShowResidentialRegions] = useState(false)
   const [residentialRadiusMinutes, setResidentialRadiusMinutes] = useState(15)
   const { mapUpdateState, handleMapTileLoadingChange } = useMapUpdateStatus()
@@ -55,6 +58,17 @@ function ApiApp() {
 
   const allowedModes = useMemo(() => modesForLayers(activeModeLayers, modeLayerDefinitions), [activeModeLayers])
   const tileModes = useMemo(() => (activeModeLayers.length === 0 ? ['__none__'] : allowedModes), [activeModeLayers.length, allowedModes])
+  const schoolCategories = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          schoolPoiLayerDefinitions
+            .filter((definition) => activeSchoolPoiLayers.includes(definition.id))
+            .flatMap((definition) => definition.categories),
+        ),
+      ),
+    [activeSchoolPoiLayers],
+  )
   const residentialRadiusMeters = residentialRadiusMinutes * estimatedResidentialRadiusKmPerMinute * 1000
   const detailPanelStop = selectedStop ?? selectedStopPreview
   const selectedFastestSeconds = metrics?.fastestSeconds ?? selectedStopPreview?.fastestSeconds ?? null
@@ -77,6 +91,12 @@ function ApiApp() {
   function toggleTravelTimeWindow(window: TravelTimeWindow) {
     setSelectedTimeWindows((current) =>
       current.includes(window) ? current.filter((entry) => entry !== window) : [...current, window],
+    )
+  }
+
+  function toggleSchoolPoiLayer(id: SchoolPoiLayerId) {
+    setActiveSchoolPoiLayers((current) =>
+      current.includes(id) ? current.filter((layer) => layer !== id) : [...current, id],
     )
   }
 
@@ -182,19 +202,17 @@ function ApiApp() {
             anzeigen
           </div>
           <div className="layer-grid">
-            {poiLayerDefinitions
-              .filter((definition) => definition.id !== 'none')
-              .map((definition) => (
-                <label key={definition.id} className="layer-toggle">
-                  <input
-                    id={`poi-layer-${definition.id}`}
-                    type="checkbox"
-                    checked={activePoiLayer === definition.id}
-                    onChange={(event) => setActivePoiLayer(event.target.checked ? definition.id : 'none')}
-                  />
-                  <span>{definition.label}</span>
-                </label>
-              ))}
+            {schoolPoiLayerDefinitions.map((definition) => (
+              <label key={definition.id} className="layer-toggle">
+                <input
+                  id={`school-poi-layer-${definition.id}`}
+                  type="checkbox"
+                  checked={activeSchoolPoiLayers.includes(definition.id)}
+                  onChange={() => toggleSchoolPoiLayer(definition.id)}
+                />
+                <span>{definition.label}</span>
+              </label>
+            ))}
           </div>
         </div>
       </aside>
@@ -214,7 +232,7 @@ function ApiApp() {
           <MapLibreCanvas
             selectedStop={detailPanelStop}
             mapBaseLayer={mapBaseLayer}
-            activePoiLayer={activePoiLayer}
+            schoolCategories={schoolCategories}
             tileModes={tileModes}
             selectedTimeWindows={selectedTimeWindows}
             showResidentialRegions={showResidentialRegions}
@@ -232,7 +250,8 @@ function ApiApp() {
           <span><i className="legend-stop-urban" /> S/U/AKN</span>
           <span><i className="legend-stop-bus" /> Bus-only</span>
           <span><i className="legend-route-bus" /> Busroute</span>
-          {activePoiLayer === 'schools' ? <span><i className="legend-school" /> Schule</span> : null}
+          {schoolCategories.includes('gymnasium') ? <span><i className="legend-school-gymnasium" /> Gymnasium</span> : null}
+          {schoolCategories.some((category) => category !== 'gymnasium') ? <span><i className="legend-school" /> Schule</span> : null}
         </div>
       </section>
 

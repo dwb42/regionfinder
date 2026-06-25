@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ApiSnapshot } from './api/contracts'
 
 const mapMocks = vi.hoisted(() => ({
-  renderedPoiLayers: [] as string[],
+  renderedSchoolCategories: [] as string[][],
 }))
 
 const apiMocks = vi.hoisted(() => ({
@@ -25,9 +25,9 @@ vi.mock('./data/api', () => ({
 }))
 
 vi.mock('./apiApp/MapLibreCanvas', () => ({
-  MapLibreCanvas: ({ activePoiLayer }: { activePoiLayer: string }) => {
-    mapMocks.renderedPoiLayers.push(activePoiLayer)
-    return <div data-testid="maplibre-canvas" data-poi-layer={activePoiLayer} />
+  MapLibreCanvas: ({ schoolCategories }: { schoolCategories: string[] }) => {
+    mapMocks.renderedSchoolCategories.push(schoolCategories)
+    return <div data-testid="maplibre-canvas" data-school-categories={schoolCategories.join(',')} />
   },
 }))
 
@@ -73,7 +73,7 @@ async function waitFor(predicate: () => boolean) {
 describe('ApiApp POI layer controls', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mapMocks.renderedPoiLayers.length = 0
+    mapMocks.renderedSchoolCategories.length = 0
     apiMocks.fetchCurrentSnapshot.mockResolvedValue(snapshot)
     container = document.createElement('div')
     document.body.append(container)
@@ -98,19 +98,27 @@ describe('ApiApp POI layer controls', () => {
     })
     await waitFor(() => Boolean(container?.querySelector('[data-testid="maplibre-canvas"]')))
 
-    const checkbox = container?.querySelector<HTMLInputElement>('#poi-layer-schools')
-    expect(checkbox?.checked).toBe(false)
-    expect(mapMocks.renderedPoiLayers.at(-1)).toBe('none')
+    const gymnasiumCheckbox = container?.querySelector<HTMLInputElement>('#school-poi-layer-gymnasium')
+    const otherCheckbox = container?.querySelector<HTMLInputElement>('#school-poi-layer-other-secondary')
+    expect(gymnasiumCheckbox?.checked).toBe(true)
+    expect(otherCheckbox?.checked).toBe(true)
+    expect(mapMocks.renderedSchoolCategories.at(-1)).toEqual([
+      'gymnasium',
+      'comprehensive',
+      'waldorf',
+      'vocational',
+      'upper_secondary',
+    ])
 
     await act(async () => {
-      if (!checkbox) {
-        throw new Error('Missing school POI layer checkbox')
+      if (!otherCheckbox) {
+        throw new Error('Missing other secondary school POI layer checkbox')
       }
 
-      checkbox.click()
+      otherCheckbox.click()
     })
 
-    expect(mapMocks.renderedPoiLayers.at(-1)).toBe('schools')
-    expect(container?.querySelector('[data-poi-layer="schools"]')).not.toBeNull()
+    expect(mapMocks.renderedSchoolCategories.at(-1)).toEqual(['gymnasium'])
+    expect(container?.querySelector('[data-school-categories="gymnasium"]')).not.toBeNull()
   })
 })

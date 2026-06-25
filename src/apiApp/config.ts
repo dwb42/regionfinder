@@ -6,7 +6,7 @@ export const defaultDepartureTime = '08:00'
 
 export type ModeLayerId = 'regional' | 's-bahn' | 'u-bahn' | 'bus'
 export type MapBaseLayer = 'street' | 'satellite'
-export type PoiLayerId = 'none' | 'schools'
+export type SchoolPoiLayerId = 'gymnasium' | 'other-secondary'
 export type TravelTimeWindow = 30 | 45 | 60 | 75 | 90
 export type MapUpdateState = 'idle' | 'loading' | 'complete'
 export type RealtimeItineraryState = {
@@ -31,12 +31,17 @@ export const modeLayerDefinitions: Array<{
   { id: 'bus', label: 'Bus', modes: ['BUS', 'TRAM'] },
 ]
 
-export const poiLayerDefinitions: Array<{
-  id: PoiLayerId
+export const schoolPoiLayerDefinitions: Array<{
+  id: SchoolPoiLayerId
   label: string
+  categories: string[]
 }> = [
-  { id: 'none', label: 'Keine Zusatzlayer' },
-  { id: 'schools', label: 'Weiterführende Schulen' },
+  { id: 'gymnasium', label: 'Gymnasium', categories: ['gymnasium'] },
+  {
+    id: 'other-secondary',
+    label: 'andere weiterf. Schulen',
+    categories: ['comprehensive', 'waldorf', 'vocational', 'upper_secondary'],
+  },
 ]
 
 export const travelTimeWindows: TravelTimeWindow[] = [30, 45, 60, 75, 90]

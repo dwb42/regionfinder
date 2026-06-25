@@ -80,6 +80,43 @@ ADMIN_BOUNDARIES_PATH=/absolute/path/to/admin-boundaries.geojson
 
 Zielregionen: `DE-HH`, `DE-SH`, `DE-MV`, `DE-NI`. Bremen bleibt optional konfigurierbar.
 
+## Weiterführende Schulen
+
+Schulstandorte sind snapshot-unabhängige Zusatzdaten und werden nicht aus DELFI/GTFS abgeleitet. OSM ist für den Schools-Layer keine Primärquelle.
+
+Zielbundesländer:
+
+- Hamburg (`HH`)
+- Schleswig-Holstein (`SH`)
+- Mecklenburg-Vorpommern (`MV`)
+- Niedersachsen (`NI`)
+
+Normalisierte Produktkategorien:
+
+- `gymnasium`
+- `comprehensive`
+- `waldorf`
+- `vocational`
+- `upper_secondary`
+
+Offizielle Quellen:
+
+- Hamburg: Transparenzportal/GeoHub `Schulstammdaten und Schülerzahlen der Hamburger Schulen`, Lizenz Datenlizenz Deutschland Namensnennung 2.0.
+- Schleswig-Holstein: OpenData-SH `Schulen`, Lizenz Datenlizenz Deutschland Namensnennung 2.0. Die Datei ist TSV/CSV; `main_school_type` und `school_type` sind Bitmasken für Schularten/Bildungsgänge.
+- Mecklenburg-Vorpommern: Geoportal.MV / Amtliches Schulverzeichnis, WFS-Layer nach Schularten.
+- Niedersachsen: Landesamt für Statistik Niedersachsen, georeferenzierte Schulstandorte als Shapefile-Downloads für allgemeinbildende und berufsbildende Schulen.
+
+Lokale Zielpfade für den Import:
+
+- `data/raw/schools/hamburg.geojson|csv`
+- `data/raw/schools/schleswig-holstein.geojson|csv`
+- `data/raw/schools/mecklenburg-vorpommern.geojson|csv`
+- `data/raw/schools/niedersachsen.geojson|csv`
+
+GML- und Shapefile-Quellen werden vor dem Import per GDAL nach EPSG:4326-GeoJSON konvertiert. Das Importskript `pipeline/schools.py` schreibt Quelle, Pfad und Feldkonfiguration zusätzlich in `data_sources.configuration`.
+
+Aktueller lokaler Importstand: 1.466 darstellbare Standorte. Einige relevante SH-Standorte hatten in der offiziellen CSV keine Koordinaten und wurden über Adress-Geocoding ergänzt; diese Ergänzungen sind bei Quellupdates erneut zu prüfen.
+
 ## Quellenmetadaten
 
 `data_sources` und `data_snapshots` speichern Anbieter, Lizenz, Attribution, Hash, Gültigkeit, Status, Format und Qualitätsbericht.

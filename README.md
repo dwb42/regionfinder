@@ -49,6 +49,7 @@ npx playwright install chromium     # Browser-Binary fuer lokale Playwright-Smok
 DATABASE_URL=... npm run db:migrate # PostGIS-Migrationen
 npm run pipeline:import:synthetic   # synthetischen GTFS-Fixture-Snapshot importieren
 npm run rail:reconstruct            # OSM-Schienen importieren und Route-Patterns rekonstruieren
+npm run schools:import              # offizielle Schulstandorte importieren
 npm run pipeline:compute            # Fixture-Metriken berechnen
 npm run metrics:compute:production  # Produktionsmetriken mit MOTIS one-to-all
 npm run verify:production           # Produktionssnapshot verifizieren
@@ -86,6 +87,12 @@ Importumfang:
 - 303.549 Route Patterns
 - Bundeslandgrenzen: `DE-HH`, `DE-SH`, `DE-MV`, `DE-NI`, `DE-HB`
 
+Zusatzdaten, unabhängig vom DELFI-Snapshot:
+
+- Weiterführende Schulen: 1.466 darstellbare Standorte in `HH`, `SH`, `MV`, `NI`
+- Kategorien: `gymnasium`, `comprehensive`, `waldorf`, `vocational`, `upper_secondary`
+- Quellen: offizielle Schulstandortdaten der Länder; OSM ist keine Primärquelle.
+
 Aktive Produktionsmetriken:
 
 - Engine: `motis_one_to_all`
@@ -114,10 +121,12 @@ Implementierte Endpunkte:
 - `GET /api/v1/stops/:publicId/metrics?profile=...`
 - `GET /api/v1/stops/:publicId/itineraries?date=YYYY-MM-DD&time=HH:mm&profile=...`
 - `GET /api/v1/stops/:publicId/realtime-itineraries?date=YYYY-MM-DD&time=HH:mm&profile=...`
+- `GET /api/v1/stops/:publicId/driving-route`
 - `GET /api/v1/route-patterns/:id`
 - `GET /api/v1/tiles/stops/{z}/{x}/{y}.mvt?modes=...`
 - `GET /api/v1/tiles/routes/{z}/{x}/{y}.mvt?modes=...`
 - `GET /api/v1/tiles/rail-network/{z}/{x}/{y}.mvt`
+- `GET /api/v1/tiles/schools/{z}/{x}/{y}.mvt?categories=...&states=...`
 
 Die Tile-Endpunkte filtern serverseitig nach Verkehrsmitteln. Stop-Tiles akzeptieren zusätzlich `profile`, damit Reisezeitfarben und Hover-Metriken aus dem passenden Metric Run kommen. Der Client entfernt und erneuert die MapLibre-Vector-Tile-Sources beim Umschalten der Layer, damit keine alten ungefilterten Tiles aus dem MapLibre-Cache sichtbar bleiben.
 
@@ -155,6 +164,11 @@ Wichtige UX-Entscheidungen:
 - Die frühere Sidebar-StopPlace-Suche und Suchtrefferliste ist im API-UI entfernt. Das Detailpanel wird über Klick auf einen StopPlace in der Karte geöffnet.
 - Wohnregionen sind als geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele verfügbar. Der Radius nutzt den Schätzfaktor `0,75 km/min` und die Optionen 5/10/15/20 Minuten.
 - Reisezeitfenster und Stationskreise verwenden dieselbe 5-stufige Farbskala: 30 min grün, 45 min teal, 60 min ocker, 75 min orange, 90 min rot.
+- Zusatzlayer `anzeigen`: weiterführende Schulen werden über zwei Checkboxen gesteuert:
+  - `Gymnasium`
+  - `andere weiterf. Schulen`
+- Schulmarker kommen aus dem Schools-MVT, öffnen kein Detailpanel und zeigen bei Hover Name und Schulart. Gymnasien sind farblich blau hervorgehoben; andere Schulformen bleiben neutral markiert.
+- Eine metrische Maßstabsleiste sitzt unten rechts in der MapLibre-Karte.
 
 ## Daten und Artefakte
 

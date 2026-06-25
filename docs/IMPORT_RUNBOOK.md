@@ -71,6 +71,58 @@ npm run metrics:compute:production
 
 Das aktive Profil `regular_tue_thu` verwendet als repräsentativen Werktag `2026-09-15`, sampled 00:00 bis GTFS 28:00 alle 5 Minuten und begrenzt die Maximaldauer auf 120 Minuten. Der Batch berechnet nur die schnellste planmäßige Reisezeit zum exakten StopPlace. Er setzt keinen finalen Fußweg zu Nachbarhaltestellen und berechnet keine Median-/P90-/Transferaggregate.
 
+## Weiterführende Schulen importieren
+
+Schulen sind snapshot-unabhängige POIs. Sie hängen nicht am aktiven DELFI-Snapshot und werden in `schools` importiert.
+
+Migration:
+
+```bash
+DATABASE_URL=postgres://regionfinder:regionfinder@localhost:55432/regionfinder npm run db:migrate
+```
+
+Erwartete lokale Eingaben:
+
+- `data/raw/schools/hamburg.geojson` oder `data/raw/schools/hamburg.csv`
+- `data/raw/schools/schleswig-holstein.geojson` oder `data/raw/schools/schleswig-holstein.csv`
+- `data/raw/schools/mecklenburg-vorpommern.geojson` oder `data/raw/schools/mecklenburg-vorpommern.csv`
+- `data/raw/schools/niedersachsen.geojson` oder `data/raw/schools/niedersachsen.csv`
+
+Import:
+
+```bash
+DATABASE_URL=postgres://regionfinder:regionfinder@localhost:55432/regionfinder npm run schools:import
+```
+
+Für Teilimporte/Dry-runs:
+
+```bash
+npm run schools:import -- --allow-missing --dry-run
+npm run schools:import -- --hh data/raw/schools/hamburg.geojson --sh data/raw/schools/schleswig-holstein.csv
+```
+
+Das Script akzeptiert CSV/TSV, GeoJSON und ZIPs mit CSV/GeoJSON. GML- und Shapefile-Quellen vorab nach EPSG:4326-GeoJSON konvertieren, z.B. mit GDAL:
+
+```bash
+docker run --rm -v "$PWD:/work" -w /work ghcr.io/osgeo/gdal:ubuntu-small-3.10.3 \
+  ogr2ogr -f GeoJSON data/raw/schools/hamburg.geojson data/raw/schools/hamburg.gml staatliche_schulen -t_srs EPSG:4326
+```
+
+Aktuelle Normalisierung:
+
+- Kategorien: `gymnasium`, `comprehensive`, `waldorf`, `vocational`, `upper_secondary`
+- Bundesländer: `HH`, `SH`, `MV`, `NI`
+- SH-Quelle nutzt Schulart-/Bildungsgang-Bitmasken; der Importer dekodiert diese.
+- Relevante Standorte ohne Koordinate müssen vor Import ergänzt oder ausgeschlossen werden. Im aktuellen Datenstand wurden wenige SH-Adressen per Geocoding ergänzt; bei Updates diese Fallbacks neu prüfen.
+
+Kontrolle:
+
+```bash
+psql "$DATABASE_URL" -c "SELECT state_code, school_category, count(*) FROM schools GROUP BY 1,2 ORDER BY 1,2;"
+```
+
+Aktueller Zielwert: 1.466 darstellbare Schulstandorte in HH/SH/MV/NI.
+
 ## OSM-Schienenrekonstruktion
 
 Nach Datenbankmigration und bereitgestelltem OSM-PBF:
@@ -165,3 +217,12 @@ curl 'http://127.0.0.1:4001/api/v1/stops/de%3A01060%3A37985%3A1%3A8000526/metric
 ```
 
 Erwartung: `directConnectionCount` enthält die Anzahl fahrplanmäßiger direkter Trips ohne Umstieg am angegebenen Datum.
+
+Schools-Tiles prüfen:
+
+```bash
+curl -o /tmp/schools.mvt \
+  'http://127.0.0.1:4001/api/v1/tiles/schools/8/135/82.mvt?categories=gymnasium,comprehensive,waldorf,vocational,upper_secondary&states=HH,SH,MV,NI'
+```
+
+Erwartung: `200 application/vnd.mapbox-vector-tile`; in der Norddeutschland-Ansicht sollen sichtbare Tiles nicht leer sein. Nach Änderungen am Schools-Endpunkt den API-Prozess neu starten.

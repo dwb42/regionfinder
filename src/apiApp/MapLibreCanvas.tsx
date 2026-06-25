@@ -3,7 +3,7 @@ import type { FeatureCollection, Polygon } from 'geojson'
 import maplibregl, { type Map } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { ApiStopSelectionPreview } from '../api/contracts'
-import type { MapBaseLayer, PoiLayerId, TravelTimeWindow } from './config'
+import type { MapBaseLayer, TravelTimeWindow } from './config'
 import {
   addRailRouteTileLayers,
   addRouteTileLayers,
@@ -21,6 +21,7 @@ import {
   removeRailRouteTileLayers,
   removeRouteTileLayers,
   removeStopTileLayers,
+  schoolTileSourceKey,
   stringFeatureProperty,
   transitTileSourceKeys,
   type TransitTileSourceKeys,
@@ -51,7 +52,7 @@ function transitSourcesLoaded(map: Map): boolean {
 export function MapLibreCanvas({
   selectedStop,
   mapBaseLayer,
-  activePoiLayer,
+  schoolCategories,
   tileModes,
   selectedTimeWindows,
   showResidentialRegions,
@@ -62,7 +63,7 @@ export function MapLibreCanvas({
 }: {
   selectedStop: SelectedMapStop | null
   mapBaseLayer: MapBaseLayer
-  activePoiLayer: PoiLayerId
+  schoolCategories: string[]
   tileModes: string[]
   selectedTimeWindows: TravelTimeWindow[]
   showResidentialRegions: boolean
@@ -77,6 +78,7 @@ export function MapLibreCanvas({
   const initialProfileRef = useRef(profile)
   const activeTransitTileSourceKeysRef = useRef(transitTileSourceKeys(tileModes, profile))
   const selectedTimeWindowsRef = useRef(selectedTimeWindows)
+  const activeSchoolTileSourceKeyRef = useRef(schoolTileSourceKey(schoolCategories))
   const hoverPopupRef = useRef<maplibregl.Popup | null>(null)
   const currentHoverFeatureRef = useRef<string | null>(null)
   const residentialSettingsRef = useRef({ showResidentialRegions, residentialRadiusMeters })
@@ -186,6 +188,13 @@ export function MapLibreCanvas({
       attributionControl: {},
     })
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left')
+    map.addControl(
+      new maplibregl.ScaleControl({
+        maxWidth: 140,
+        unit: 'metric',
+      }),
+      'bottom-right',
+    )
     map.on('zoom', () => {
       setZoomLevel(Number(map.getZoom().toFixed(1)))
     })
@@ -398,13 +407,21 @@ export function MapLibreCanvas({
       return
     }
 
-    if (activePoiLayer !== 'schools') {
+    const nextSchoolTileSourceKey = schoolTileSourceKey(schoolCategories)
+
+    if (schoolCategories.length === 0) {
       removeSchoolTileLayer(map)
+      activeSchoolTileSourceKeyRef.current = nextSchoolTileSourceKey
       return
     }
 
-    if (!map.getLayer('regionfinder-schools-symbol')) {
-      addSchoolTileLayer(map)
+    if (
+      !map.getLayer('regionfinder-schools-symbol') ||
+      activeSchoolTileSourceKeyRef.current !== nextSchoolTileSourceKey
+    ) {
+      removeSchoolTileLayer(map)
+      addSchoolTileLayer(map, schoolCategories)
+      activeSchoolTileSourceKeyRef.current = nextSchoolTileSourceKey
       onTileLoadingChange(true)
     }
 
@@ -470,7 +487,7 @@ export function MapLibreCanvas({
       handleMouseLeave()
       removeSchoolTileLayer(map)
     }
-  }, [activePoiLayer, mapReady, onTileLoadingChange])
+  }, [mapReady, onTileLoadingChange, schoolCategories])
 
   useEffect(() => {
     const map = mapRef.current

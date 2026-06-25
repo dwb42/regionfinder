@@ -100,7 +100,6 @@ const routeColorExpression: ExpressionSpecification = [
 ]
 
 const railRouteModes = new Set(['ICE', 'IC', 'EC', 'RE', 'RB', 'RAIL', 'S', 'AKN', 'U'])
-const defaultSchoolCategories = ['gymnasium', 'comprehensive', 'waldorf', 'vocational', 'upper_secondary']
 const defaultSchoolStates = ['HH', 'SH', 'MV', 'NI']
 
 export type TransitTileSourceKeys = {
@@ -173,13 +172,17 @@ function tileUrl(
   return `${apiBaseUrl}/api/v1/tiles/${path}/{z}/{x}/{y}.mvt${suffix}`
 }
 
-function schoolTileUrl(): string {
+function schoolTileUrl(categories: string[]): string {
   const params = new URLSearchParams({
-    categories: defaultSchoolCategories.join(','),
+    categories: categories.join(','),
     states: defaultSchoolStates.join(','),
   })
 
   return `${apiBaseUrl}/api/v1/tiles/schools/{z}/{x}/{y}.mvt?${params}`
+}
+
+export function schoolTileSourceKey(categories: string[]): string {
+  return categories.join(',')
 }
 
 function routeGeometryFilter(): ExpressionSpecification {
@@ -467,11 +470,11 @@ function ensureSchoolIcon(map: Map) {
   map.addImage('regionfinder-school-icon', context.getImageData(0, 0, size, size), { pixelRatio: 2 })
 }
 
-export function addSchoolTileLayer(map: Map) {
+export function addSchoolTileLayer(map: Map, categories: string[]) {
   ensureSchoolIcon(map)
   map.addSource('regionfinder-schools', {
     type: 'vector',
-    tiles: [schoolTileUrl()],
+    tiles: [schoolTileUrl(categories)],
     minzoom: 8,
     maxzoom: 14,
   })
@@ -493,9 +496,27 @@ export function addSchoolTileLayer(map: Map) {
         14,
         11,
       ],
-      'circle-color': '#0f172a',
-      'circle-opacity': 0.22,
-      'circle-stroke-color': '#ffffff',
+      'circle-color': [
+        'match',
+        ['get', 'school_category'],
+        'gymnasium',
+        '#2563eb',
+        '#0f172a',
+      ],
+      'circle-opacity': [
+        'match',
+        ['get', 'school_category'],
+        'gymnasium',
+        0.48,
+        0.22,
+      ],
+      'circle-stroke-color': [
+        'match',
+        ['get', 'school_category'],
+        'gymnasium',
+        '#bfdbfe',
+        '#ffffff',
+      ],
       'circle-stroke-width': 1,
       'circle-stroke-opacity': 0.78,
     },

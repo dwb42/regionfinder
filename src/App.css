@@ -368,6 +368,14 @@ select {
   background: #ffffff;
 }
 
+.legend-school-gymnasium {
+  width: 13px;
+  height: 13px;
+  border: 2px solid #2563eb;
+  border-radius: 3px !important;
+  background: #bfdbfe;
+}
+
 .api-panel-section {
   display: flex;
   flex-direction: column;
