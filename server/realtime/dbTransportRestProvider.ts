@@ -46,7 +46,7 @@ export class DbTransportRestProvider implements RealtimeItineraryProvider {
     this.originDbStopId =
       options.originDbStopId ?? process.env.REGIONFINDER_ORIGIN_DB_STOP_ID ?? DEFAULT_ORIGIN_DB_STOP_ID
     this.fetchImpl = options.fetchImpl ?? fetch
-    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+    this.timeoutMs = options.timeoutMs ?? Number(process.env.REGIONFINDER_REALTIME_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS)
     this.mappingTtlMs = options.mappingTtlMs ?? DEFAULT_MAPPING_TTL_MS
     this.journeyTtlMs = options.journeyTtlMs ?? DEFAULT_JOURNEY_TTL_MS
     this.now = options.now ?? Date.now
