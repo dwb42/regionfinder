@@ -1,5 +1,8 @@
 import { z } from 'zod'
 
+export const placeCategories = ['hof', 'ferienhof', 'gut', 'museum'] as const
+export const placeCategorySchema = z.enum(placeCategories)
+
 export const stopSearchQuerySchema = z.object({
   q: z.string().default(''),
   states: z.string().optional(),
@@ -37,6 +40,56 @@ export const tileQuerySchema = z.object({
 export const schoolTileQuerySchema = z.object({
   categories: z.string().optional(),
   states: z.string().optional(),
+})
+
+export const placeTileQuerySchema = z.object({
+  categories: z.string().optional(),
+  states: z.string().optional(),
+})
+
+export const placeListQuerySchema = z.object({
+  categories: z.string().optional(),
+  states: z.string().optional(),
+  q: z.string().default(''),
+  limit: z.coerce.number().int().min(1).max(500).default(100),
+})
+
+export const placeParamsSchema = z.object({
+  id: z.string().uuid(),
+})
+
+const nullableTextSchema = z
+  .string()
+  .trim()
+  .transform((value) => (value.length === 0 ? null : value))
+  .nullable()
+
+export const placeCreateSchema = z.object({
+  sourceId: nullableTextSchema.optional(),
+  sourcePlaceId: nullableTextSchema.optional(),
+  category: placeCategorySchema,
+  name: z.string().trim().min(1),
+  stateCode: z.enum(['HH', 'SH', 'MV', 'NI']).nullable().optional(),
+  address: nullableTextSchema.optional(),
+  website: nullableTextSchema.optional(),
+  coordinate: z.object({
+    lat: z.number().min(-90).max(90),
+    lon: z.number().min(-180).max(180),
+  }),
+})
+
+export const placeUpdateSchema = z.object({
+  category: placeCategorySchema.optional(),
+  name: z.string().trim().min(1).optional(),
+  stateCode: z.enum(['HH', 'SH', 'MV', 'NI']).nullable().optional(),
+  address: nullableTextSchema.optional(),
+  website: nullableTextSchema.optional(),
+  coordinate: z
+    .object({
+      lat: z.number().min(-90).max(90),
+      lon: z.number().min(-180).max(180),
+    })
+    .optional(),
 })
 
 export const routePatternParamsSchema = z.object({

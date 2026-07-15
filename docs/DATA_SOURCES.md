@@ -117,6 +117,43 @@ GML- und Shapefile-Quellen werden vor dem Import per GDAL nach EPSG:4326-GeoJSON
 
 Aktueller lokaler Importstand: 1.466 darstellbare Standorte. Einige relevante SH-Standorte hatten in der offiziellen CSV keine Koordinaten und wurden über Adress-Geocoding ergänzt; diese Ergänzungen sind bei Quellupdates erneut zu prüfen.
 
+## Generische Places und Ferienhöfe
+
+Generische Places sind snapshot-unabhängige POIs in der Tabelle `places`. Sie werden nicht aus DELFI/GTFS abgeleitet und bleiben fachlich von `schools` getrennt.
+
+Aktuelle Produktkategorien:
+
+- `hof`
+- `ferienhof`
+- `gut`
+- `museum`
+
+Zielbundesländer:
+
+- Hamburg (`HH`)
+- Schleswig-Holstein (`SH`)
+- Mecklenburg-Vorpommern (`MV`)
+- Niedersachsen (`NI`)
+
+Ferienhof-Recherchequellen im aktuellen Batch:
+
+- Landreise: `https://www.landreise.de/`
+- Landsichten: `https://www.landsichten.de/`
+- Bauernhofurlaub.de: `https://www.bauernhofurlaub.de/`
+- OpenStreetMap-Name/Tag-Treffer aus lokaler PBF; OSM-Daten stehen unter ODbL, siehe `https://www.openstreetmap.org/copyright`.
+
+Lokale Zielpfade:
+
+- `data/raw/places/ferienhoefe/ferienhoefe_candidates.csv`
+- `data/raw/places/ferienhoefe/landreise_browser_links.json`
+- `data/raw/places/ferienhoefe/osm_ferienhof_candidates.json`
+- `data/reports/places/ferienhoefe-research.json`
+- `data/reports/places/ferienhoefe-import.json`
+
+Der aktuelle lokale Ferienhof-Import nutzt `source_id = ferienhoefe_web_research` und enthält 486 aktive Orte nach Deduplizierung und Admin-Grenzen-Clipping: `SH` 226, `MV` 80, `NI` 180, `HH` 0.
+
+Für OSM-gestützte Ferienhof-Recherche kann aus der großen Deutschland-PBF ein kleinerer Norddeutschland-Ausschnitt unter `data/processed/osm/` genutzt werden. Diese PBF-Artefakte sind generierte Rohdaten und werden nicht committed.
+
 ## Quellenmetadaten
 
 `data_sources` und `data_snapshots` speichern Anbieter, Lizenz, Attribution, Hash, Gültigkeit, Status, Format und Qualitätsbericht.

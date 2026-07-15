@@ -309,6 +309,46 @@ export async function schoolTile(
   )
 }
 
+export async function placeTile(
+  db: Queryable,
+  z: number,
+  x: number,
+  y: number,
+  categories: string[] = [],
+  states: string[] = [],
+): Promise<Buffer | null> {
+  return mvtTile(
+    db,
+    `
+    WITH bounds AS (
+      SELECT ST_TileEnvelope($1, $2, $3) AS geom,
+             ST_Transform(ST_TileEnvelope($1, $2, $3, margin => 96.0 / 2048.0), 4326) AS query_wgs84
+    ),
+    mvtgeom AS (
+      SELECT p.id::text AS id,
+             p.name,
+             p.category,
+             p.state_code,
+             p.origin,
+             ST_AsMVTGeom(ST_Transform(p.geometry, 3857), bounds.geom, 2048, 96, true) AS geom
+      FROM places p
+      CROSS JOIN bounds
+      WHERE p.deleted_at IS NULL
+        AND p.geometry && bounds.query_wgs84
+        AND ST_Intersects(p.geometry, bounds.query_wgs84)
+        AND (cardinality($4::text[]) = 0 OR p.category = ANY($4::text[]))
+        AND (cardinality($5::text[]) = 0 OR p.state_code = ANY($5::text[]))
+    )
+    SELECT ST_AsMVT(mvtgeom, 'places', 2048, 'geom') AS tile FROM mvtgeom
+    `,
+    z,
+    x,
+    y,
+    categories,
+    states,
+  )
+}
+
 async function mvtTile(
   db: Queryable,
   sql: string,

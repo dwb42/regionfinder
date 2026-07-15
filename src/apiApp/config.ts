@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import type { ApiDrivingRouteResponse, ApiItineraryResponse } from '../api/contracts'
+import type { ApiDrivingRouteResponse, ApiItineraryResponse, PlaceCategory } from '../api/contracts'
 
 export const defaultProfile = import.meta.env.VITE_REGIONFINDER_ROUTING_PROFILE || 'regular_tue_thu'
 export const defaultDepartureTime = '08:00'
@@ -7,6 +7,7 @@ export const defaultDepartureTime = '08:00'
 export type ModeLayerId = 'regional' | 's-bahn' | 'u-bahn' | 'bus'
 export type MapBaseLayer = 'street' | 'satellite'
 export type SchoolPoiLayerId = 'gymnasium' | 'other-secondary'
+export type PlaceLayerId = PlaceCategory
 export type TravelTimeWindow = 30 | 45 | 60 | 75 | 90
 export type MapUpdateState = 'idle' | 'loading' | 'complete'
 export type RealtimeItineraryState = {
@@ -42,6 +43,17 @@ export const schoolPoiLayerDefinitions: Array<{
     label: 'andere weiterf. Schulen',
     categories: ['comprehensive', 'waldorf', 'vocational', 'upper_secondary'],
   },
+]
+
+export const placeLayerDefinitions: Array<{
+  id: PlaceLayerId
+  label: string
+  categories: PlaceCategory[]
+}> = [
+  { id: 'hof', label: 'Höfe', categories: ['hof'] },
+  { id: 'ferienhof', label: 'Ferienhöfe', categories: ['ferienhof'] },
+  { id: 'gut', label: 'Güter', categories: ['gut'] },
+  { id: 'museum', label: 'Museen', categories: ['museum'] },
 ]
 
 export const travelTimeWindows: TravelTimeWindow[] = [30, 45, 60, 75, 90]

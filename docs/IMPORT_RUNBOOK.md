@@ -123,6 +123,70 @@ psql "$DATABASE_URL" -c "SELECT state_code, school_category, count(*) FROM schoo
 
 Aktueller Zielwert: 1.466 darstellbare Schulstandorte in HH/SH/MV/NI.
 
+## Generische Places und Ferienhöfe importieren
+
+Places sind snapshot-unabhängige POIs in `places`. Schulen bleiben separat in `schools`; die Places-Pipeline dient aktuell für `hof`, `ferienhof`, `gut` und `museum`.
+
+Migration:
+
+```bash
+DATABASE_URL=postgres://regionfinder:regionfinder@localhost:55432/regionfinder npm run db:migrate
+```
+
+Generischer Import aus CSV/TSV/JSON/GeoJSON:
+
+```bash
+DATABASE_URL=postgres://regionfinder:regionfinder@localhost:55432/regionfinder \
+  npm run places:import -- \
+  --source data/raw/places/meine-orte.csv \
+  --source-id meine_orte \
+  --category gut \
+  --replace-source
+```
+
+Erwartete Pflichtfelder sind Name, Kategorie oder Default-`--category`, sowie WGS84-Koordinaten. Akzeptierte Feldnamen sind unter anderem `name`, `category`, `state_code`, `address`, `website`, `lat` und `lon`. Bei GeoJSON werden nur Point-Features importiert.
+
+Für Ferienhof-Recherche:
+
+```bash
+npm run py:install
+npm run places:research:ferienhoefe:landreise
+npm run places:research:ferienhoefe -- --scan-osm --scan-osm-ways --osm-pbf data/processed/osm/north-germany-regionfinder.osm.pbf
+```
+
+Die Recherche schreibt `data/raw/places/ferienhoefe/ferienhoefe_candidates.csv` und `data/reports/places/ferienhoefe-research.json`. Sie nutzt öffentliche Webquellen und lokale OSM-PBF-Treffer; OSM-Attribution/ODbL bleibt bei Weiterverwendung zu beachten.
+
+Ferienhof-Import in die Datenbank:
+
+```bash
+DATABASE_URL=postgres://regionfinder:regionfinder@localhost:55432/regionfinder \
+  npm run places:import -- \
+  --source data/raw/places/ferienhoefe/ferienhoefe_candidates.csv \
+  --source-id ferienhoefe_web_research \
+  --replace-source \
+  --clip-to-admin-boundaries \
+  --report data/reports/places/ferienhoefe-import.json
+```
+
+`--clip-to-admin-boundaries` setzt `state_code` anhand `admin_boundaries` und soft-deleted Treffer außerhalb `HH`, `SH`, `MV`, `NI`. Das ist für breite Web-/OSM-Recherchen der Standard.
+
+Kontrolle:
+
+```bash
+psql "$DATABASE_URL" -c "SELECT state_code, category, count(*) FROM places WHERE deleted_at IS NULL GROUP BY 1,2 ORDER BY 1,2;"
+```
+
+Aktueller Zielwert für `source_id = ferienhoefe_web_research`: 486 aktive Ferienhöfe, davon `SH` 226, `MV` 80 und `NI` 180.
+
+Interne manuelle Pflege:
+
+```bash
+REGIONFINDER_ENABLE_PLACE_ADMIN=1 DATABASE_URL=postgres://regionfinder:regionfinder@localhost:55432/regionfinder REGIONFINDER_API_PORT=4001 npm run dev:api
+VITE_REGIONFINDER_ENABLE_PLACE_ADMIN=1 VITE_REGIONFINDER_API_BASE_URL=http://127.0.0.1:4001 npm run dev -- --host 127.0.0.1 --port 5176
+```
+
+Ohne `REGIONFINDER_ENABLE_PLACE_ADMIN=1` liefern `POST`, `PATCH` und `DELETE` auf `/api/v1/places` kontrolliert `403`.
+
 ## OSM-Schienenrekonstruktion
 
 Nach Datenbankmigration und bereitgestelltem OSM-PBF:
@@ -226,3 +290,12 @@ curl -o /tmp/schools.mvt \
 ```
 
 Erwartung: `200 application/vnd.mapbox-vector-tile`; in der Norddeutschland-Ansicht sollen sichtbare Tiles nicht leer sein. Nach Änderungen am Schools-Endpunkt den API-Prozess neu starten.
+
+Places-Tiles prüfen:
+
+```bash
+curl -o /tmp/places.mvt \
+  'http://127.0.0.1:4001/api/v1/tiles/places/8/135/82.mvt?categories=ferienhof&states=HH,SH,MV,NI'
+```
+
+Erwartung: `200 application/vnd.mapbox-vector-tile`; nach aktivierter Ferienhof-Checkbox sollen passende Marker sichtbar sein. Nach Änderungen am Places-Endpunkt oder den Query-Modulen den API-Prozess neu starten.

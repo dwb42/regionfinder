@@ -1,5 +1,6 @@
 import type { Polygon } from 'geojson'
 import type { ExpressionSpecification, FilterSpecification, Map, StyleSpecification } from 'maplibre-gl'
+import type { PlaceCategory } from '../api/contracts'
 import { apiBaseUrl } from '../data/api'
 import { travelTimeWindowColors, travelTimeWindows, type ModeLayerId, type TravelTimeWindow } from './config'
 import { minutes } from './formatters'
@@ -101,6 +102,7 @@ const routeColorExpression: ExpressionSpecification = [
 
 const railRouteModes = new Set(['ICE', 'IC', 'EC', 'RE', 'RB', 'RAIL', 'S', 'AKN', 'U'])
 const defaultSchoolStates = ['HH', 'SH', 'MV', 'NI']
+const defaultPlaceStates = ['HH', 'SH', 'MV', 'NI']
 
 export type TransitTileSourceKeys = {
   stops: string
@@ -153,7 +155,7 @@ export function modesForLayers(activeLayers: ModeLayerId[], definitions: Array<{
 }
 
 function tileUrl(
-  path: 'stops' | 'routes' | 'rail-network' | 'schools',
+  path: 'stops' | 'routes' | 'rail-network' | 'schools' | 'places',
   modes: string[] = [],
   profile?: string,
 ): string {
@@ -183,6 +185,34 @@ function schoolTileUrl(categories: string[]): string {
 
 export function schoolTileSourceKey(categories: string[]): string {
   return categories.join(',')
+}
+
+function placeTileUrl(categories: PlaceCategory[]): string {
+  const params = new URLSearchParams({
+    categories: categories.join(','),
+    states: defaultPlaceStates.join(','),
+  })
+
+  return `${apiBaseUrl}/api/v1/tiles/places/{z}/{x}/{y}.mvt?${params}`
+}
+
+export function placeTileSourceKey(categories: PlaceCategory[]): string {
+  return categories.join(',')
+}
+
+export function placeCategoryLabel(category: string | null): string {
+  switch (category) {
+    case 'hof':
+      return 'Hof'
+    case 'ferienhof':
+      return 'Ferienhof'
+    case 'gut':
+      return 'Gut'
+    case 'museum':
+      return 'Museum'
+    default:
+      return 'Ort'
+  }
 }
 
 function routeGeometryFilter(): ExpressionSpecification {
@@ -470,6 +500,44 @@ function ensureSchoolIcon(map: Map) {
   map.addImage('regionfinder-school-icon', context.getImageData(0, 0, size, size), { pixelRatio: 2 })
 }
 
+function ensurePlaceIcon(map: Map) {
+  if (map.hasImage('regionfinder-place-icon')) {
+    return
+  }
+
+  const size = 32
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const context = canvas.getContext('2d')
+
+  if (!context) {
+    return
+  }
+
+  context.clearRect(0, 0, size, size)
+  context.fillStyle = '#ffffff'
+  context.strokeStyle = '#334155'
+  context.lineWidth = 2
+  context.beginPath()
+  context.arc(16, 16, 10, 0, Math.PI * 2)
+  context.fill()
+  context.stroke()
+  context.fillStyle = '#334155'
+  context.beginPath()
+  context.moveTo(16, 7)
+  context.lineTo(23, 15)
+  context.lineTo(19, 15)
+  context.lineTo(19, 23)
+  context.lineTo(13, 23)
+  context.lineTo(13, 15)
+  context.lineTo(9, 15)
+  context.closePath()
+  context.fill()
+
+  map.addImage('regionfinder-place-icon', context.getImageData(0, 0, size, size), { pixelRatio: 2 })
+}
+
 export function addSchoolTileLayer(map: Map, categories: string[]) {
   ensureSchoolIcon(map)
   map.addSource('regionfinder-schools', {
@@ -546,6 +614,76 @@ export function addSchoolTileLayer(map: Map, categories: string[]) {
   })
 }
 
+export function addPlaceTileLayer(map: Map, categories: PlaceCategory[]) {
+  ensurePlaceIcon(map)
+  map.addSource('regionfinder-places', {
+    type: 'vector',
+    tiles: [placeTileUrl(categories)],
+    minzoom: 8,
+    maxzoom: 14,
+  })
+  map.addLayer({
+    id: 'regionfinder-places-halo',
+    type: 'circle',
+    source: 'regionfinder-places',
+    'source-layer': 'places',
+    minzoom: 8,
+    paint: {
+      'circle-radius': [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        8,
+        7,
+        11,
+        9,
+        14,
+        11,
+      ],
+      'circle-color': [
+        'match',
+        ['get', 'category'],
+        'hof',
+        '#16a34a',
+        'ferienhof',
+        '#0f766e',
+        'gut',
+        '#a16207',
+        'museum',
+        '#7c3aed',
+        '#334155',
+      ],
+      'circle-opacity': 0.34,
+      'circle-stroke-color': '#ffffff',
+      'circle-stroke-width': 1,
+      'circle-stroke-opacity': 0.82,
+    },
+  })
+  map.addLayer({
+    id: 'regionfinder-places-symbol',
+    type: 'symbol',
+    source: 'regionfinder-places',
+    'source-layer': 'places',
+    minzoom: 8,
+    layout: {
+      'icon-image': 'regionfinder-place-icon',
+      'icon-size': [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        8,
+        0.66,
+        11,
+        0.84,
+        14,
+        1,
+      ],
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+    },
+  })
+}
+
 export function removeRailRouteTileLayers(map: Map) {
   for (const layerId of ['regionfinder-rail-routes-line', 'regionfinder-rail-routes-casing']) {
     if (map.getLayer(layerId)) {
@@ -593,6 +731,18 @@ export function removeSchoolTileLayer(map: Map) {
 
   if (map.getSource('regionfinder-schools')) {
     map.removeSource('regionfinder-schools')
+  }
+}
+
+export function removePlaceTileLayer(map: Map) {
+  for (const layerId of ['regionfinder-places-symbol', 'regionfinder-places-halo']) {
+    if (map.getLayer(layerId)) {
+      map.removeLayer(layerId)
+    }
+  }
+
+  if (map.getSource('regionfinder-places')) {
+    map.removeSource('regionfinder-places')
   }
 }
 
@@ -719,6 +869,35 @@ export function createSchoolHoverPopupContent({
   const type = document.createElement('span')
   type.textContent = `Schulart: ${schoolTypeLabel ?? schoolCategoryLabel(schoolCategory)}`
   wrapper.append(type)
+
+  return wrapper
+}
+
+export function createPlaceHoverPopupContent({
+  name,
+  category,
+  stateCode,
+}: {
+  name: string
+  category: string | null
+  stateCode: string | null
+}): HTMLDivElement {
+  const wrapper = document.createElement('div')
+  wrapper.className = 'map-popup place-hover-popup'
+
+  const title = document.createElement('strong')
+  title.textContent = name
+  wrapper.append(title)
+
+  const type = document.createElement('span')
+  type.textContent = `Kategorie: ${placeCategoryLabel(category)}`
+  wrapper.append(type)
+
+  if (stateCode) {
+    const state = document.createElement('span')
+    state.textContent = `Bundesland: ${stateCode}`
+    wrapper.append(state)
+  }
 
   return wrapper
 }

@@ -2,17 +2,23 @@ import pg from 'pg'
 import type {
   ApiItineraryResponse,
   ApiMetrics,
+  ApiPlace,
+  ApiPlaceCreateRequest,
+  ApiPlaceUpdateRequest,
   ApiRoutePattern,
   ApiSnapshot,
   ApiStopDetails,
   ApiStopSearchResult,
+  PlaceCategory,
 } from '../../src/api/contracts'
 import { findItineraries } from './queries/itineraryQueries'
 import { findStopMetrics } from './queries/metricQueries'
+import { createPlace, deletePlace, findPlace, listPlaces, updatePlace } from './queries/placeQueries'
 import { findRoutePattern } from './queries/routePatternQueries'
 import { findCurrentSnapshot } from './queries/snapshotQueries'
 import { findStopDetails, searchStops as searchStopsQuery } from './queries/stopQueries'
 import {
+  placeTile as placeTileQuery,
   railNetworkTile as railNetworkTileQuery,
   routeTile as routeTileQuery,
   schoolTile as schoolTileQuery,
@@ -53,6 +59,26 @@ export class PostgresRepository implements RegionfinderRepository {
     return findRoutePattern(this.pool, id)
   }
 
+  listPlaces(categories: PlaceCategory[] = [], states: string[] = [], query = '', limit = 100): Promise<ApiPlace[]> {
+    return listPlaces(this.pool, categories, states, query, limit)
+  }
+
+  place(id: string): Promise<ApiPlace | null> {
+    return findPlace(this.pool, id)
+  }
+
+  createPlace(input: ApiPlaceCreateRequest): Promise<ApiPlace> {
+    return createPlace(this.pool, input)
+  }
+
+  updatePlace(id: string, input: ApiPlaceUpdateRequest): Promise<ApiPlace | null> {
+    return updatePlace(this.pool, id, input)
+  }
+
+  deletePlace(id: string): Promise<boolean> {
+    return deletePlace(this.pool, id)
+  }
+
   stopTile(z: number, x: number, y: number, modes: string[] = [], profile = 'regular_tue_thu'): Promise<Buffer | null> {
     return stopTileQuery(this.pool, z, x, y, modes, profile)
   }
@@ -67,5 +93,9 @@ export class PostgresRepository implements RegionfinderRepository {
 
   schoolTile(z: number, x: number, y: number, categories: string[] = [], states: string[] = []): Promise<Buffer | null> {
     return schoolTileQuery(this.pool, z, x, y, categories, states)
+  }
+
+  placeTile(z: number, x: number, y: number, categories: PlaceCategory[] = [], states: string[] = []): Promise<Buffer | null> {
+    return placeTileQuery(this.pool, z, x, y, categories, states)
   }
 }

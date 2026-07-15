@@ -109,8 +109,11 @@ Secrets liegen nur in Environment-Variablen. `.env.example` enthält Beispielwer
 - Bei Reisezeitfarben/Hover-Metriken prüfen, ob Stop-Tile-Requests zusätzlich `?profile=regular_tue_thu` oder das aktive Profil enthalten.
 - Bei Direktverbindungszahlen prüfen, ob der Metrics-Request `?date=YYYY-MM-DD` enthält; ohne Datum bleibt `directConnectionCount` leer.
 - Beim Schools-Layer prüfen, ob Tile-Requests `/api/v1/tiles/schools/...` mit passenden `?categories=...&states=HH,SH,MV,NI` laufen. `Gymnasium` fragt nur `categories=gymnasium` an; `andere weiterf. Schulen` fragt `comprehensive,waldorf,vocational,upper_secondary` an.
+- Beim Places-Layer prüfen, ob Tile-Requests `/api/v1/tiles/places/...` mit passenden `?categories=...&states=HH,SH,MV,NI` laufen. `Höfe`, `Ferienhöfe`, `Güter` und `Museen` werden als getrennte Kategorien geladen und sind standardmäßig aus.
+- Für interne manuelle Places-Pflege müssen API und Frontend explizit mit `REGIONFINDER_ENABLE_PLACE_ADMIN=1` und `VITE_REGIONFINDER_ENABLE_PLACE_ADMIN=1` laufen; ohne API-Flag liefern Schreibzugriffe auf `/api/v1/places` `403`.
 - MapLibre-Sources werden im API-Modus bei Moduswechsel entfernt und neu angelegt, damit keine alten ungefilterten Tiles aus dem Cache sichtbar bleiben.
 - Schools-MapLibre-Source wird bei Kategorienwechsel ebenfalls entfernt und neu angelegt, damit keine alten POI-Kategorien aus dem Cache sichtbar bleiben.
+- Places-MapLibre-Source wird bei Kategorienwechsel ebenfalls entfernt und neu angelegt, damit keine alten POI-Kategorien aus dem Cache sichtbar bleiben.
 - Ortsnamen kommen in Straßen- und Satellitenmodus aus `voyager_only_labels`; bei fehlenden Ortsnamen Label-Tile-Requests prüfen.
 - Niedrigkonfidente OSM-Schienenmatches sind Diagnosematerial. Wenn in der Karte wieder blaue Diagonalen oder falsche Korridore erscheinen, zuerst prüfen, ob `osm_reconstructed_low_confidence` oder `official_gtfs` versehentlich im Standardlayer sichtbar sind.
-- Nach Änderungen an `server/app.ts`, `server/schemas.ts` oder `server/db/queries/tileQueries.ts` den API-Prozess neu starten; sonst kann der laufende Prozess neue Tile-Endpunkte wie `/tiles/schools` noch nicht kennen.
+- Nach Änderungen an `server/app.ts`, `server/schemas.ts`, `server/db/queries/tileQueries.ts` oder `server/db/queries/placeQueries.ts` den API-Prozess neu starten; sonst kann der laufende Prozess neue Tile-Endpunkte wie `/tiles/schools` oder `/tiles/places` noch nicht kennen.

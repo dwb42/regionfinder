@@ -8,6 +8,7 @@ import type { ApiSnapshot } from './api/contracts'
 
 const mapMocks = vi.hoisted(() => ({
   renderedSchoolCategories: [] as string[][],
+  renderedPlaceCategories: [] as string[][],
 }))
 
 const apiMocks = vi.hoisted(() => ({
@@ -25,9 +26,16 @@ vi.mock('./data/api', () => ({
 }))
 
 vi.mock('./apiApp/MapLibreCanvas', () => ({
-  MapLibreCanvas: ({ schoolCategories }: { schoolCategories: string[] }) => {
+  MapLibreCanvas: ({ schoolCategories, placeCategories }: { schoolCategories: string[]; placeCategories: string[] }) => {
     mapMocks.renderedSchoolCategories.push(schoolCategories)
-    return <div data-testid="maplibre-canvas" data-school-categories={schoolCategories.join(',')} />
+    mapMocks.renderedPlaceCategories.push(placeCategories)
+    return (
+      <div
+        data-testid="maplibre-canvas"
+        data-school-categories={schoolCategories.join(',')}
+        data-place-categories={placeCategories.join(',')}
+      />
+    )
   },
 }))
 
@@ -74,6 +82,7 @@ describe('ApiApp POI layer controls', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mapMocks.renderedSchoolCategories.length = 0
+    mapMocks.renderedPlaceCategories.length = 0
     apiMocks.fetchCurrentSnapshot.mockResolvedValue(snapshot)
     container = document.createElement('div')
     document.body.append(container)
@@ -120,5 +129,30 @@ describe('ApiApp POI layer controls', () => {
 
     expect(mapMocks.renderedSchoolCategories.at(-1)).toEqual(['gymnasium'])
     expect(container?.querySelector('[data-school-categories="gymnasium"]')).not.toBeNull()
+  })
+
+  it('passes the place category selection to the map canvas', async () => {
+    await act(async () => {
+      root?.render(<ApiApp />)
+    })
+    await waitFor(() => Boolean(container?.querySelector('[data-testid="maplibre-canvas"]')))
+
+    expect(mapMocks.renderedPlaceCategories.at(-1)).toEqual([])
+    expect(container?.querySelector('[data-place-categories=""]')).not.toBeNull()
+
+    const hofCheckbox = container?.querySelector<HTMLInputElement>('#place-layer-hof')
+    const gutCheckbox = container?.querySelector<HTMLInputElement>('#place-layer-gut')
+
+    await act(async () => {
+      if (!hofCheckbox || !gutCheckbox) {
+        throw new Error('Missing place layer checkboxes')
+      }
+
+      hofCheckbox.click()
+      gutCheckbox.click()
+    })
+
+    expect(mapMocks.renderedPlaceCategories.at(-1)).toEqual(['hof', 'gut'])
+    expect(container?.querySelector('[data-place-categories="hof,gut"]')).not.toBeNull()
   })
 })

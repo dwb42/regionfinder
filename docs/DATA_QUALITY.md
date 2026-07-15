@@ -77,6 +77,20 @@ Qualitätsregeln:
 - Standorte ohne Koordinate müssen vor Import explizit ergänzt oder ausgeschlossen werden. Geocoding-Fallbacks sind in der Doku/Reports nachvollziehbar zu halten und bei Quellupdates erneut zu prüfen.
 - `source_id + source_school_id` ist der Deduplizierungsschlüssel. Mehrere Standorte einer Schule bleiben getrennte POIs, wenn die Quelle getrennte Standort-IDs liefert.
 
+## Places-POI-Qualität
+
+Der Places-Layer ist ein Karten-POI-Layer, keine Routingmetrik. Er ist unabhängig vom aktiven Fahrplansnapshot und fachlich getrennt vom Schools-Layer.
+
+Qualitätsregeln:
+
+- Erlaubte Kategorien sind `hof`, `ferienhof`, `gut`, `museum`.
+- Nur WGS84-Punktgeometrien werden importiert und in MVTs ausgegeben.
+- `source_id + source_place_id` ist der Deduplizierungsschlüssel für Batchimporte; bestehende Treffer derselben Quelle werden mit `--replace-source` soft-deleted und dann per Upsert reaktiviert.
+- Breite Web-/OSM-Recherchen sollen mit `--clip-to-admin-boundaries` importiert werden, damit `state_code` aus `admin_boundaries` korrigiert und Treffer außerhalb `HH/SH/MV/NI` soft-deleted werden.
+- Ferienhof-Kandidaten müssen eine nachvollziehbare Quelle in `raw_properties`, `source_url`, `detail_url` oder Website-Feldern behalten. Generierte Reports unter `data/reports/places/` dienen als Audit-Spur.
+- OSM-Treffer sind ODbL-pflichtige Daten; bei Verwendung oder Veröffentlichung muss die OSM-Attribution beachtet werden.
+- Manuelle Änderungen setzen `origin = manual` und dürfen importierte Batchquellen nicht ohne bewusstes `source_id/source_place_id` überschreiben.
+
 ## Bekannte Einschränkungen
 
 - Der MobilityData GTFS Validator lief auf dem DELFI-Produktionsfeed in der lokalen Umgebung in einen Java-Heap-OOM und ist deshalb kein bestandenes Gate für diesen Snapshot.

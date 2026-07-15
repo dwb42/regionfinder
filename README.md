@@ -46,10 +46,13 @@ npm run test                        # Vitest
 npm run lint                        # ESLint
 npm run check                       # Build, Tests und Lint
 npx playwright install chromium     # Browser-Binary fuer lokale Playwright-Smoke-Tests
+npm run py:install                  # Python-venv fuer Pipeline-Skripte anlegen
 DATABASE_URL=... npm run db:migrate # PostGIS-Migrationen
 npm run pipeline:import:synthetic   # synthetischen GTFS-Fixture-Snapshot importieren
 npm run rail:reconstruct            # OSM-Schienen importieren und Route-Patterns rekonstruieren
 npm run schools:import              # offizielle Schulstandorte importieren
+npm run places:research:ferienhoefe # Ferienhof-Kandidaten aus Web/OSM sammeln
+npm run places:import               # generische Orte/POIs importieren
 npm run pipeline:compute            # Fixture-Metriken berechnen
 npm run metrics:compute:production  # Produktionsmetriken mit MOTIS one-to-all
 npm run verify:production           # Produktionssnapshot verifizieren
@@ -92,6 +95,8 @@ Zusatzdaten, unabhängig vom DELFI-Snapshot:
 - Weiterführende Schulen: 1.466 darstellbare Standorte in `HH`, `SH`, `MV`, `NI`
 - Kategorien: `gymnasium`, `comprehensive`, `waldorf`, `vocational`, `upper_secondary`
 - Quellen: offizielle Schulstandortdaten der Länder; OSM ist keine Primärquelle.
+- Generische Orte in `places`: Kategorien `hof`, `ferienhof`, `gut`, `museum`
+- Aktueller Ferienhof-Import `ferienhoefe_web_research`: 486 aktive Orte in `SH`, `MV`, `NI`; Quellenmix aus Landreise, Landsichten, Bauernhofurlaub.de und OSM-Name/Tag-Treffern.
 
 Aktive Produktionsmetriken:
 
@@ -123,12 +128,20 @@ Implementierte Endpunkte:
 - `GET /api/v1/stops/:publicId/realtime-itineraries?date=YYYY-MM-DD&time=HH:mm&profile=...`
 - `GET /api/v1/stops/:publicId/driving-route`
 - `GET /api/v1/route-patterns/:id`
+- `GET /api/v1/places?categories=...&states=...&q=...&limit=...`
+- `GET /api/v1/places/:id`
+- `POST /api/v1/places`
+- `PATCH /api/v1/places/:id`
+- `DELETE /api/v1/places/:id`
 - `GET /api/v1/tiles/stops/{z}/{x}/{y}.mvt?modes=...`
 - `GET /api/v1/tiles/routes/{z}/{x}/{y}.mvt?modes=...`
 - `GET /api/v1/tiles/rail-network/{z}/{x}/{y}.mvt`
 - `GET /api/v1/tiles/schools/{z}/{x}/{y}.mvt?categories=...&states=...`
+- `GET /api/v1/tiles/places/{z}/{x}/{y}.mvt?categories=...&states=...`
 
 Die Tile-Endpunkte filtern serverseitig nach Verkehrsmitteln. Stop-Tiles akzeptieren zusätzlich `profile`, damit Reisezeitfarben und Hover-Metriken aus dem passenden Metric Run kommen. Der Client entfernt und erneuert die MapLibre-Vector-Tile-Sources beim Umschalten der Layer, damit keine alten ungefilterten Tiles aus dem MapLibre-Cache sichtbar bleiben.
+
+Die Places-Schreibendpunkte sind nur für interne Pflege gedacht und liefern ohne `REGIONFINDER_ENABLE_PLACE_ADMIN=1` `403`. Die Admin-UI wird im Frontend nur mit `VITE_REGIONFINDER_ENABLE_PLACE_ADMIN=1` eingeblendet.
 
 Der Realtime-Endpunkt wird serverseitig geladen. Standard ist aktuell das bahn.de-Web-Backend mit kontrolliertem `curl`-Fallback, weil Node-`fetch` dort geblockt werden kann. `REGIONFINDER_REALTIME_PROVIDER=db-transport-rest` schaltet explizit auf den Wrapper `v6.db.transport.rest`. Ursprung ist per Default Hamburg Hbf (`REGIONFINDER_ORIGIN_DB_STOP_ID=8002549`).
 
@@ -164,10 +177,11 @@ Wichtige UX-Entscheidungen:
 - Die frühere Sidebar-StopPlace-Suche und Suchtrefferliste ist im API-UI entfernt. Das Detailpanel wird über Klick auf einen StopPlace in der Karte geöffnet.
 - Wohnregionen sind als geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele verfügbar. Der Radius nutzt den Schätzfaktor `0,75 km/min` und die Optionen 5/10/15/20 Minuten.
 - Reisezeitfenster und Stationskreise verwenden dieselbe 5-stufige Farbskala: 30 min grün, 45 min teal, 60 min ocker, 75 min orange, 90 min rot.
-- Zusatzlayer `anzeigen`: weiterführende Schulen werden über zwei Checkboxen gesteuert:
+- `Schulen anzeigen`: weiterführende Schulen werden über zwei Checkboxen gesteuert:
   - `Gymnasium`
   - `andere weiterf. Schulen`
 - Schulmarker kommen aus dem Schools-MVT, öffnen kein Detailpanel und zeigen bei Hover Name und Schulart. Gymnasien sind farblich blau hervorgehoben; andere Schulformen bleiben neutral markiert.
+- `Orte anzeigen`: generische Places werden über `Höfe`, `Ferienhöfe`, `Güter` und `Museen` ein- und ausgeblendet. Sie kommen aus dem Places-MVT, sind unabhängig von ÖPNV-Modi und Reisezeitfenstern und sind standardmäßig deaktiviert.
 - Eine metrische Maßstabsleiste sitzt unten rechts in der MapLibre-Karte.
 
 ## Daten und Artefakte

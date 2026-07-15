@@ -76,6 +76,17 @@ Das Script importiert offizielle Schulstandortdaten in die snapshot-unabhängige
 
 Aktueller importierter Stand: 1.466 darstellbare Standorte in `HH`, `SH`, `MV`, `NI`. Kategorien: `gymnasium`, `comprehensive`, `waldorf`, `vocational`, `upper_secondary`. SH-Quelle ist TSV mit Schulart-Bitmasken; der Importer dekodiert diese. Für GML/Shapefile-Quellen vorher per GDAL nach EPSG:4326-GeoJSON konvertieren. Wenige SH-Standorte ohne Koordinaten sind per Adress-Geocoding ergänzt; bei Datenaktualisierung diese Fallbacks prüfen.
 
+Generische Places und Ferienhöfe:
+
+```bash
+npm run py:install
+npm run places:research:ferienhoefe:landreise
+npm run places:research:ferienhoefe -- --scan-osm --scan-osm-ways --osm-pbf data/processed/osm/north-germany-regionfinder.osm.pbf
+DATABASE_URL=postgres://regionfinder:regionfinder@localhost:55432/regionfinder npm run places:import -- --source data/raw/places/ferienhoefe/ferienhoefe_candidates.csv --source-id ferienhoefe_web_research --replace-source --clip-to-admin-boundaries --report data/reports/places/ferienhoefe-import.json
+```
+
+`places` ist ein snapshot-unabhängiger POI-Bestand fuer `hof`, `ferienhof`, `gut`, `museum`; Schulen bleiben vorerst separat in `schools`. Aktueller Ferienhof-Stand aus `ferienhoefe_web_research`: 486 aktive Orte nach Admin-Grenzen-Clipping (`SH` 226, `MV` 80, `NI` 180, `HH` 0). Recherchequellen: Landreise, Landsichten, Bauernhofurlaub.de und lokale OSM-PBF-Name/Tag-Treffer. Artefakte liegen unter `data/raw/places/ferienhoefe/` und `data/reports/places/` und werden nicht committed. Für manuelle interne Pflege API mit `REGIONFINDER_ENABLE_PLACE_ADMIN=1` und Frontend mit `VITE_REGIONFINDER_ENABLE_PLACE_ADMIN=1` starten.
+
 OSM-Schienenrekonstruktion:
 
 ```bash
@@ -100,6 +111,7 @@ Benannte Korridore stehen in `pipeline/rail_network.py`. Aktuell sind viele S-/R
 - Keine vollständigen GTFS-StopTimes direkt in React laden.
 - StopPlaces und Route Patterns im API-Modus über Vector Tiles aus PostGIS laden.
 - Weiterführende Schulen sind snapshot-unabhängige POIs in `schools` und werden über `/api/v1/tiles/schools/{z}/{x}/{y}.mvt?categories=...&states=...` geladen.
+- Generische Places sind snapshot-unabhängige POIs in `places` und werden über `/api/v1/tiles/places/{z}/{x}/{y}.mvt?categories=...&states=...` geladen. Schreibende Places-Endpunkte sind interne Pflege und erfordern `REGIONFINDER_ENABLE_PLACE_ADMIN=1`.
 - Tile-Endpunkte mit `?modes=...` filtern, wenn UI-Layer aktiv/deaktiv sind. Stop-Tiles zusätzlich mit `?profile=...` anfragen, damit Reisezeitfarben und Hover-Metriken zum Routingprofil passen.
 - Bei Moduswechseln MapLibre-Vector-Tile-Sources entfernen und neu anlegen; `setTiles()` allein kann alte ungefilterte Tiles sichtbar lassen.
 - Route-MVTs sollen `route_color` liefern. Das Frontend nutzt echte GTFS-Farben bevorzugt und Fallbackfarben nach Modus.
@@ -136,8 +148,9 @@ API-Modus:
 - Wohnregionen sind geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele; Radius = Minuten * `0,75 km`, Optionen 5/10/15/20 Minuten.
 - Zoom-Control sitzt links oben in der Map-Card; Zoomstufe sichtbar anzeigen.
 - MVT-Kacheln und abgeleitete Overlays müssen konsistent nach aktiven Modi und Reisezeitfenstern gefiltert sein.
-- Zusatzlayer `anzeigen` sitzt unten in der Sidebar. Weiterführende Schulen sind getrennt schaltbar als `Gymnasium` und `andere weiterf. Schulen`; beide sind standardmäßig aktiv.
+- Zusatzlayer sitzen unten in der Sidebar. Weiterführende Schulen stehen unter `Schulen anzeigen` und sind getrennt schaltbar als `Gymnasium` und `andere weiterf. Schulen`; beide sind standardmäßig aktiv. Generische Places stehen unter `Orte anzeigen`, sind getrennt schaltbar als `Höfe`, `Ferienhöfe`, `Güter`, `Museen` und standardmäßig aus.
 - Schulmarker werden nicht durch Reisezeitfenster oder ÖPNV-Modi gefiltert. Gymnasien sind blau hervorgehoben, andere weiterführende Schulen neutral. Hover zeigt Name und Schulart; Klick öffnet aktuell kein Detailpanel.
+- Place-Marker werden nicht durch Reisezeitfenster oder ÖPNV-Modi gefiltert. Hover zeigt Name und Kategorie; Klick öffnet aktuell kein Detailpanel. Das interne Place-Admin-Formular erscheint nur mit `VITE_REGIONFINDER_ENABLE_PLACE_ADMIN=1`.
 - Die Karte zeigt unten rechts eine metrische Maßstabsleiste.
 
 ## Nächster fachlicher Schwerpunkt

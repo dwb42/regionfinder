@@ -168,6 +168,55 @@ select {
   accent-color: #0f766e;
 }
 
+.place-admin-panel {
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.place-coordinate-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.place-admin-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.place-admin-actions button {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--heading);
+  background: var(--surface-soft);
+  font-weight: 750;
+}
+
+.place-admin-actions button:first-child {
+  color: #fff;
+  border-color: #0f766e;
+  background: #0f766e;
+}
+
+.place-admin-actions button.danger {
+  color: #fff;
+  border-color: #b91c1c;
+  background: #b91c1c;
+}
+
+.place-admin-actions button:disabled {
+  cursor: wait;
+  opacity: 0.64;
+}
+
+.place-admin-message {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .api-shell {
   display: grid;
   grid-template-columns: 320px minmax(520px, 1fr);
@@ -374,6 +423,31 @@ select {
   border: 2px solid #2563eb;
   border-radius: 3px !important;
   background: #bfdbfe;
+}
+
+.legend-place-hof,
+.legend-place-ferienhof,
+.legend-place-gut,
+.legend-place-museum {
+  width: 13px;
+  height: 13px;
+  border: 2px solid #ffffff;
+}
+
+.legend-place-hof {
+  background: #16a34a;
+}
+
+.legend-place-ferienhof {
+  background: #0f766e;
+}
+
+.legend-place-gut {
+  background: #a16207;
+}
+
+.legend-place-museum {
+  background: #7c3aed;
 }
 
 .api-panel-section {

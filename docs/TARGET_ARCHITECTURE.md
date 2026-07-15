@@ -17,6 +17,7 @@ Pipeline (Python)
   -> zertifizierte Batchmetriken berechnen: MOTIS one-to-all primaer, R5/r5py optional
   -> OSM-Schienen importieren und Route-Pattern-Anzeigegeometrien rekonstruieren
   -> offizielle Schulstandorte als snapshot-unabhängige POIs importieren
+  -> generische Places und Ferienhof-Kandidaten als snapshot-unabhängige POIs importieren
   -> Qualitätsberichte und Artefakt-Hashes speichern
 ```
 
@@ -28,7 +29,7 @@ Pipeline (Python)
 4. Eine zertifizierte Metrikengine berechnet Metriken ueber konkrete Fahrplandaten und gewuenschte Abfahrtszeitpunkte.
    Fuer den Produktionssnapshot `delfi-bb69c7e2c8d5` ist `motis_one_to_all` die aktive Engine.
 5. Ein Snapshot wird erst nach bestandenen Gates aktiv.
-6. Snapshot-unabhängige Zusatzdaten wie Schulen werden in eigenen Tabellen importiert und über eigene MVT-Endpunkte bereitgestellt.
+6. Snapshot-unabhängige Zusatzdaten wie Schulen und generische Places werden in eigenen Tabellen importiert und über eigene MVT-Endpunkte bereitgestellt.
 7. Das Frontend lädt im API-Modus nur API-Antworten und MVT-Kacheln.
 
 ## Snapshot-Lebenszyklus
@@ -84,12 +85,20 @@ Implementiert:
 - `GET /api/v1/stops/:publicId/realtime-itineraries`
 - `GET /api/v1/stops/:publicId/driving-route`
 - `GET /api/v1/route-patterns/:id`
+- `GET /api/v1/places`
+- `GET /api/v1/places/:id`
+- `POST /api/v1/places`
+- `PATCH /api/v1/places/:id`
+- `DELETE /api/v1/places/:id`
 - `GET /api/v1/tiles/stops/{z}/{x}/{y}.mvt`
 - `GET /api/v1/tiles/routes/{z}/{x}/{y}.mvt`
 - `GET /api/v1/tiles/rail-network/{z}/{x}/{y}.mvt`
 - `GET /api/v1/tiles/schools/{z}/{x}/{y}.mvt`
+- `GET /api/v1/tiles/places/{z}/{x}/{y}.mvt`
 
 Request-Validierung liegt in `server/schemas.ts`, gemeinsame Antworttypen in `src/api/contracts.ts`.
+
+Schreibende Places-Endpunkte sind interne Pflegefunktionen. Sie sind nur aktiv, wenn der API-Prozess mit `REGIONFINDER_ENABLE_PLACE_ADMIN=1` läuft.
 
 ## Frontend
 
@@ -120,9 +129,11 @@ Aktueller API-Modus:
 - Reisezeitfenster-Chips und Stop-Kreise verwenden dieselbe Farbskala: 30 min grün, 45 min teal, 60 min ocker, 75 min orange, 90 min rot.
 - Reisezeitfenster filtern MVT-StopFeatures anhand von `fastest_seconds`. Umstiegsfilter und `Unerreichbare anzeigen` sind nicht Teil der aktuellen API-UI.
 - Wohnregionen sind geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele. Der Radius verwendet den Schätzfaktor `0,75 km/min`; UI-Optionen sind 5/10/15/20 Minuten.
-- Zusatzlayer werden im Sidebar-Block `anzeigen` geführt. Der Schools-Layer ist in zwei Checkboxen getrennt: `Gymnasium` und `andere weiterf. Schulen`. Beide sind standardmäßig aktiv.
+- Zusatzlayer werden in getrennten Sidebar-Gruppen geführt. Der Schools-Layer steht unter `Schulen anzeigen` und ist in zwei Checkboxen getrennt: `Gymnasium` und `andere weiterf. Schulen`. Beide sind standardmäßig aktiv.
 - Schul-POIs werden als eigener MVT-Layer geladen, nicht durch ÖPNV-Modi oder Reisezeitfenster gefiltert. Das Frontend filtert sie ausschließlich über `categories` und legt die MapLibre-Quelle bei Kategorienwechsel neu an.
 - Gymnasien sind in der Karte farblich hervorgehoben; andere weiterführende Schulen sind neutral markiert. Hover zeigt Name und offizielle Schulart. Klick öffnet im ersten Schritt kein Detailpanel.
+- Generische Places werden unter `Orte anzeigen` über `Höfe`, `Ferienhöfe`, `Güter` und `Museen` geschaltet. Diese Layer sind standardmäßig aus und werden unabhängig von Routingprofil, Reisezeitfenstern und Verkehrsmittel-Layern geladen.
+- Das interne Place-Admin-Formular wird nur mit `VITE_REGIONFINDER_ENABLE_PLACE_ADMIN=1` gerendert und nutzt die Places-CRUD-Endpunkte für manuelle Pflege.
 - Die Karte besitzt eine metrische Maßstabsleiste unten rechts.
 
 ## Tile-Datenvertrag
@@ -183,6 +194,30 @@ Queryparameter:
 - `states`: CSV aus `HH`, `SH`, `MV`, `NI`
 
 Schools-Tiles werden unabhängig von Routingprofil, Reisezeitfenstern und Verkehrsmittel-Layern geladen.
+
+Places-MVT `places` enthält POIs aus der snapshot-unabhängigen Tabelle `places`:
+
+- `id`
+- `name`
+- `category`
+- `state_code`
+- `origin`
+- `geom`
+
+Queryparameter:
+
+- `categories`: CSV aus `hof`, `ferienhof`, `gut`, `museum`
+- `states`: CSV aus `HH`, `SH`, `MV`, `NI`
+
+Places-Tiles werden unabhängig von Routingprofil, Reisezeitfenstern und Verkehrsmittel-Layern geladen.
+
+## Places-Import
+
+`db/migrations/010_places.sql` definiert `places` als generische POI-Tabelle mit Soft-Delete. Der kanonische Deduplizierungsschlüssel für Batchimporte ist `source_id + source_place_id`; manuelle Datensätze nutzen `origin = manual`.
+
+`pipeline/places.py` importiert CSV/TSV/JSON/GeoJSON mit WGS84-Punktgeometrien. Es normalisiert Kategorien auf `hof`, `ferienhof`, `gut`, `museum`, schreibt Reports unter `data/reports/` und kann mit `--clip-to-admin-boundaries` `state_code` aus `admin_boundaries` korrigieren und Treffer außerhalb `HH/SH/MV/NI` soft-deleten.
+
+`pipeline/ferienhof_research.py` ist die spezialisierte Recherchepipeline für Ferienhöfe. Sie kombiniert öffentliche Webquellen, optional dynamisch gesammelte Landreise-Links und lokale OSM-PBF-Treffer. Ergebnis ist eine importierbare CSV unter `data/raw/places/ferienhoefe/`.
 
 ## OSM-Schienenmatching
 

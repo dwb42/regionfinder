@@ -189,6 +189,125 @@ describe('Regionfinder API', () => {
     })
   })
 
+  it('serves place POI tiles with category and state cache keys', async () => {
+    class CapturingPlaceRepository extends FixtureRepository {
+      placeTileCall: { z: number; x: number; y: number; categories: string[]; states: string[] } | null = null
+
+      override async placeTile(
+        z: number,
+        x: number,
+        y: number,
+        categories: string[] = [],
+        states: string[] = [],
+      ): Promise<Buffer | null> {
+        this.placeTileCall = { z, x, y, categories, states }
+        return Buffer.from('fixture-place-tile')
+      }
+    }
+
+    const repository = new CapturingPlaceRepository()
+    const app = await buildApp({ repository, logger: false })
+    const response = await app.inject('/api/v1/tiles/places/8/135/83.mvt?categories=hof,gut&states=HH,SH')
+
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['content-type']).toContain('application/vnd.mapbox-vector-tile')
+    expect(response.headers.etag).toContain('places-8-135-83-hof-gut-HH-SH')
+    expect(response.body).toBe('fixture-place-tile')
+    expect(repository.placeTileCall).toEqual({
+      z: 8,
+      x: 135,
+      y: 83,
+      categories: ['hof', 'gut'],
+      states: ['HH', 'SH'],
+    })
+  })
+
+  it('rejects unsupported place categories', async () => {
+    const app = await withApp()
+    const response = await app.inject('/api/v1/tiles/places/8/135/83.mvt?categories=church')
+
+    expect(response.statusCode).toBe(400)
+    expect(response.json()).toMatchObject({ error: 'invalid_request' })
+  })
+
+  it('lists place POIs with category filters', async () => {
+    const app = await withApp()
+    const response = await app.inject('/api/v1/places?categories=gut&states=SH')
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual([
+      expect.objectContaining({
+        id: '11111111-1111-4111-8111-111111111111',
+        category: 'gut',
+        name: 'Gut Testfeld',
+      }),
+    ])
+  })
+
+  it('requires the internal admin flag for place writes', async () => {
+    vi.stubEnv('REGIONFINDER_ENABLE_PLACE_ADMIN', '')
+    const app = await withApp()
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/places',
+      payload: {
+        category: 'hof',
+        name: 'Hof ohne Admin',
+        coordinate: { lat: 53.5, lon: 10.2 },
+      },
+    })
+
+    expect(response.statusCode).toBe(403)
+  })
+
+  it('creates, updates, and soft-deletes places when internal admin is enabled', async () => {
+    vi.stubEnv('REGIONFINDER_ENABLE_PLACE_ADMIN', '1')
+    const app = await withApp()
+    const createResponse = await app.inject({
+      method: 'POST',
+      url: '/api/v1/places',
+      payload: {
+        category: 'hof',
+        name: 'Hof Redaktionsfixture',
+        stateCode: 'HH',
+        address: 'Teststrasse 1',
+        coordinate: { lat: 53.55, lon: 10.01 },
+      },
+    })
+
+    expect(createResponse.statusCode).toBe(201)
+    expect(createResponse.json()).toMatchObject({
+      category: 'hof',
+      name: 'Hof Redaktionsfixture',
+      origin: 'manual',
+    })
+
+    const id = createResponse.json().id
+    const updateResponse = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/places/${id}`,
+      payload: {
+        category: 'ferienhof',
+        name: 'Ferienhof Redaktionsfixture',
+      },
+    })
+
+    expect(updateResponse.statusCode).toBe(200)
+    expect(updateResponse.json()).toMatchObject({
+      id,
+      category: 'ferienhof',
+      name: 'Ferienhof Redaktionsfixture',
+    })
+
+    const deleteResponse = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/places/${id}`,
+    })
+
+    expect(deleteResponse.statusCode).toBe(204)
+    expect((await app.inject(`/api/v1/places/${id}`)).statusCode).toBe(404)
+  })
+
   it('validates invalid itinerary parameters', async () => {
     const app = await withApp()
     const response = await app.inject('/api/v1/stops/de:01056:9001/itineraries?date=07-07-2026&time=8')

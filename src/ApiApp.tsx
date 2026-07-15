@@ -1,18 +1,20 @@
-import { lazy, Suspense, useCallback, useMemo, useState } from 'react'
-import { Clock, GraduationCap, Layers, Satellite, X, TrainFront } from 'lucide-react'
-import type { ApiStopSelectionPreview } from './api/contracts'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Clock, GraduationCap, Layers, MapPinned, Satellite, X, TrainFront } from 'lucide-react'
+import type { ApiPlace, ApiStopSelectionPreview, PlaceCategory } from './api/contracts'
 import { DrivingRouteBlock, MetricCard, RealtimeItineraryBlock } from './apiApp/ItineraryComponents'
 import {
   defaultDepartureTime,
   defaultProfile,
   estimatedResidentialRadiusKmPerMinute,
   modeLayerDefinitions,
+  placeLayerDefinitions,
   residentialRadiusOptions,
   schoolPoiLayerDefinitions,
   travelTimeChipStyle,
   travelTimeWindows,
   type MapBaseLayer,
   type ModeLayerId,
+  type PlaceLayerId,
   type SchoolPoiLayerId,
   type TravelTimeWindow,
 } from './apiApp/config'
@@ -28,10 +30,35 @@ import {
 } from './apiApp/formatters'
 import { useApiStartup, useMapUpdateStatus, useSelectedStopDetails } from './apiApp/hooks'
 import { modesForLayers } from './apiApp/mapLayers'
+import { createPlace, deletePlace, fetchPlaces, updatePlace } from './data/api'
 
 const MapLibreCanvas = lazy(() =>
   import('./apiApp/MapLibreCanvas').then((module) => ({ default: module.MapLibreCanvas })),
 )
+
+type PlaceFormState = {
+  id: string | null
+  category: PlaceCategory
+  name: string
+  stateCode: '' | 'HH' | 'SH' | 'MV' | 'NI'
+  address: string
+  website: string
+  lat: string
+  lon: string
+}
+
+const emptyPlaceForm: PlaceFormState = {
+  id: null,
+  category: 'hof',
+  name: '',
+  stateCode: '',
+  address: '',
+  website: '',
+  lat: '',
+  lon: '',
+}
+
+const placeAdminEnabled = import.meta.env.VITE_REGIONFINDER_ENABLE_PLACE_ADMIN === '1'
 
 function ApiApp() {
   const { snapshot, setStatus } = useApiStartup()
@@ -46,6 +73,11 @@ function ApiApp() {
     'gymnasium',
     'other-secondary',
   ])
+  const [activePlaceLayers, setActivePlaceLayers] = useState<PlaceLayerId[]>([])
+  const [adminPlaces, setAdminPlaces] = useState<ApiPlace[]>([])
+  const [placeForm, setPlaceForm] = useState<PlaceFormState>(emptyPlaceForm)
+  const [placeAdminMessage, setPlaceAdminMessage] = useState<string | null>(null)
+  const [isSavingPlace, setIsSavingPlace] = useState(false)
   const [showResidentialRegions, setShowResidentialRegions] = useState(false)
   const [residentialRadiusMinutes, setResidentialRadiusMinutes] = useState(15)
   const { mapUpdateState, handleMapTileLoadingChange } = useMapUpdateStatus()
@@ -69,6 +101,17 @@ function ApiApp() {
       ),
     [activeSchoolPoiLayers],
   )
+  const placeCategories = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          placeLayerDefinitions
+            .filter((definition) => activePlaceLayers.includes(definition.id))
+            .flatMap((definition) => definition.categories),
+        ),
+      ),
+    [activePlaceLayers],
+  )
   const residentialRadiusMeters = residentialRadiusMinutes * estimatedResidentialRadiusKmPerMinute * 1000
   const detailPanelStop = selectedStop ?? selectedStopPreview
   const selectedFastestSeconds = metrics?.fastestSeconds ?? selectedStopPreview?.fastestSeconds ?? null
@@ -81,6 +124,14 @@ function ApiApp() {
       ).slice(0, 12),
     [selectedStop, selectedStopPreview],
   )
+
+  useEffect(() => {
+    if (!placeAdminEnabled) {
+      return
+    }
+
+    void loadAdminPlaces()
+  }, [])
 
   function toggleModeLayer(id: ModeLayerId) {
     setActiveModeLayers((current) =>
@@ -98,6 +149,101 @@ function ApiApp() {
     setActiveSchoolPoiLayers((current) =>
       current.includes(id) ? current.filter((layer) => layer !== id) : [...current, id],
     )
+  }
+
+  function togglePlaceLayer(id: PlaceLayerId) {
+    setActivePlaceLayers((current) =>
+      current.includes(id) ? current.filter((layer) => layer !== id) : [...current, id],
+    )
+  }
+
+  async function loadAdminPlaces() {
+    try {
+      const places = await fetchPlaces({ limit: 500 })
+      setAdminPlaces(places)
+      setPlaceAdminMessage(null)
+    } catch (error) {
+      setPlaceAdminMessage(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  function editAdminPlace(id: string) {
+    const place = adminPlaces.find((entry) => entry.id === id)
+
+    if (!place) {
+      setPlaceForm(emptyPlaceForm)
+      return
+    }
+
+    setPlaceForm({
+      id: place.id,
+      category: place.category,
+      name: place.name,
+      stateCode: place.stateCode === 'HH' || place.stateCode === 'SH' || place.stateCode === 'MV' || place.stateCode === 'NI'
+        ? place.stateCode
+        : '',
+      address: place.address ?? '',
+      website: place.website ?? '',
+      lat: String(place.coordinate.lat),
+      lon: String(place.coordinate.lon),
+    })
+  }
+
+  async function saveAdminPlace() {
+    const lat = Number(placeForm.lat)
+    const lon = Number(placeForm.lon)
+
+    if (!placeForm.name.trim() || !Number.isFinite(lat) || !Number.isFinite(lon)) {
+      setPlaceAdminMessage('Name, Latitude und Longitude sind Pflichtfelder.')
+      return
+    }
+
+    setIsSavingPlace(true)
+
+    try {
+      const payload = {
+        category: placeForm.category,
+        name: placeForm.name.trim(),
+        stateCode: placeForm.stateCode || null,
+        address: placeForm.address.trim() || null,
+        website: placeForm.website.trim() || null,
+        coordinate: { lat, lon },
+      }
+
+      if (placeForm.id) {
+        await updatePlace(placeForm.id, payload)
+        setPlaceAdminMessage('Ort aktualisiert.')
+      } else {
+        await createPlace(payload)
+        setPlaceAdminMessage('Ort angelegt.')
+      }
+
+      setPlaceForm(emptyPlaceForm)
+      await loadAdminPlaces()
+    } catch (error) {
+      setPlaceAdminMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setIsSavingPlace(false)
+    }
+  }
+
+  async function deleteAdminPlace() {
+    if (!placeForm.id) {
+      return
+    }
+
+    setIsSavingPlace(true)
+
+    try {
+      await deletePlace(placeForm.id)
+      setPlaceAdminMessage('Ort gelöscht.')
+      setPlaceForm(emptyPlaceForm)
+      await loadAdminPlaces()
+    } catch (error) {
+      setPlaceAdminMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setIsSavingPlace(false)
+    }
   }
 
   function closeDetailPanel() {
@@ -199,7 +345,7 @@ function ApiApp() {
         <div className="control-group">
           <div className="label-like">
             <GraduationCap size={16} />
-            anzeigen
+            Schulen anzeigen
           </div>
           <div className="layer-grid">
             {schoolPoiLayerDefinitions.map((definition) => (
@@ -215,6 +361,117 @@ function ApiApp() {
             ))}
           </div>
         </div>
+
+        <div className="control-group">
+          <div className="label-like">
+            <MapPinned size={16} />
+            Orte anzeigen
+          </div>
+          <div className="layer-grid">
+            {placeLayerDefinitions.map((definition) => (
+              <label key={definition.id} className="layer-toggle">
+                <input
+                  id={`place-layer-${definition.id}`}
+                  type="checkbox"
+                  checked={activePlaceLayers.includes(definition.id)}
+                  onChange={() => togglePlaceLayer(definition.id)}
+                />
+                <span>{definition.label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {placeAdminEnabled ? (
+          <div className="control-group place-admin-panel">
+            <div className="label-like">
+              <MapPinned size={16} />
+              Orte pflegen
+            </div>
+            <select
+              value={placeForm.id ?? ''}
+              onChange={(event) => editAdminPlace(event.target.value)}
+              aria-label="Ort zur Bearbeitung auswählen"
+            >
+              <option value="">Neuer Ort</option>
+              {adminPlaces.map((place) => (
+                <option key={place.id} value={place.id}>
+                  {place.name}
+                </option>
+              ))}
+            </select>
+            <select
+              value={placeForm.category}
+              onChange={(event) => setPlaceForm((current) => ({ ...current, category: event.target.value as PlaceCategory }))}
+              aria-label="Kategorie"
+            >
+              {placeLayerDefinitions.map((definition) => (
+                <option key={definition.id} value={definition.id}>
+                  {definition.label}
+                </option>
+              ))}
+            </select>
+            <input
+              value={placeForm.name}
+              onChange={(event) => setPlaceForm((current) => ({ ...current, name: event.target.value }))}
+              placeholder="Name"
+              aria-label="Name"
+            />
+            <select
+              value={placeForm.stateCode}
+              onChange={(event) =>
+                setPlaceForm((current) => ({ ...current, stateCode: event.target.value as PlaceFormState['stateCode'] }))
+              }
+              aria-label="Bundesland"
+            >
+              <option value="">Bundesland offen</option>
+              <option value="HH">HH</option>
+              <option value="SH">SH</option>
+              <option value="MV">MV</option>
+              <option value="NI">NI</option>
+            </select>
+            <input
+              value={placeForm.address}
+              onChange={(event) => setPlaceForm((current) => ({ ...current, address: event.target.value }))}
+              placeholder="Adresse"
+              aria-label="Adresse"
+            />
+            <input
+              value={placeForm.website}
+              onChange={(event) => setPlaceForm((current) => ({ ...current, website: event.target.value }))}
+              placeholder="Website"
+              aria-label="Website"
+            />
+            <div className="place-coordinate-grid">
+              <input
+                value={placeForm.lat}
+                onChange={(event) => setPlaceForm((current) => ({ ...current, lat: event.target.value }))}
+                placeholder="Lat"
+                aria-label="Latitude"
+              />
+              <input
+                value={placeForm.lon}
+                onChange={(event) => setPlaceForm((current) => ({ ...current, lon: event.target.value }))}
+                placeholder="Lon"
+                aria-label="Longitude"
+              />
+            </div>
+            <div className="place-admin-actions">
+              <button type="button" onClick={() => void saveAdminPlace()} disabled={isSavingPlace}>
+                {placeForm.id ? 'Speichern' : 'Anlegen'}
+              </button>
+              <button type="button" onClick={() => setPlaceForm(emptyPlaceForm)} disabled={isSavingPlace}>
+                Neu
+              </button>
+              {placeForm.id ? (
+                <button type="button" className="danger" onClick={() => void deleteAdminPlace()} disabled={isSavingPlace}>
+                  Löschen
+                </button>
+              ) : null}
+            </div>
+            {placeAdminMessage ? <p className="place-admin-message">{placeAdminMessage}</p> : null}
+          </div>
+        ) : null}
       </aside>
 
       <section className="api-map-section" aria-label="Karte">
@@ -233,6 +490,7 @@ function ApiApp() {
             selectedStop={detailPanelStop}
             mapBaseLayer={mapBaseLayer}
             schoolCategories={schoolCategories}
+            placeCategories={placeCategories}
             tileModes={tileModes}
             selectedTimeWindows={selectedTimeWindows}
             showResidentialRegions={showResidentialRegions}
@@ -252,6 +510,10 @@ function ApiApp() {
           <span><i className="legend-route-bus" /> Busroute</span>
           {schoolCategories.includes('gymnasium') ? <span><i className="legend-school-gymnasium" /> Gymnasium</span> : null}
           {schoolCategories.some((category) => category !== 'gymnasium') ? <span><i className="legend-school" /> Schule</span> : null}
+          {placeCategories.includes('hof') ? <span><i className="legend-place-hof" /> Hof</span> : null}
+          {placeCategories.includes('ferienhof') ? <span><i className="legend-place-ferienhof" /> Ferienhof</span> : null}
+          {placeCategories.includes('gut') ? <span><i className="legend-place-gut" /> Gut</span> : null}
+          {placeCategories.includes('museum') ? <span><i className="legend-place-museum" /> Museum</span> : null}
         </div>
       </section>
 

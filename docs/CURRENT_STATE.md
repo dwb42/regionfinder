@@ -1,6 +1,6 @@
 # Current State
 
-Stand: 2026-06-25 nach Regionfinder V2 Produktionsintegration, API-/MapLibre-UX-Nachzug, DB-Echtzeitintegration, erstem OSM-Schienenkorridor-Matching und Schools-POI-Layer.
+Stand: 2026-07-15 nach Regionfinder V2 Produktionsintegration, API-/MapLibre-UX-Nachzug, DB-Echtzeitintegration, erstem OSM-Schienenkorridor-Matching, Schools-POI-Layer und generischem Places-Layer.
 
 ## Produktstand
 
@@ -60,6 +60,31 @@ Quellen:
 - Niedersachsen: LSN Schulstandorte-Shapefiles für allgemeinbildende und berufsbildende Schulen
 
 Das Importskript `pipeline/schools.py` liest CSV/TSV, GeoJSON und ZIPs mit CSV/GeoJSON. Für GML/Shapefile-Quellen werden die Daten vorab per GDAL nach EPSG:4326-GeoJSON konvertiert. Schleswig-Holstein nutzt Bitmasken; der Import dekodiert daraus Gymnasium, Gemeinschaftsschule/Gesamtschule und berufsbildende Schule. Wenige relevante SH-Standorte ohne Koordinaten wurden über Adress-Geocoding ergänzt; diese Ergänzungen müssen bei Datenaktualisierungen erneut geprüft werden.
+
+## Zusatzdaten: generische Places und Ferienhöfe
+
+Zusätzlich zu Schulen gibt es einen snapshot-unabhängigen POI-Datenbestand `places` für manuell und per Batch gepflegte Orte. Schulen bleiben vorerst in `schools` und werden nicht migriert.
+
+Normalisierte Place-Kategorien:
+
+- `hof`
+- `ferienhof`
+- `gut`
+- `museum`
+
+Aktueller lokaler Ferienhof-Stand aus Quelle `ferienhoefe_web_research`:
+
+- Gesamt: 486 aktive `ferienhof`-Orte
+- `SH`: 226
+- `MV`: 80
+- `NI`: 180
+- `HH`: 0
+
+Die Ferienhof-Recherche ist ein kuratierter Web-/OSM-Batch. `pipeline/ferienhof_research.py` sammelt öffentliche Kandidaten aus Landreise, Landsichten, Bauernhofurlaub.de und optional lokalen OSM-PBF-Name/Tag-Treffern. Der Playwright-Harvester `scripts/research-landreise-ferienhoefe.mjs` ergänzt dynamisch gerenderte Landreise-Links. Ergebnisartefakte liegen unter `data/raw/places/ferienhoefe/` und `data/reports/places/` und sind nicht für Git gedacht.
+
+Der Import läuft über `pipeline/places.py` und schreibt CSV/TSV/JSON/GeoJSON in `places`. Für Ferienhof-Batches wird `--replace-source --clip-to-admin-boundaries` verwendet, damit alte Treffer derselben Quelle soft-deleted, `state_code` aus `admin_boundaries` korrigiert und Treffer außerhalb `HH/SH/MV/NI` ausgeschlossen werden.
+
+Interne manuelle Pflege ist über API und optionales UI vorbereitet. Schreibende API-Endpunkte sind deaktiviert, solange `REGIONFINDER_ENABLE_PLACE_ADMIN=1` nicht gesetzt ist. Das Frontend zeigt das Admin-Formular nur mit `VITE_REGIONFINDER_ENABLE_PLACE_ADMIN=1`.
 
 ## Produktionsmetriken
 
@@ -128,11 +153,14 @@ Aktuelle UI-Funktionen im API-Modus:
 - Wohnregionen sind geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele. Der Radius nutzt den Schätzfaktor `0,75 km/min`; Optionen sind 5, 10, 15 und 20 Minuten.
 - Reisezeitfenster und Stationskreise nutzen dieselbe Farbskala: 30 min grün, 45 min teal, 60 min ocker, 75 min orange, 90 min rot.
 - Metrische Maßstabsleiste unten rechts in der Karte.
-- Zusatzlayer `anzeigen` am unteren Ende der Sidebar:
+- `Schulen anzeigen` am unteren Ende der Sidebar:
   - `Gymnasium`
   - `andere weiterf. Schulen`
 - Beide Schul-Checkboxen sind standardmäßig aktiv. Der Client lädt Schools-MVTs über `categories=...` neu, wenn eine Checkbox umgeschaltet wird.
 - Schulmarker sind reine Karten-POIs ohne Detailpanel-Klick. Hover zeigt Name und offizielle Schulart. Gymnasien sind blau hervorgehoben; andere weiterführende Schulen bleiben neutral.
+- `Orte anzeigen`: Generische Places werden über `Höfe`, `Ferienhöfe`, `Güter` und `Museen` gesteuert. Diese Layer sind standardmäßig deaktiviert und werden nur nach Auswahl geladen.
+- Place-Marker sind Karten-POIs aus dem Places-MVT. Hover zeigt Name und Kategorie; sie werden nicht durch ÖPNV-Modi oder Reisezeitfenster gefiltert.
+- Das interne Place-Admin-Formular erscheint nur mit `VITE_REGIONFINDER_ENABLE_PLACE_ADMIN=1` und erlaubt Anlegen, Bearbeiten und Soft-Delete von Places.
 
 ## DB-Echtzeitverbindungen und Direktverbindungen
 
@@ -192,6 +220,8 @@ Wichtige Einschränkung: Viele S-/Regional-Patterns sind zwar OSM-geroutet, erre
 - Gemeinsame API-Antworttypen liegen in `src/api/contracts.ts`.
 - Stop- und Route-Tiles akzeptieren `?modes=...`; Stop-Tiles akzeptieren zusätzlich `?profile=...`.
 - Schools-Tiles akzeptieren `?categories=...&states=...` und nutzen den MVT-Layernamen `schools`.
+- Places-Tiles akzeptieren `?categories=...&states=...` und nutzen den MVT-Layernamen `places`.
+- Schreibende Places-Endpunkte sind interne Pflegeoberfläche und werden serverseitig über `REGIONFINDER_ENABLE_PLACE_ADMIN=1` freigeschaltet.
 - Stop-Metriken akzeptieren zusätzlich `?date=YYYY-MM-DD`, wenn eine tagesgenaue Direktverbindungszahl gebraucht wird.
 - Aktueller Default-Referenztag im API-Frontend ist `2026-09-15`, passend zum Produktions-Metrikprofil.
 - Route-Tiles liefern `route_color`, normalisiert auf `#RRGGBB`, wenn eine echte GTFS-Farbe existiert.
@@ -234,6 +264,39 @@ GET /api/v1/tiles/schools/{z}/{x}/{y}.mvt?categories=gymnasium,comprehensive,wal
 
 MVT-Properties: `id`, `name`, `school_category`, `school_type_label`, `state_code`.
 
+## Places-Datenmodell und API
+
+`db/migrations/010_places.sql` legt die Tabelle `places` an:
+
+- `source_id`, `source_place_id`
+- `origin` mit `imported` oder `manual`
+- `category` mit `hof`, `ferienhof`, `gut`, `museum`
+- `name`
+- `state_code`
+- `address`, `website`
+- `geometry(Point, 4326)`
+- `raw_properties`
+- `imported_at`, `created_at`, `updated_at`, `deleted_at`
+
+Wichtige Constraints und Indizes:
+
+- `UNIQUE (source_id, source_place_id)`
+- GiST auf `geometry` für aktive Datensätze
+- B-Tree auf `category`, `state_code` und `source_id/source_place_id`
+
+Repository und SQL folgen dem bestehenden Query-Modul-Pattern: `PostgresRepository` delegiert Places-Listen, CRUD und Tiles an `server/db/queries/placeQueries.ts` und `server/db/queries/tileQueries.ts`.
+
+```text
+GET /api/v1/places?categories=ferienhof&states=SH,MV,NI
+GET /api/v1/places/:id
+POST /api/v1/places
+PATCH /api/v1/places/:id
+DELETE /api/v1/places/:id
+GET /api/v1/tiles/places/{z}/{x}/{y}.mvt?categories=hof,ferienhof,gut,museum&states=HH,SH,MV,NI
+```
+
+MVT-Properties: `id`, `name`, `category`, `state_code`, `origin`.
+
 ## Verifikation
 
 Nach den letzten Änderungen liefen erfolgreich:
@@ -242,6 +305,7 @@ Nach den letzten Änderungen liefen erfolgreich:
 npm run build
 npm run test
 npm run lint
+python3 -m unittest pipeline.test_ferienhof_research pipeline.test_places
 ```
 
 Produktions-Readiness:
@@ -249,4 +313,11 @@ Produktions-Readiness:
 ```bash
 curl http://127.0.0.1:4001/ready
 # {"status":"ready","snapshotId":"delfi-bb69c7e2c8d5"}
+```
+
+Places-Smoke:
+
+```bash
+curl 'http://127.0.0.1:4001/api/v1/places?categories=ferienhof&states=SH,MV,NI&limit=3'
+curl -o /tmp/places.mvt 'http://127.0.0.1:4001/api/v1/tiles/places/8/135/82.mvt?categories=ferienhof&states=HH,SH,MV,NI'
 ```

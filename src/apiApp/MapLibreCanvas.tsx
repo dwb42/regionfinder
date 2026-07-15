@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FeatureCollection, Polygon } from 'geojson'
 import maplibregl, { type Map } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import type { ApiStopSelectionPreview } from '../api/contracts'
+import type { ApiStopSelectionPreview, PlaceCategory } from '../api/contracts'
 import type { MapBaseLayer, TravelTimeWindow } from './config'
 import {
+  addPlaceTileLayer,
   addRailRouteTileLayers,
   addRouteTileLayers,
   addSchoolTileLayer,
@@ -13,10 +14,13 @@ import {
   applyRouteLayerState,
   applyStopLayerState,
   circlePolygon,
+  createPlaceHoverPopupContent,
   createSchoolHoverPopupContent,
   createStopHoverPopupContent,
   mapLibreBaseStyle,
   numericFeatureProperty,
+  placeTileSourceKey,
+  removePlaceTileLayer,
   removeSchoolTileLayer,
   removeRailRouteTileLayers,
   removeRouteTileLayers,
@@ -53,6 +57,7 @@ export function MapLibreCanvas({
   selectedStop,
   mapBaseLayer,
   schoolCategories,
+  placeCategories,
   tileModes,
   selectedTimeWindows,
   showResidentialRegions,
@@ -64,6 +69,7 @@ export function MapLibreCanvas({
   selectedStop: SelectedMapStop | null
   mapBaseLayer: MapBaseLayer
   schoolCategories: string[]
+  placeCategories: PlaceCategory[]
   tileModes: string[]
   selectedTimeWindows: TravelTimeWindow[]
   showResidentialRegions: boolean
@@ -79,6 +85,7 @@ export function MapLibreCanvas({
   const activeTransitTileSourceKeysRef = useRef(transitTileSourceKeys(tileModes, profile))
   const selectedTimeWindowsRef = useRef(selectedTimeWindows)
   const activeSchoolTileSourceKeyRef = useRef(schoolTileSourceKey(schoolCategories))
+  const activePlaceTileSourceKeyRef = useRef(placeTileSourceKey(placeCategories))
   const hoverPopupRef = useRef<maplibregl.Popup | null>(null)
   const currentHoverFeatureRef = useRef<string | null>(null)
   const residentialSettingsRef = useRef({ showResidentialRegions, residentialRadiusMeters })
@@ -488,6 +495,95 @@ export function MapLibreCanvas({
       removeSchoolTileLayer(map)
     }
   }, [mapReady, onTileLoadingChange, schoolCategories])
+
+  useEffect(() => {
+    const map = mapRef.current
+
+    if (!mapReady || !map) {
+      return
+    }
+
+    const nextPlaceTileSourceKey = placeTileSourceKey(placeCategories)
+
+    if (placeCategories.length === 0) {
+      removePlaceTileLayer(map)
+      activePlaceTileSourceKeyRef.current = nextPlaceTileSourceKey
+      return
+    }
+
+    if (
+      !map.getLayer('regionfinder-places-symbol') ||
+      activePlaceTileSourceKeyRef.current !== nextPlaceTileSourceKey
+    ) {
+      removePlaceTileLayer(map)
+      addPlaceTileLayer(map, placeCategories)
+      activePlaceTileSourceKeyRef.current = nextPlaceTileSourceKey
+      onTileLoadingChange(true)
+    }
+
+    const showPlaceHoverPopup = (event: maplibregl.MapLayerMouseEvent) => {
+      const feature = event.features?.[0]
+      const id = stringFeatureProperty(feature?.properties?.id)
+      const fallbackName = stringFeatureProperty(feature?.properties?.name)
+      const hoverKey = `place:${id ?? fallbackName ?? event.lngLat.toString()}`
+
+      if (currentHoverFeatureRef.current === hoverKey) {
+        hoverPopupRef.current?.setLngLat(event.lngLat)
+        return
+      }
+
+      currentHoverFeatureRef.current = hoverKey
+      const popup =
+        hoverPopupRef.current ??
+        new maplibregl.Popup({
+          closeButton: false,
+          closeOnClick: false,
+          offset: 12,
+          className: 'place-hover-map-popup',
+        })
+      hoverPopupRef.current = popup
+
+      popup
+        .setLngLat(event.lngLat)
+        .setDOMContent(
+          createPlaceHoverPopupContent({
+            name: fallbackName ?? 'Ort',
+            category: stringFeatureProperty(feature?.properties?.category),
+            stateCode: stringFeatureProperty(feature?.properties?.state_code),
+          }),
+        )
+        .addTo(map)
+    }
+
+    const handleMouseEnter = (event: maplibregl.MapLayerMouseEvent) => {
+      map.getCanvas().style.cursor = 'pointer'
+      showPlaceHoverPopup(event)
+    }
+    const handleMouseLeave = () => {
+      map.getCanvas().style.cursor = ''
+      currentHoverFeatureRef.current = null
+      hoverPopupRef.current?.remove()
+    }
+    const handleSourceData = (event: maplibregl.MapSourceDataEvent) => {
+      if (event.sourceId === 'regionfinder-places' && map.isSourceLoaded('regionfinder-places')) {
+        onTileLoadingChange(false)
+      }
+    }
+
+    map.on('mouseenter', 'regionfinder-places-symbol', handleMouseEnter)
+    map.on('mousemove', 'regionfinder-places-symbol', showPlaceHoverPopup)
+    map.on('mouseleave', 'regionfinder-places-symbol', handleMouseLeave)
+    map.on('sourcedata', handleSourceData)
+
+    return () => {
+      map.off('mouseenter', 'regionfinder-places-symbol', handleMouseEnter)
+      map.off('mousemove', 'regionfinder-places-symbol', showPlaceHoverPopup)
+      map.off('mouseleave', 'regionfinder-places-symbol', handleMouseLeave)
+      map.off('sourcedata', handleSourceData)
+      handleMouseLeave()
+      removePlaceTileLayer(map)
+    }
+  }, [mapReady, onTileLoadingChange, placeCategories])
 
   useEffect(() => {
     const map = mapRef.current

@@ -141,6 +141,45 @@ export type ApiDrivingRouteResponse = {
   fetchedAt?: string
 }
 
+export type PlaceCategory = 'hof' | 'ferienhof' | 'gut' | 'museum'
+
+export type ApiPlace = {
+  id: string
+  sourceId: string | null
+  sourcePlaceId: string | null
+  origin: 'imported' | 'manual'
+  category: PlaceCategory
+  name: string
+  stateCode: string | null
+  address: string | null
+  website: string | null
+  coordinate: {
+    lat: number
+    lon: number
+  }
+  rawProperties: Record<string, unknown>
+  importedAt: string | null
+  createdAt: string | null
+  updatedAt: string | null
+  deletedAt: string | null
+}
+
+export type ApiPlaceCreateRequest = {
+  sourceId?: string | null
+  sourcePlaceId?: string | null
+  category: PlaceCategory
+  name: string
+  stateCode?: string | null
+  address?: string | null
+  website?: string | null
+  coordinate: {
+    lat: number
+    lon: number
+  }
+}
+
+export type ApiPlaceUpdateRequest = Partial<Omit<ApiPlaceCreateRequest, 'sourceId' | 'sourcePlaceId'>>
+
 export type ApiRoutePattern = {
   id: string
   route: {

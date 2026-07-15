@@ -8,6 +8,12 @@ import { DbTransportRestProvider, RealtimeProviderError, type RealtimeItineraryP
 import {
   itineraryQuerySchema,
   metricsQuerySchema,
+  placeCategorySchema,
+  placeCreateSchema,
+  placeListQuerySchema,
+  placeParamsSchema,
+  placeTileQuerySchema,
+  placeUpdateSchema,
   publicIdParamsSchema,
   routePatternParamsSchema,
   schoolTileQuerySchema,
@@ -29,6 +35,17 @@ function notFound(message: string) {
     error: 'not_found',
     message,
   }
+}
+
+function forbidden(message: string) {
+  return {
+    error: 'forbidden',
+    message,
+  }
+}
+
+function placeCategories(value: string | undefined) {
+  return splitCsv(value).map((category) => placeCategorySchema.parse(category))
 }
 
 function publicIdAliases(publicId: string): string[] {
@@ -61,6 +78,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   const realtimeItineraryProvider = options.realtimeItineraryProvider ?? new DbTransportRestProvider()
   const drivingRouteProvider =
     options.drivingRouteProvider ?? new OsrmDrivingRouteProvider()
+  const placeAdminEnabled = process.env.REGIONFINDER_ENABLE_PLACE_ADMIN === '1'
 
   await app.register(cors, {
     origin: true,
@@ -233,6 +251,65 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     return pattern
   })
 
+  app.get('/api/v1/places', async (request) => {
+    const query = placeListQuerySchema.parse(request.query)
+
+    return options.repository.listPlaces(placeCategories(query.categories), splitCsv(query.states), query.q, query.limit)
+  })
+
+  app.get('/api/v1/places/:id', async (request, reply) => {
+    const params = placeParamsSchema.parse(request.params)
+    const place = await options.repository.place(params.id)
+
+    if (!place) {
+      return reply.code(404).send(notFound(`Unknown place ${params.id}`))
+    }
+
+    return place
+  })
+
+  app.post('/api/v1/places', async (request, reply) => {
+    if (!placeAdminEnabled) {
+      return reply.code(403).send(forbidden('Place administration is disabled'))
+    }
+
+    const input = placeCreateSchema.parse(request.body)
+    const place = await options.repository.createPlace(input)
+
+    return reply.code(201).send(place)
+  })
+
+  app.patch('/api/v1/places/:id', async (request, reply) => {
+    if (!placeAdminEnabled) {
+      return reply.code(403).send(forbidden('Place administration is disabled'))
+    }
+
+    const params = placeParamsSchema.parse(request.params)
+    const input = placeUpdateSchema.parse(request.body)
+    const place = await options.repository.updatePlace(params.id, input)
+
+    if (!place) {
+      return reply.code(404).send(notFound(`Unknown place ${params.id}`))
+    }
+
+    return place
+  })
+
+  app.delete('/api/v1/places/:id', async (request, reply) => {
+    if (!placeAdminEnabled) {
+      return reply.code(403).send(forbidden('Place administration is disabled'))
+    }
+
+    const params = placeParamsSchema.parse(request.params)
+    const deleted = await options.repository.deletePlace(params.id)
+
+    if (!deleted) {
+      return reply.code(404).send(notFound(`Unknown place ${params.id}`))
+    }
+
+    return reply.code(204).send()
+  })
+
   app.get('/api/v1/tiles/stops/:z/:x/:y.mvt', async (request, reply) => {
     const params = tileParamsSchema.parse(request.params)
     const query = tileQuerySchema.parse(request.query)
@@ -280,6 +357,20 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     reply.header('Content-Type', 'application/vnd.mapbox-vector-tile')
     reply.header('Cache-Control', 'public, max-age=300')
     reply.header('ETag', `"schools-${params.z}-${params.x}-${params.y}-${categories.join('-')}-${states.join('-')}"`)
+
+    return tile ?? Buffer.alloc(0)
+  })
+
+  app.get('/api/v1/tiles/places/:z/:x/:y.mvt', async (request, reply) => {
+    const params = tileParamsSchema.parse(request.params)
+    const query = placeTileQuerySchema.parse(request.query)
+    const categories = placeCategories(query.categories)
+    const states = splitCsv(query.states)
+    const tile = await options.repository.placeTile(params.z, params.x, params.y, categories, states)
+
+    reply.header('Content-Type', 'application/vnd.mapbox-vector-tile')
+    reply.header('Cache-Control', 'public, max-age=300')
+    reply.header('ETag', `"places-${params.z}-${params.x}-${params.y}-${categories.join('-')}-${states.join('-')}"`)
 
     return tile ?? Buffer.alloc(0)
   })

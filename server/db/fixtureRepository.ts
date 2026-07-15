@@ -2,10 +2,14 @@ import type { RegionfinderRepository, StopSearchFilters, ItineraryQuery } from '
 import type {
   ApiItineraryResponse,
   ApiMetrics,
+  ApiPlace,
+  ApiPlaceCreateRequest,
+  ApiPlaceUpdateRequest,
   ApiRoutePattern,
   ApiSnapshot,
   ApiStopDetails,
   ApiStopSearchResult,
+  PlaceCategory,
 } from '../../src/api/contracts'
 
 const snapshot: ApiSnapshot = {
@@ -184,6 +188,26 @@ const metricsByStop = new Map<string, ApiMetrics>([
   ],
 ])
 
+const fixturePlaces: ApiPlace[] = [
+  {
+    id: '11111111-1111-4111-8111-111111111111',
+    sourceId: 'fixture_places',
+    sourcePlaceId: 'gut-1',
+    origin: 'imported',
+    category: 'gut',
+    name: 'Gut Testfeld',
+    stateCode: 'SH',
+    address: 'Testweg 1, 22900 Testfeld',
+    website: 'https://example.test/gut-testfeld',
+    coordinate: { lat: 53.61, lon: 10.31 },
+    rawProperties: {},
+    importedAt: '2026-07-01T08:00:00.000Z',
+    createdAt: '2026-07-01T08:00:00.000Z',
+    updatedAt: '2026-07-01T08:00:00.000Z',
+    deletedAt: null,
+  },
+]
+
 function searchText(stop: ApiStopSearchResult): string {
   return [stop.publicId, stop.name, stop.dhid, stop.municipalityName].filter(Boolean).join(' ').toLocaleLowerCase('de-DE')
 }
@@ -355,6 +379,91 @@ export class FixtureRepository implements RegionfinderRepository {
     }
   }
 
+  async listPlaces(
+    categories: PlaceCategory[] = [],
+    states: string[] = [],
+    query = '',
+    limit = 100,
+  ): Promise<ApiPlace[]> {
+    const normalizedQuery = query.toLocaleLowerCase('de-DE')
+
+    return fixturePlaces
+      .filter((place) => !place.deletedAt)
+      .filter((place) => (categories.length ? categories.includes(place.category) : true))
+      .filter((place) => (states.length ? states.includes(place.stateCode ?? '') : true))
+      .filter((place) => {
+        if (!normalizedQuery) {
+          return true
+        }
+
+        return [place.name, place.address].filter(Boolean).join(' ').toLocaleLowerCase('de-DE').includes(normalizedQuery)
+      })
+      .slice(0, limit)
+  }
+
+  async place(id: string): Promise<ApiPlace | null> {
+    return fixturePlaces.find((place) => place.id === id && !place.deletedAt) ?? null
+  }
+
+  async createPlace(input: ApiPlaceCreateRequest): Promise<ApiPlace> {
+    const now = new Date().toISOString()
+    const place: ApiPlace = {
+      id: crypto.randomUUID(),
+      sourceId: input.sourceId ?? null,
+      sourcePlaceId: input.sourcePlaceId ?? null,
+      origin: 'manual',
+      category: input.category,
+      name: input.name,
+      stateCode: input.stateCode ?? null,
+      address: input.address ?? null,
+      website: input.website ?? null,
+      coordinate: input.coordinate,
+      rawProperties: {},
+      importedAt: null,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    }
+
+    fixturePlaces.push(place)
+
+    return place
+  }
+
+  async updatePlace(id: string, input: ApiPlaceUpdateRequest): Promise<ApiPlace | null> {
+    const place = fixturePlaces.find((entry) => entry.id === id && !entry.deletedAt)
+
+    if (!place) {
+      return null
+    }
+
+    Object.assign(place, {
+      category: input.category ?? place.category,
+      name: input.name ?? place.name,
+      stateCode: input.stateCode === undefined ? place.stateCode : input.stateCode,
+      address: input.address === undefined ? place.address : input.address,
+      website: input.website === undefined ? place.website : input.website,
+      coordinate: input.coordinate ?? place.coordinate,
+      updatedAt: new Date().toISOString(),
+    })
+
+    return place
+  }
+
+  async deletePlace(id: string): Promise<boolean> {
+    const place = fixturePlaces.find((entry) => entry.id === id && !entry.deletedAt)
+
+    if (!place) {
+      return false
+    }
+
+    const now = new Date().toISOString()
+    place.deletedAt = now
+    place.updatedAt = now
+
+    return true
+  }
+
   async stopTile(): Promise<Buffer | null> {
     return Buffer.alloc(0)
   }
@@ -378,6 +487,22 @@ export class FixtureRepository implements RegionfinderRepository {
     _x?: number,
     _y?: number,
     _categories?: string[],
+    _states?: string[],
+  ): Promise<Buffer | null> {
+    void _z
+    void _x
+    void _y
+    void _categories
+    void _states
+
+    return Buffer.alloc(0)
+  }
+
+  async placeTile(
+    _z?: number,
+    _x?: number,
+    _y?: number,
+    _categories?: PlaceCategory[],
     _states?: string[],
   ): Promise<Buffer | null> {
     void _z

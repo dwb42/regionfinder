@@ -2,10 +2,14 @@ import type {
   ApiDrivingRouteResponse,
   ApiItineraryResponse,
   ApiMetrics,
+  ApiPlace,
+  ApiPlaceCreateRequest,
+  ApiPlaceUpdateRequest,
   ApiRoutePattern,
   ApiSnapshot,
   ApiStopDetails,
   ApiStopSearchResult,
+  PlaceCategory,
 } from '../api/contracts'
 
 const configuredBaseUrl = import.meta.env.VITE_REGIONFINDER_API_BASE_URL
@@ -25,8 +29,8 @@ export class ApiError extends Error {
   }
 }
 
-async function fetchApi<T>(path: string): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`)
+async function fetchApi<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${apiBaseUrl}${path}`, init)
 
   if (!response.ok) {
     const payload = await response
@@ -43,6 +47,10 @@ async function fetchApi<T>(path: string): Promise<T> {
         : `${path}: ${response.status} ${response.statusText}`
 
     throw new ApiError(path, response.status, response.statusText, errorCode, message)
+  }
+
+  if (response.status === 204) {
+    return undefined as T
   }
 
   return (await response.json()) as T
@@ -112,4 +120,54 @@ export function fetchDrivingRoute(publicId: string): Promise<ApiDrivingRouteResp
 
 export function fetchRoutePattern(id: string): Promise<ApiRoutePattern> {
   return fetchApi<ApiRoutePattern>(`/api/v1/route-patterns/${encodeURIComponent(id)}`)
+}
+
+export type PlaceSearchOptions = {
+  categories?: PlaceCategory[]
+  states?: string[]
+  query?: string
+  limit?: number
+}
+
+export function fetchPlaces(options: PlaceSearchOptions = {}): Promise<ApiPlace[]> {
+  const params = new URLSearchParams({
+    q: options.query ?? '',
+    limit: String(options.limit ?? 100),
+  })
+
+  if (options.categories?.length) {
+    params.set('categories', options.categories.join(','))
+  }
+
+  if (options.states?.length) {
+    params.set('states', options.states.join(','))
+  }
+
+  return fetchApi<ApiPlace[]>(`/api/v1/places?${params}`)
+}
+
+export function fetchPlace(id: string): Promise<ApiPlace> {
+  return fetchApi<ApiPlace>(`/api/v1/places/${encodeURIComponent(id)}`)
+}
+
+export function createPlace(input: ApiPlaceCreateRequest): Promise<ApiPlace> {
+  return fetchApi<ApiPlace>('/api/v1/places', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+}
+
+export function updatePlace(id: string, input: ApiPlaceUpdateRequest): Promise<ApiPlace> {
+  return fetchApi<ApiPlace>(`/api/v1/places/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+}
+
+export async function deletePlace(id: string): Promise<void> {
+  await fetchApi<void>(`/api/v1/places/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
 }
