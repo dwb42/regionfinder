@@ -1,10 +1,16 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
-import { Clock, GraduationCap, Layers, MapPinned, Satellite, X, TrainFront } from 'lucide-react'
-import type { ApiPlace, ApiStopSelectionPreview, PlaceCategory } from './api/contracts'
+import { Building2, Clock, ExternalLink, GraduationCap, Layers, MapPinned, Satellite, X, TrainFront } from 'lucide-react'
+import type {
+  AdministrativeAreaSelection,
+  ApiPlace,
+  ApiStopSelectionPreview,
+  PlaceCategory,
+} from './api/contracts'
 import { DrivingRouteBlock, MetricCard, RealtimeItineraryBlock } from './apiApp/ItineraryComponents'
 import {
   defaultDepartureTime,
   defaultProfile,
+  administrativeAreaLayerDefinitions,
   estimatedResidentialRadiusKmPerMinute,
   modeLayerDefinitions,
   placeLayerDefinitions,
@@ -13,6 +19,7 @@ import {
   travelTimeChipStyle,
   travelTimeWindows,
   type MapBaseLayer,
+  type AdministrativeAreaLayerId,
   type ModeLayerId,
   type PlaceLayerId,
   type SchoolPoiLayerId,
@@ -29,8 +36,9 @@ import {
   stopRouteLabel,
 } from './apiApp/formatters'
 import { useApiStartup, useMapUpdateStatus, useSelectedStopDetails } from './apiApp/hooks'
-import { modesForLayers } from './apiApp/mapLayers'
-import { createPlace, deletePlace, fetchPlaces, updatePlace } from './data/api'
+import { administrativeAreaLevelLabel, modesForLayers, placeCategoryLabel } from './apiApp/mapLayers'
+import { placeDetailLinks } from './apiApp/placeDetails'
+import { createPlace, deletePlace, fetchPlace, fetchPlaces, updatePlace } from './data/api'
 
 const MapLibreCanvas = lazy(() =>
   import('./apiApp/MapLibreCanvas').then((module) => ({ default: module.MapLibreCanvas })),
@@ -74,6 +82,12 @@ function ApiApp() {
     'other-secondary',
   ])
   const [activePlaceLayers, setActivePlaceLayers] = useState<PlaceLayerId[]>([])
+  const [activeAdministrativeAreaLayers, setActiveAdministrativeAreaLayers] = useState<AdministrativeAreaLayerId[]>([])
+  const [selectedAdministrativeArea, setSelectedAdministrativeArea] = useState<AdministrativeAreaSelection | null>(null)
+  const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null)
+  const [selectedPlace, setSelectedPlace] = useState<ApiPlace | null>(null)
+  const [selectedPlaceError, setSelectedPlaceError] = useState<string | null>(null)
+  const [isPlaceLoading, setIsPlaceLoading] = useState(false)
   const [adminPlaces, setAdminPlaces] = useState<ApiPlace[]>([])
   const [placeForm, setPlaceForm] = useState<PlaceFormState>(emptyPlaceForm)
   const [placeAdminMessage, setPlaceAdminMessage] = useState<string | null>(null)
@@ -114,8 +128,10 @@ function ApiApp() {
   )
   const residentialRadiusMeters = residentialRadiusMinutes * estimatedResidentialRadiusKmPerMinute * 1000
   const detailPanelStop = selectedStop ?? selectedStopPreview
+  const detailPanelOpen = Boolean(detailPanelStop || selectedPlaceId || selectedAdministrativeArea)
   const selectedFastestSeconds = metrics?.fastestSeconds ?? selectedStopPreview?.fastestSeconds ?? null
   const isDetailsLoading = Boolean(selectedStopPreview && !selectedStop)
+  const selectedPlaceLinks = selectedPlace ? placeDetailLinks(selectedPlace) : null
 
   const selectedRouteLabels = useMemo(
     () =>
@@ -132,6 +148,47 @@ function ApiApp() {
 
     void loadAdminPlaces()
   }, [])
+
+  useEffect(() => {
+    if (!selectedPlaceId) {
+      return
+    }
+
+    let cancelled = false
+    const placeId = selectedPlaceId
+
+    async function loadPlace() {
+      setIsPlaceLoading(true)
+      setSelectedPlaceError(null)
+      setSelectedPlace(null)
+      setStatus('Ortsdetails werden geladen')
+
+      try {
+        const place = await fetchPlace(placeId)
+
+        if (!cancelled) {
+          setSelectedPlace(place)
+          setStatus('bereit')
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : String(error)
+          setSelectedPlaceError(message)
+          setStatus(message)
+        }
+      } finally {
+        if (!cancelled) {
+          setIsPlaceLoading(false)
+        }
+      }
+    }
+
+    void loadPlace()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedPlaceId, setStatus])
 
   function toggleModeLayer(id: ModeLayerId) {
     setActiveModeLayers((current) =>
@@ -155,6 +212,17 @@ function ApiApp() {
     setActivePlaceLayers((current) =>
       current.includes(id) ? current.filter((layer) => layer !== id) : [...current, id],
     )
+  }
+
+  function toggleAdministrativeAreaLayer(id: AdministrativeAreaLayerId) {
+    const willDisable = activeAdministrativeAreaLayers.includes(id)
+    setActiveAdministrativeAreaLayers((current) =>
+      current.includes(id) ? current.filter((layer) => layer !== id) : [...current, id],
+    )
+
+    if (willDisable && selectedAdministrativeArea?.level === id) {
+      setSelectedAdministrativeArea(null)
+    }
   }
 
   async function loadAdminPlaces() {
@@ -249,13 +317,45 @@ function ApiApp() {
   function closeDetailPanel() {
     setSelectedPublicId(null)
     setSelectedStopPreview(null)
+    setSelectedPlaceId(null)
+    setSelectedPlace(null)
+    setSelectedPlaceError(null)
+    setIsPlaceLoading(false)
+    setSelectedAdministrativeArea(null)
     clearDetails()
   }
 
   const handleSelectStop = useCallback((selection: ApiStopSelectionPreview) => {
+    setSelectedPlaceId(null)
+    setSelectedPlace(null)
+    setSelectedPlaceError(null)
+    setIsPlaceLoading(false)
+    setSelectedAdministrativeArea(null)
     setSelectedStopPreview(selection)
     setSelectedPublicId(selection.publicId)
   }, [])
+
+  const handleSelectPlace = useCallback((placeId: string) => {
+    setSelectedPublicId(null)
+    setSelectedStopPreview(null)
+    setSelectedPlace(null)
+    setSelectedPlaceError(null)
+    setIsPlaceLoading(false)
+    setSelectedAdministrativeArea(null)
+    clearDetails()
+    setSelectedPlaceId(placeId)
+  }, [clearDetails])
+
+  const handleSelectAdministrativeArea = useCallback((selection: AdministrativeAreaSelection) => {
+    setSelectedPublicId(null)
+    setSelectedStopPreview(null)
+    setSelectedPlaceId(null)
+    setSelectedPlace(null)
+    setSelectedPlaceError(null)
+    setIsPlaceLoading(false)
+    clearDetails()
+    setSelectedAdministrativeArea(selection)
+  }, [clearDetails])
 
   function showEarlierRealtimeConnections() {
     const earliestDeparture = earliestAlternativeDepartureMinutes(realtimeItineraries.response)
@@ -268,7 +368,7 @@ function ApiApp() {
   }
 
   return (
-    <main className={detailPanelStop ? 'api-shell detail-open' : 'api-shell'}>
+    <main className={detailPanelOpen ? 'api-shell detail-open' : 'api-shell'}>
       <aside className="api-sidebar" aria-label="API-Einstellungen">
         <div className="brand-row">
           <div className="brand-mark" aria-hidden="true">
@@ -338,6 +438,26 @@ function ApiApp() {
               >
                 {minutesValue} min
               </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="control-group">
+          <div className="label-like">
+            <Building2 size={16} />
+            Verwaltungsgebiete
+          </div>
+          <div className="layer-grid">
+            {administrativeAreaLayerDefinitions.map((definition) => (
+              <label key={definition.id} className="layer-toggle">
+                <input
+                  id={`administrative-area-layer-${definition.id}`}
+                  type="checkbox"
+                  checked={activeAdministrativeAreaLayers.includes(definition.id)}
+                  onChange={() => toggleAdministrativeAreaLayer(definition.id)}
+                />
+                <span>{definition.label}</span>
+              </label>
             ))}
           </div>
         </div>
@@ -491,12 +611,16 @@ function ApiApp() {
             mapBaseLayer={mapBaseLayer}
             schoolCategories={schoolCategories}
             placeCategories={placeCategories}
+            administrativeAreaLevels={activeAdministrativeAreaLayers}
+            selectedAdministrativeAreaId={selectedAdministrativeArea?.id ?? null}
             tileModes={tileModes}
             selectedTimeWindows={selectedTimeWindows}
             showResidentialRegions={showResidentialRegions}
             residentialRadiusMeters={residentialRadiusMeters}
             profile={profile}
             onSelect={handleSelectStop}
+            onSelectPlace={handleSelectPlace}
+            onSelectAdministrativeArea={handleSelectAdministrativeArea}
             onTileLoadingChange={handleMapTileLoadingChange}
           />
         </Suspense>
@@ -517,115 +641,185 @@ function ApiApp() {
         </div>
       </section>
 
-      {detailPanelStop ? (
-        <aside className="api-detail-panel" aria-label="StopPlace-Details">
+      {detailPanelOpen ? (
+        <aside
+          className="api-detail-panel"
+          aria-label={
+            detailPanelStop
+              ? 'StopPlace-Details'
+              : selectedAdministrativeArea
+                ? 'Verwaltungsgebiets-Details'
+                : 'Ort-Details'
+          }
+        >
           <div className="api-detail-header">
-            <h2 className="api-detail-title">{detailPanelStop.name}</h2>
+            <h2 className="api-detail-title">
+              {detailPanelStop?.name ??
+                selectedAdministrativeArea?.name ??
+                selectedPlace?.name ??
+                (isPlaceLoading ? 'Ort wird geladen' : 'Ort')}
+            </h2>
             <button type="button" className="api-detail-close" onClick={closeDetailPanel} aria-label="Detailpanel schließen">
               <X size={16} />
             </button>
           </div>
 
-          <>
+          {selectedAdministrativeArea ? (
             <section className="api-panel-section">
-              <h2>ab Hamburg Hbf</h2>
-              <div className="api-metric-grid">
-                <MetricCard label="Schnellste Gesamtreisezeit" value={minutes(selectedFastestSeconds)} title={metricTooltip('fastest')} />
-                <MetricCard
-                  label="Direktverbindungen / Wochentag"
-                  value={directConnectionCount(metrics)}
-                  title="Fahrplanmäßige direkte Trips ohne Umstieg am repräsentativen Wochentag."
-                />
+              <h2>{administrativeAreaLevelLabel(selectedAdministrativeArea.level)}</h2>
+              <div className="api-administrative-area-facts">
+                <p>{selectedAdministrativeArea.areaType}</p>
+                <p>Amtlicher Schlüssel: {selectedAdministrativeArea.officialKey}</p>
+                {selectedAdministrativeArea.parentName ? (
+                  <p>Landkreis: {selectedAdministrativeArea.parentName}</p>
+                ) : null}
               </div>
             </section>
+          ) : selectedPlaceId ? (
+            <>
+              {selectedPlaceError ? (
+                <p className="api-inline-error">{selectedPlaceError}</p>
+              ) : null}
 
-            <section className="api-panel-section">
-              <h2>Bahn 🚂</h2>
-              <div className="api-realtime-controls">
-                <div className="api-realtime-time-row">
-                  <button type="button" className="api-time-step-button" onClick={showEarlierRealtimeConnections}>
-                    Frühere
-                  </button>
-                  <input
-                    id="api-detail-departure"
-                    type="time"
-                    aria-label="Startzeit"
-                    value={departureTime}
-                    onChange={(event) => setDepartureTime(event.target.value || defaultDepartureTime)}
+              {selectedPlace ? (
+                <>
+                  <section className="api-panel-section">
+                    <h2>Ort</h2>
+                    <div className="api-place-facts">
+                      <span>{placeCategoryLabel(selectedPlace.category)}</span>
+                      {selectedPlace.address ? <p>{selectedPlace.address}</p> : <p>Adresse nicht hinterlegt.</p>}
+                    </div>
+                  </section>
+
+                  <section className="api-panel-section">
+                    <h2>Links</h2>
+                    <div className="api-place-link-list">
+                      {selectedPlaceLinks?.placeWebsite ? (
+                        <a href={selectedPlaceLinks.placeWebsite.url} target="_blank" rel="noreferrer">
+                          <ExternalLink size={15} />
+                          <span>{selectedPlaceLinks.placeWebsite.label}</span>
+                        </a>
+                      ) : (
+                        <p>Website des Ortes nicht hinterlegt.</p>
+                      )}
+
+                      {selectedPlaceLinks?.sourceWebsite ? (
+                        <a href={selectedPlaceLinks.sourceWebsite.url} target="_blank" rel="noreferrer">
+                          <ExternalLink size={15} />
+                          <span>{selectedPlaceLinks.sourceWebsite.label}</span>
+                        </a>
+                      ) : (
+                        <p>Quellenwebsite nicht hinterlegt.</p>
+                      )}
+                    </div>
+                  </section>
+                </>
+              ) : (
+                <p className="api-inline-status api-loading-status"><span>Ortsdetails werden geladen</span></p>
+              )}
+            </>
+          ) : detailPanelStop ? (
+            <>
+              <section className="api-panel-section">
+                <h2>ab Hamburg Hbf</h2>
+                <div className="api-metric-grid">
+                  <MetricCard label="Schnellste Gesamtreisezeit" value={minutes(selectedFastestSeconds)} title={metricTooltip('fastest')} />
+                  <MetricCard
+                    label="Direktverbindungen / Wochentag"
+                    value={directConnectionCount(metrics)}
+                    title="Fahrplanmäßige direkte Trips ohne Umstieg am repräsentativen Wochentag."
                   />
-                  <button type="button" className="api-time-step-button" onClick={showLaterRealtimeConnections}>
-                    Spätere
-                  </button>
                 </div>
-              </div>
-              <RealtimeItineraryBlock
-                response={realtimeItineraries.response}
-                loading={realtimeItineraries.status === 'loading'}
-                error={realtimeItineraries.error}
-                maxAlternatives={3}
-                emptyText="Keine DB-Echtzeitverbindung für diese Auswahl vorhanden."
-              />
-            </section>
+              </section>
 
-            <section className="api-panel-section">
-              <h2>KFZ 🚙</h2>
-              <DrivingRouteBlock
-                response={drivingRoute.response}
-                loading={drivingRoute.status === 'loading'}
-                error={drivingRoute.error}
-              />
-            </section>
-
-            <section className="api-panel-section">
-              <h2>Linien</h2>
-              <div className="api-route-list">
-                {selectedRouteLabels.map((label) => (
-                  <span key={label}>
-                    {label}
-                  </span>
-                ))}
-              </div>
-              {selectedRouteLabels.length === 0 ? <p>{isDetailsLoading ? 'Linien werden geladen...' : 'Keine Linien hinterlegt.'}</p> : null}
-            </section>
-
-            <details className="api-panel-section api-disclosure api-meta-disclosure">
-              <summary aria-label="Zusätzliche Details ein- oder ausklappen" title="Zusätzliche Details" />
-              <div className="api-meta-disclosure-content">
-                <section>
-                  <h3>Datenstand</h3>
-                  <div className="api-disclosure-content">
-                    {snapshot ? (
-                      <>
-                        <p>{snapshot.source.name} · {snapshot.publicId}</p>
-                        <p>{snapshot.validFrom ?? '?'} bis {snapshot.validUntil ?? '?'}</p>
-                        <p>{snapshot.source.attribution ?? 'Attribution aus Snapshot-Metadaten erforderlich'}</p>
-                      </>
-                    ) : (
-                      <p>Datenstand wird geladen</p>
-                    )}
+              <section className="api-panel-section">
+                <h2>Bahn 🚂</h2>
+                <div className="api-realtime-controls">
+                  <div className="api-realtime-time-row">
+                    <button type="button" className="api-time-step-button" onClick={showEarlierRealtimeConnections}>
+                      Frühere
+                    </button>
+                    <input
+                      id="api-detail-departure"
+                      type="time"
+                      aria-label="Startzeit"
+                      value={departureTime}
+                      onChange={(event) => setDepartureTime(event.target.value || defaultDepartureTime)}
+                    />
+                    <button type="button" className="api-time-step-button" onClick={showLaterRealtimeConnections}>
+                      Spätere
+                    </button>
                   </div>
-                </section>
+                </div>
+                <RealtimeItineraryBlock
+                  response={realtimeItineraries.response}
+                  loading={realtimeItineraries.status === 'loading'}
+                  error={realtimeItineraries.error}
+                  maxAlternatives={3}
+                  emptyText="Keine DB-Echtzeitverbindung für diese Auswahl vorhanden."
+                />
+              </section>
 
-                <section>
-                  <h3>StopPlace-Details</h3>
-                  <div className="api-disclosure-content">
-                    {selectedStop ? (
-                      <>
-                        <p>{selectedStop.municipalityName ?? 'Gemeinde unbekannt'} · {selectedStop.stateCode ?? 'Bundesland unbekannt'}</p>
-                        <p>DHID: {selectedStop.dhid ?? 'fehlt'} · Qualität: {selectedStop.identityQuality}</p>
-                        <p>{selectedStop.modes.join(', ')}</p>
-                      </>
-                    ) : (
-                      <>
-                        <p>Public ID: {detailPanelStop.publicId}</p>
-                        <p>StopPlace-Details werden geladen...</p>
-                      </>
-                    )}
-                  </div>
-                </section>
-              </div>
-            </details>
-          </>
+              <section className="api-panel-section">
+                <h2>KFZ 🚙</h2>
+                <DrivingRouteBlock
+                  response={drivingRoute.response}
+                  loading={drivingRoute.status === 'loading'}
+                  error={drivingRoute.error}
+                />
+              </section>
+
+              <section className="api-panel-section">
+                <h2>Linien</h2>
+                <div className="api-route-list">
+                  {selectedRouteLabels.map((label) => (
+                    <span key={label}>
+                      {label}
+                    </span>
+                  ))}
+                </div>
+                {selectedRouteLabels.length === 0 ? <p>{isDetailsLoading ? 'Linien werden geladen...' : 'Keine Linien hinterlegt.'}</p> : null}
+              </section>
+
+              <details className="api-panel-section api-disclosure api-meta-disclosure">
+                <summary aria-label="Zusätzliche Details ein- oder ausklappen" title="Zusätzliche Details" />
+                <div className="api-meta-disclosure-content">
+                  <section>
+                    <h3>Datenstand</h3>
+                    <div className="api-disclosure-content">
+                      {snapshot ? (
+                        <>
+                          <p>{snapshot.source.name} · {snapshot.publicId}</p>
+                          <p>{snapshot.validFrom ?? '?'} bis {snapshot.validUntil ?? '?'}</p>
+                          <p>{snapshot.source.attribution ?? 'Attribution aus Snapshot-Metadaten erforderlich'}</p>
+                        </>
+                      ) : (
+                        <p>Datenstand wird geladen</p>
+                      )}
+                    </div>
+                  </section>
+
+                  <section>
+                    <h3>StopPlace-Details</h3>
+                    <div className="api-disclosure-content">
+                      {selectedStop ? (
+                        <>
+                          <p>{selectedStop.municipalityName ?? 'Gemeinde unbekannt'} · {selectedStop.stateCode ?? 'Bundesland unbekannt'}</p>
+                          <p>DHID: {selectedStop.dhid ?? 'fehlt'} · Qualität: {selectedStop.identityQuality}</p>
+                          <p>{selectedStop.modes.join(', ')}</p>
+                        </>
+                      ) : (
+                        <>
+                          <p>Public ID: {detailPanelStop.publicId}</p>
+                          <p>StopPlace-Details werden geladen...</p>
+                        </>
+                      )}
+                    </div>
+                  </section>
+                </div>
+              </details>
+            </>
+          ) : null}
         </aside>
       ) : null}
     </main>

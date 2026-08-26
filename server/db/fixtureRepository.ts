@@ -1,5 +1,6 @@
 import type { RegionfinderRepository, StopSearchFilters, ItineraryQuery } from './types'
 import type {
+  AdministrativeAreaLevel,
   ApiItineraryResponse,
   ApiMetrics,
   ApiPlace,
@@ -509,6 +510,22 @@ export class FixtureRepository implements RegionfinderRepository {
     void _x
     void _y
     void _categories
+    void _states
+
+    return Buffer.alloc(0)
+  }
+
+  async administrativeAreaTile(
+    _z?: number,
+    _x?: number,
+    _y?: number,
+    _levels?: AdministrativeAreaLevel[],
+    _states?: string[],
+  ): Promise<Buffer | null> {
+    void _z
+    void _x
+    void _y
+    void _levels
     void _states
 
     return Buffer.alloc(0)

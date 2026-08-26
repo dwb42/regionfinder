@@ -464,6 +464,53 @@ select {
   overflow-wrap: anywhere;
 }
 
+.api-place-facts {
+  display: grid;
+  gap: 8px;
+}
+
+.api-place-facts > span {
+  width: fit-content;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--heading);
+  background: var(--surface-soft);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.api-place-link-list {
+  display: grid;
+  gap: 8px;
+}
+
+.api-place-link-list a {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: #0f766e;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.api-place-link-list a:hover {
+  border-color: rgba(15, 118, 110, 0.36);
+  background: #f0fdfa;
+}
+
+.api-place-link-list a span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .api-detail-panel .api-panel-section h2,
 .api-disclosure summary {
   color: var(--heading);

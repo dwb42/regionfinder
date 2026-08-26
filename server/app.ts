@@ -6,6 +6,9 @@ import { OsrmDrivingRouteProvider } from './driving/osrmDrivingRouteProvider'
 import { DrivingRouteProviderError, type DrivingRouteProvider } from './driving/types'
 import { DbTransportRestProvider, RealtimeProviderError, type RealtimeItineraryProvider } from './realtime/dbTransportRestProvider'
 import {
+  administrativeAreaLevelSchema,
+  administrativeAreaStateSchema,
+  administrativeAreaTileQuerySchema,
   itineraryQuerySchema,
   metricsQuerySchema,
   placeCategorySchema,
@@ -46,6 +49,14 @@ function forbidden(message: string) {
 
 function placeCategories(value: string | undefined) {
   return splitCsv(value).map((category) => placeCategorySchema.parse(category))
+}
+
+function administrativeAreaLevels(value: string | undefined) {
+  return splitCsv(value).map((level) => administrativeAreaLevelSchema.parse(level))
+}
+
+function administrativeAreaStates(value: string | undefined) {
+  return splitCsv(value).map((state) => administrativeAreaStateSchema.parse(state))
 }
 
 function publicIdAliases(publicId: string): string[] {
@@ -371,6 +382,23 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     reply.header('Content-Type', 'application/vnd.mapbox-vector-tile')
     reply.header('Cache-Control', 'public, max-age=300')
     reply.header('ETag', `"places-${params.z}-${params.x}-${params.y}-${categories.join('-')}-${states.join('-')}"`)
+
+    return tile ?? Buffer.alloc(0)
+  })
+
+  app.get('/api/v1/tiles/administrative-areas/:z/:x/:y.mvt', async (request, reply) => {
+    const params = tileParamsSchema.parse(request.params)
+    const query = administrativeAreaTileQuerySchema.parse(request.query)
+    const levels = administrativeAreaLevels(query.levels)
+    const states = administrativeAreaStates(query.states)
+    const tile = await options.repository.administrativeAreaTile(params.z, params.x, params.y, levels, states)
+
+    reply.header('Content-Type', 'application/vnd.mapbox-vector-tile')
+    reply.header('Cache-Control', 'public, max-age=300')
+    reply.header(
+      'ETag',
+      `"administrative-areas-${params.z}-${params.x}-${params.y}-${levels.join('-')}-${states.join('-')}"`,
+    )
 
     return tile ?? Buffer.alloc(0)
   })

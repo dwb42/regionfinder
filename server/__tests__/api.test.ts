@@ -222,6 +222,63 @@ describe('Regionfinder API', () => {
     })
   })
 
+  it('serves administrative area tiles with level and state cache keys', async () => {
+    class CapturingAdministrativeAreaRepository extends FixtureRepository {
+      administrativeAreaTileCall: {
+        z: number
+        x: number
+        y: number
+        levels: Array<'county' | 'municipality'>
+        states: string[]
+      } | null = null
+
+      override async administrativeAreaTile(
+        z: number,
+        x: number,
+        y: number,
+        levels: Array<'county' | 'municipality'> = [],
+        states: string[] = [],
+      ): Promise<Buffer | null> {
+        this.administrativeAreaTileCall = { z, x, y, levels, states }
+        return Buffer.from('fixture-administrative-area-tile')
+      }
+    }
+
+    const repository = new CapturingAdministrativeAreaRepository()
+    const app = await buildApp({ repository, logger: false })
+    const response = await app.inject(
+      '/api/v1/tiles/administrative-areas/9/270/166.mvt?levels=county,municipality&states=HH,SH',
+    )
+
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['content-type']).toContain('application/vnd.mapbox-vector-tile')
+    expect(response.headers['cache-control']).toContain('max-age=300')
+    expect(response.headers.etag).toContain(
+      'administrative-areas-9-270-166-county-municipality-HH-SH',
+    )
+    expect(response.body).toBe('fixture-administrative-area-tile')
+    expect(repository.administrativeAreaTileCall).toEqual({
+      z: 9,
+      x: 270,
+      y: 166,
+      levels: ['county', 'municipality'],
+      states: ['HH', 'SH'],
+    })
+  })
+
+  it('rejects unsupported administrative area filters', async () => {
+    const app = await withApp()
+    const invalidLevel = await app.inject(
+      '/api/v1/tiles/administrative-areas/9/270/166.mvt?levels=district',
+    )
+    const invalidState = await app.inject(
+      '/api/v1/tiles/administrative-areas/9/270/166.mvt?states=BE',
+    )
+
+    expect(invalidLevel.statusCode).toBe(400)
+    expect(invalidState.statusCode).toBe(400)
+  })
+
   it('rejects unsupported place categories', async () => {
     const app = await withApp()
     const response = await app.inject('/api/v1/tiles/places/8/135/83.mvt?categories=church')

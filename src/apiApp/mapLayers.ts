@@ -1,12 +1,13 @@
 import type { Polygon } from 'geojson'
 import type { ExpressionSpecification, FilterSpecification, Map, StyleSpecification } from 'maplibre-gl'
-import type { PlaceCategory } from '../api/contracts'
+import type { AdministrativeAreaLevel, AdministrativeAreaSelection, PlaceCategory } from '../api/contracts'
 import { apiBaseUrl } from '../data/api'
 import { travelTimeWindowColors, travelTimeWindows, type ModeLayerId, type TravelTimeWindow } from './config'
 import { minutes } from './formatters'
 
 export const mapLibreBaseStyle: StyleSpecification = {
   version: 8,
+  glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
   sources: {
     'street-base': {
       type: 'raster',
@@ -103,6 +104,7 @@ const routeColorExpression: ExpressionSpecification = [
 const railRouteModes = new Set(['ICE', 'IC', 'EC', 'RE', 'RB', 'RAIL', 'S', 'AKN', 'U'])
 const defaultSchoolStates = ['HH', 'SH', 'MV', 'NI']
 const defaultPlaceStates = ['HH', 'SH', 'MV', 'NI']
+const defaultAdministrativeAreaStates = ['HH', 'SH', 'MV', 'NI']
 
 export type TransitTileSourceKeys = {
   stops: string
@@ -195,6 +197,28 @@ function placeTileUrl(categories: PlaceCategory[]): string {
 
   return `${apiBaseUrl}/api/v1/tiles/places/{z}/{x}/{y}.mvt?${params}`
 }
+
+function administrativeAreaTileUrl(levels: AdministrativeAreaLevel[]): string {
+  const params = new URLSearchParams({
+    levels: levels.join(','),
+    states: defaultAdministrativeAreaStates.join(','),
+  })
+
+  return `${apiBaseUrl}/api/v1/tiles/administrative-areas/{z}/{x}/{y}.mvt?${params}`
+}
+
+export function administrativeAreaTileSourceKey(levels: AdministrativeAreaLevel[]): string {
+  return levels.join(',')
+}
+
+export function administrativeAreaLevelLabel(level: AdministrativeAreaLevel): string {
+  return level === 'county' ? 'Landkreis' : 'Gemeinde'
+}
+
+export const administrativeAreaHigherPriorityClickLayerIds = [
+  'regionfinder-stops-symbol',
+  'regionfinder-places-symbol',
+] as const
 
 export function placeTileSourceKey(categories: PlaceCategory[]): string {
   return categories.join(',')
@@ -446,6 +470,170 @@ export function addTransitTileLayers(map: Map, modes: string[], profile: string)
   addRailRouteTileLayers(map, modes, profile)
   addRouteTileLayers(map, modes, profile)
   addStopTileLayers(map, modes, profile)
+}
+
+export function addAdministrativeAreaTileLayers(map: Map, levels: AdministrativeAreaLevel[]) {
+  map.addSource('regionfinder-administrative-areas', {
+    type: 'vector',
+    tiles: [administrativeAreaTileUrl(levels)],
+    minzoom: 6,
+    maxzoom: 14,
+  })
+
+  const beforeLayer = firstExistingLayer(map, [
+    'regionfinder-rail-routes-casing',
+    'regionfinder-routes-line',
+    'regionfinder-stops-symbol',
+  ])
+
+  const addBelowThematicLayers = (layer: Parameters<Map['addLayer']>[0]) => {
+    map.addLayer(layer, beforeLayer)
+  }
+
+  addBelowThematicLayers({
+    id: 'regionfinder-administrative-counties-fill',
+    type: 'fill',
+    source: 'regionfinder-administrative-areas',
+    'source-layer': 'administrative_areas',
+    filter: ['==', ['get', 'level'], 'county'],
+    minzoom: 6,
+    paint: {
+      'fill-color': '#1e3a8a',
+      'fill-opacity': 0.025,
+    },
+  })
+  addBelowThematicLayers({
+    id: 'regionfinder-administrative-counties-line',
+    type: 'line',
+    source: 'regionfinder-administrative-areas',
+    'source-layer': 'administrative_areas',
+    filter: ['==', ['get', 'level'], 'county'],
+    minzoom: 6,
+    paint: {
+      'line-color': '#1e3a8a',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.25, 10, 2.1],
+      'line-opacity': 0.82,
+    },
+  })
+  addBelowThematicLayers({
+    id: 'regionfinder-administrative-municipalities-fill',
+    type: 'fill',
+    source: 'regionfinder-administrative-areas',
+    'source-layer': 'administrative_areas',
+    filter: ['==', ['get', 'level'], 'municipality'],
+    minzoom: 9,
+    paint: {
+      'fill-color': '#475569',
+      'fill-opacity': 0.015,
+    },
+  })
+  addBelowThematicLayers({
+    id: 'regionfinder-administrative-municipalities-line',
+    type: 'line',
+    source: 'regionfinder-administrative-areas',
+    'source-layer': 'administrative_areas',
+    filter: ['==', ['get', 'level'], 'municipality'],
+    minzoom: 9,
+    paint: {
+      'line-color': '#475569',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 9, 0.55, 13, 1],
+      'line-opacity': 0.68,
+    },
+  })
+  addBelowThematicLayers({
+    id: 'regionfinder-administrative-selection-fill',
+    type: 'fill',
+    source: 'regionfinder-administrative-areas',
+    'source-layer': 'administrative_areas',
+    filter: ['==', ['get', 'id'], ''],
+    paint: {
+      'fill-color': '#f59e0b',
+      'fill-opacity': 0.24,
+    },
+  })
+  addBelowThematicLayers({
+    id: 'regionfinder-administrative-selection-line',
+    type: 'line',
+    source: 'regionfinder-administrative-areas',
+    'source-layer': 'administrative_areas',
+    filter: ['==', ['get', 'id'], ''],
+    paint: {
+      'line-color': '#d97706',
+      'line-width': 3,
+      'line-opacity': 0.95,
+    },
+  })
+  addBelowThematicLayers({
+    id: 'regionfinder-administrative-counties-label',
+    type: 'symbol',
+    source: 'regionfinder-administrative-areas',
+    'source-layer': 'administrative_area_labels',
+    filter: ['==', ['get', 'level'], 'county'],
+    minzoom: 7,
+    maxzoom: 10,
+    layout: {
+      'text-field': ['get', 'name'],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 7, 11, 9, 13],
+      'text-allow-overlap': false,
+    },
+    paint: {
+      'text-color': '#172554',
+      'text-halo-color': 'rgba(255, 255, 255, 0.9)',
+      'text-halo-width': 1.4,
+    },
+  })
+  addBelowThematicLayers({
+    id: 'regionfinder-administrative-municipalities-label',
+    type: 'symbol',
+    source: 'regionfinder-administrative-areas',
+    'source-layer': 'administrative_area_labels',
+    filter: ['==', ['get', 'level'], 'municipality'],
+    minzoom: 10,
+    layout: {
+      'text-field': ['get', 'name'],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 10, 10, 13, 12],
+      'text-allow-overlap': false,
+    },
+    paint: {
+      'text-color': '#334155',
+      'text-halo-color': 'rgba(255, 255, 255, 0.92)',
+      'text-halo-width': 1.2,
+    },
+  })
+}
+
+export function applyAdministrativeAreaSelection(map: Map, id: string | null) {
+  const filter: FilterSpecification = ['==', ['get', 'id'], id ?? '']
+
+  for (const layerId of [
+    'regionfinder-administrative-selection-fill',
+    'regionfinder-administrative-selection-line',
+  ]) {
+    if (map.getLayer(layerId)) {
+      map.setFilter(layerId, filter)
+    }
+  }
+}
+
+export function removeAdministrativeAreaTileLayers(map: Map) {
+  for (const layerId of [
+    'regionfinder-administrative-municipalities-label',
+    'regionfinder-administrative-counties-label',
+    'regionfinder-administrative-selection-line',
+    'regionfinder-administrative-selection-fill',
+    'regionfinder-administrative-municipalities-line',
+    'regionfinder-administrative-municipalities-fill',
+    'regionfinder-administrative-counties-line',
+    'regionfinder-administrative-counties-fill',
+  ]) {
+    if (map.getLayer(layerId)) {
+      map.removeLayer(layerId)
+    }
+  }
+
+  if (map.getSource('regionfinder-administrative-areas')) {
+    map.removeSource('regionfinder-administrative-areas')
+  }
 }
 
 function ensureSchoolIcon(map: Map) {
@@ -876,11 +1064,9 @@ export function createSchoolHoverPopupContent({
 export function createPlaceHoverPopupContent({
   name,
   category,
-  stateCode,
 }: {
   name: string
   category: string | null
-  stateCode: string | null
 }): HTMLDivElement {
   const wrapper = document.createElement('div')
   wrapper.className = 'map-popup place-hover-popup'
@@ -893,11 +1079,52 @@ export function createPlaceHoverPopupContent({
   type.textContent = `Kategorie: ${placeCategoryLabel(category)}`
   wrapper.append(type)
 
-  if (stateCode) {
-    const state = document.createElement('span')
-    state.textContent = `Bundesland: ${stateCode}`
-    wrapper.append(state)
+  return wrapper
+}
+
+export function administrativeAreaSelectionFromProperties(
+  properties: Record<string, unknown> | null | undefined,
+): AdministrativeAreaSelection | null {
+  const id = stringFeatureProperty(properties?.id)
+  const level = stringFeatureProperty(properties?.level)
+  const name = stringFeatureProperty(properties?.name)
+  const areaType = stringFeatureProperty(properties?.area_type)
+  const officialKey = stringFeatureProperty(properties?.official_key)
+  const stateCode = stringFeatureProperty(properties?.state_code)
+
+  if (
+    !id ||
+    (level !== 'county' && level !== 'municipality') ||
+    !name ||
+    !areaType ||
+    !officialKey ||
+    !stateCode
+  ) {
+    return null
   }
 
-  return wrapper
+  return {
+    id,
+    level,
+    name,
+    areaType,
+    officialKey,
+    stateCode,
+    parentId: stringFeatureProperty(properties?.parent_id),
+    parentName: stringFeatureProperty(properties?.parent_name),
+  }
+}
+
+export function preferredAdministrativeAreaSelection(
+  features: Array<{ properties?: Record<string, unknown> | null }>,
+  hasHigherPriorityFeature = false,
+): AdministrativeAreaSelection | null {
+  if (hasHigherPriorityFeature) {
+    return null
+  }
+
+  const feature =
+    features.find((candidate) => candidate.properties?.level === 'municipality') ?? features[0]
+
+  return administrativeAreaSelectionFromProperties(feature?.properties)
 }

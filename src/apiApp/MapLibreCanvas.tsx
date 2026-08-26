@@ -2,15 +2,24 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FeatureCollection, Polygon } from 'geojson'
 import maplibregl, { type Map } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import type { ApiStopSelectionPreview, PlaceCategory } from '../api/contracts'
+import type {
+  AdministrativeAreaLevel,
+  AdministrativeAreaSelection,
+  ApiStopSelectionPreview,
+  PlaceCategory,
+} from '../api/contracts'
 import type { MapBaseLayer, TravelTimeWindow } from './config'
 import {
+  addAdministrativeAreaTileLayers,
   addPlaceTileLayer,
   addRailRouteTileLayers,
   addRouteTileLayers,
   addSchoolTileLayer,
   addStopTileLayers,
   addTransitTileLayers,
+  administrativeAreaHigherPriorityClickLayerIds,
+  administrativeAreaTileSourceKey,
+  applyAdministrativeAreaSelection,
   applyRouteLayerState,
   applyStopLayerState,
   circlePolygon,
@@ -20,6 +29,8 @@ import {
   mapLibreBaseStyle,
   numericFeatureProperty,
   placeTileSourceKey,
+  preferredAdministrativeAreaSelection,
+  removeAdministrativeAreaTileLayers,
   removePlaceTileLayer,
   removeSchoolTileLayer,
   removeRailRouteTileLayers,
@@ -58,24 +69,32 @@ export function MapLibreCanvas({
   mapBaseLayer,
   schoolCategories,
   placeCategories,
+  administrativeAreaLevels,
+  selectedAdministrativeAreaId,
   tileModes,
   selectedTimeWindows,
   showResidentialRegions,
   residentialRadiusMeters,
   profile,
   onSelect,
+  onSelectPlace,
+  onSelectAdministrativeArea,
   onTileLoadingChange,
 }: {
   selectedStop: SelectedMapStop | null
   mapBaseLayer: MapBaseLayer
   schoolCategories: string[]
   placeCategories: PlaceCategory[]
+  administrativeAreaLevels: AdministrativeAreaLevel[]
+  selectedAdministrativeAreaId: string | null
   tileModes: string[]
   selectedTimeWindows: TravelTimeWindow[]
   showResidentialRegions: boolean
   residentialRadiusMeters: number
   profile: string
   onSelect: (selection: ApiStopSelectionPreview) => void
+  onSelectPlace: (placeId: string) => void
+  onSelectAdministrativeArea: (selection: AdministrativeAreaSelection) => void
   onTileLoadingChange: (isLoading: boolean) => void
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null)
@@ -86,6 +105,7 @@ export function MapLibreCanvas({
   const selectedTimeWindowsRef = useRef(selectedTimeWindows)
   const activeSchoolTileSourceKeyRef = useRef(schoolTileSourceKey(schoolCategories))
   const activePlaceTileSourceKeyRef = useRef(placeTileSourceKey(placeCategories))
+  const activeAdministrativeAreaTileSourceKeyRef = useRef(administrativeAreaTileSourceKey(administrativeAreaLevels))
   const hoverPopupRef = useRef<maplibregl.Popup | null>(null)
   const currentHoverFeatureRef = useRef<string | null>(null)
   const residentialSettingsRef = useRef({ showResidentialRegions, residentialRadiusMeters })
@@ -386,6 +406,92 @@ export function MapLibreCanvas({
   useEffect(() => {
     const map = mapRef.current
 
+    if (!mapReady || !map) {
+      return
+    }
+
+    const nextSourceKey = administrativeAreaTileSourceKey(administrativeAreaLevels)
+
+    if (administrativeAreaLevels.length === 0) {
+      removeAdministrativeAreaTileLayers(map)
+      activeAdministrativeAreaTileSourceKeyRef.current = nextSourceKey
+      return
+    }
+
+    if (
+      !map.getLayer('regionfinder-administrative-counties-fill') ||
+      activeAdministrativeAreaTileSourceKeyRef.current !== nextSourceKey
+    ) {
+      removeAdministrativeAreaTileLayers(map)
+      addAdministrativeAreaTileLayers(map, administrativeAreaLevels)
+      activeAdministrativeAreaTileSourceKeyRef.current = nextSourceKey
+      onTileLoadingChange(true)
+    }
+
+    const areaLayerIds = [
+      'regionfinder-administrative-municipalities-fill',
+      'regionfinder-administrative-counties-fill',
+    ].filter((layerId) => map.getLayer(layerId))
+
+    const higherPriorityFeatureAt = (point: maplibregl.PointLike) => {
+      const higherPriorityLayers = administrativeAreaHigherPriorityClickLayerIds.filter((layerId) =>
+        map.getLayer(layerId),
+      )
+
+      return higherPriorityLayers.length > 0 && map.queryRenderedFeatures(point, { layers: higherPriorityLayers }).length > 0
+    }
+
+    const administrativeSelectionAt = (point: maplibregl.PointLike) => {
+      const features = map.queryRenderedFeatures(point, { layers: areaLayerIds })
+
+      return preferredAdministrativeAreaSelection(features, higherPriorityFeatureAt(point))
+    }
+
+    const handleClick = (event: maplibregl.MapMouseEvent) => {
+      const selection = administrativeSelectionAt(event.point)
+
+      if (selection) {
+        onSelectAdministrativeArea(selection)
+      }
+    }
+
+    const handleSourceData = (event: maplibregl.MapSourceDataEvent) => {
+      if (
+        event.sourceId === 'regionfinder-administrative-areas' &&
+        map.isSourceLoaded('regionfinder-administrative-areas')
+      ) {
+        onTileLoadingChange(false)
+      }
+    }
+
+    map.on('click', handleClick)
+    map.on('sourcedata', handleSourceData)
+
+    return () => {
+      map.off('click', handleClick)
+      map.off('sourcedata', handleSourceData)
+      removeAdministrativeAreaTileLayers(map)
+    }
+  }, [
+    administrativeAreaLevels,
+    mapReady,
+    onSelectAdministrativeArea,
+    onTileLoadingChange,
+  ])
+
+  useEffect(() => {
+    const map = mapRef.current
+
+    if (!mapReady || !map) {
+      return
+    }
+
+    applyAdministrativeAreaSelection(map, selectedAdministrativeAreaId)
+  }, [administrativeAreaLevels, mapReady, selectedAdministrativeAreaId])
+
+  useEffect(() => {
+    const map = mapRef.current
+
     if (!map || !selectedStop) {
       return
     }
@@ -549,7 +655,6 @@ export function MapLibreCanvas({
           createPlaceHoverPopupContent({
             name: fallbackName ?? 'Ort',
             category: stringFeatureProperty(feature?.properties?.category),
-            stateCode: stringFeatureProperty(feature?.properties?.state_code),
           }),
         )
         .addTo(map)
@@ -564,6 +669,13 @@ export function MapLibreCanvas({
       currentHoverFeatureRef.current = null
       hoverPopupRef.current?.remove()
     }
+    const handleClick = (event: maplibregl.MapLayerMouseEvent) => {
+      const id = stringFeatureProperty(event.features?.[0]?.properties?.id)
+
+      if (id) {
+        onSelectPlace(id)
+      }
+    }
     const handleSourceData = (event: maplibregl.MapSourceDataEvent) => {
       if (event.sourceId === 'regionfinder-places' && map.isSourceLoaded('regionfinder-places')) {
         onTileLoadingChange(false)
@@ -573,17 +685,19 @@ export function MapLibreCanvas({
     map.on('mouseenter', 'regionfinder-places-symbol', handleMouseEnter)
     map.on('mousemove', 'regionfinder-places-symbol', showPlaceHoverPopup)
     map.on('mouseleave', 'regionfinder-places-symbol', handleMouseLeave)
+    map.on('click', 'regionfinder-places-symbol', handleClick)
     map.on('sourcedata', handleSourceData)
 
     return () => {
       map.off('mouseenter', 'regionfinder-places-symbol', handleMouseEnter)
       map.off('mousemove', 'regionfinder-places-symbol', showPlaceHoverPopup)
       map.off('mouseleave', 'regionfinder-places-symbol', handleMouseLeave)
+      map.off('click', 'regionfinder-places-symbol', handleClick)
       map.off('sourcedata', handleSourceData)
       handleMouseLeave()
       removePlaceTileLayer(map)
     }
-  }, [mapReady, onTileLoadingChange, placeCategories])
+  }, [mapReady, onSelectPlace, onTileLoadingChange, placeCategories])
 
   useEffect(() => {
     const map = mapRef.current

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import sqlite3
 import subprocess
 import zipfile
@@ -24,6 +23,12 @@ TARGET_STATES = {
     "04": ("DE-HB", "Bremen"),
 }
 
+IMPORT_LAYERS = {
+    "state": ("lan", "admin_boundaries_import"),
+    "county": ("krs", "administrative_counties_import"),
+    "municipality": ("gem", "administrative_municipalities_import"),
+}
+
 
 def extract() -> Path:
     if not BKG_ZIP.exists():
@@ -43,23 +48,32 @@ def extract() -> Path:
     return gpkg_files[0]
 
 
-def inspect_gpkg(gpkg: Path) -> tuple[str, list[dict[str, str]]]:
+def inspect_gpkg(gpkg: Path) -> tuple[dict[str, str], list[dict[str, str]]]:
     with sqlite3.connect(gpkg) as conn:
         rows = conn.execute("SELECT table_name, data_type, identifier, srs_id FROM gpkg_contents").fetchall()
         layers = [
             {"table_name": row[0], "data_type": row[1], "identifier": row[2], "srs_id": str(row[3])}
             for row in rows
         ]
-    candidates = [layer["table_name"] for layer in layers if "lan" in layer["table_name"].lower()]
-    if not candidates:
-        candidates = [layer["table_name"] for layer in layers if layer["data_type"] == "features"]
-    if not candidates:
-        raise SystemExit("No feature layer found in BKG GeoPackage")
-    return candidates[0], layers
+    feature_layers = [layer["table_name"] for layer in layers if layer["data_type"] == "features"]
+    selected: dict[str, str] = {}
+
+    for level, (suffix, _) in IMPORT_LAYERS.items():
+        exact = f"vg250_{suffix}"
+        candidates = [name for name in feature_layers if name.lower() == exact]
+
+        if not candidates:
+            candidates = [name for name in feature_layers if name.lower().endswith(f"_{suffix}") and not name.lower().startswith("v_")]
+
+        if not candidates:
+            raise SystemExit(f"No BKG {level} feature layer found in GeoPackage")
+
+        selected[level] = candidates[0]
+
+    return selected, layers
 
 
-def docker_gdal_import(gpkg: Path, layer: str) -> None:
-    subprocess.run(["docker", "pull", GDAL_IMAGE], check=True)
+def docker_gdal_import(gpkg: Path, layer: str, target_table: str) -> None:
     abs_dir = gpkg.parent.resolve()
     gpkg_name = gpkg.name
     pg = "PG:host=host.docker.internal port=55432 dbname=regionfinder user=regionfinder password=regionfinder"
@@ -77,7 +91,7 @@ def docker_gdal_import(gpkg: Path, layer: str) -> None:
         f"/data/{gpkg_name}",
         layer,
         "-nln",
-        "admin_boundaries_import",
+        target_table,
         "-overwrite",
         "-t_srs",
         "EPSG:4326",
@@ -87,7 +101,7 @@ def docker_gdal_import(gpkg: Path, layer: str) -> None:
     subprocess.run(cmd, check=True)
 
 
-def normalize_import(layer: str, layers: list[dict[str, str]]) -> None:
+def normalize_import(selected_layers: dict[str, str], layers: list[dict[str, str]]) -> None:
     with psycopg.connect(DATABASE_URL) as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -97,7 +111,7 @@ def normalize_import(layer: str, layers: list[dict[str, str]]) -> None:
                 ON CONFLICT (source_key) DO UPDATE SET configuration = EXCLUDED.configuration
                 RETURNING id
                 """,
-                [json.dumps({"layer": layer, "layers": layers})],
+                [json.dumps({"layers": selected_layers, "available_layers": layers})],
             )
             source_id = cur.fetchone()[0]
             cur.execute("DELETE FROM admin_boundaries WHERE source_id = %s OR state_code IN ('DE-HH','DE-NI','DE-SH','DE-MV','DE-HB')", [source_id])
@@ -141,28 +155,189 @@ def normalize_import(layer: str, layers: list[dict[str, str]]) -> None:
                     source_layer = EXCLUDED.source_layer,
                     imported_at = now()
                 """,
-                [source_id, layer],
+                [source_id, selected_layers["state"]],
+            )
+            cur.execute(
+                """
+                UPDATE administrative_areas
+                SET is_active = false,
+                    updated_at = now(),
+                    imported_at = now()
+                WHERE source_id = %s
+                  AND level IN ('county', 'municipality')
+                  AND is_active = true
+                """,
+                [source_id],
+            )
+            cur.execute(
+                """
+                WITH raw AS (
+                  SELECT NULLIF(ags, '') AS official_key,
+                         NULLIF(gen, '') AS name,
+                         COALESCE(NULLIF(bez, ''), 'Landkreis') AS area_type,
+                         CASE sn_l
+                           WHEN '01' THEN 'SH'
+                           WHEN '02' THEN 'HH'
+                           WHEN '03' THEN 'NI'
+                           WHEN '13' THEN 'MV'
+                         END AS state_code,
+                         ST_Multi(ST_CollectionExtract(ST_MakeValid(geom), 3))::geometry(MultiPolygon, 4326) AS geometry
+                  FROM administrative_counties_import
+                  WHERE gf = 4
+                    AND sn_l IN ('01', '02', '03', '13')
+                ),
+                dissolved AS (
+                  SELECT official_key,
+                         max(name) AS name,
+                         max(area_type) AS area_type,
+                         max(state_code) AS state_code,
+                         ST_Multi(
+                           ST_CollectionExtract(
+                             ST_MakeValid(ST_UnaryUnion(ST_Collect(geometry))),
+                             3
+                           )
+                         )::geometry(MultiPolygon, 4326) AS geometry
+                  FROM raw
+                  WHERE official_key IS NOT NULL
+                    AND name IS NOT NULL
+                    AND NOT ST_IsEmpty(geometry)
+                  GROUP BY official_key
+                )
+                INSERT INTO administrative_areas (
+                  level, official_key, name, area_type, state_code, parent_id,
+                  source_id, source_layer, geometry, label_point, is_active, imported_at, updated_at
+                )
+                SELECT 'county', official_key, name, area_type, state_code, NULL,
+                       %s, %s, geometry, ST_PointOnSurface(geometry), true, now(), now()
+                FROM dissolved
+                ON CONFLICT (level, official_key) DO UPDATE
+                SET name = EXCLUDED.name,
+                    area_type = EXCLUDED.area_type,
+                    state_code = EXCLUDED.state_code,
+                    parent_id = NULL,
+                    source_id = EXCLUDED.source_id,
+                    source_layer = EXCLUDED.source_layer,
+                    geometry = EXCLUDED.geometry,
+                    label_point = EXCLUDED.label_point,
+                    is_active = true,
+                    imported_at = now(),
+                    updated_at = now()
+                """,
+                [source_id, selected_layers["county"]],
+            )
+            cur.execute(
+                """
+                WITH raw AS (
+                  SELECT NULLIF(ags, '') AS official_key,
+                         NULLIF(gen, '') AS name,
+                         COALESCE(NULLIF(bez, ''), 'Gemeinde') AS area_type,
+                         CASE sn_l
+                           WHEN '01' THEN 'SH'
+                           WHEN '02' THEN 'HH'
+                           WHEN '03' THEN 'NI'
+                           WHEN '13' THEN 'MV'
+                         END AS state_code,
+                         ST_Multi(ST_CollectionExtract(ST_MakeValid(geom), 3))::geometry(MultiPolygon, 4326) AS geometry
+                  FROM administrative_municipalities_import
+                  WHERE gf = 4
+                    AND sn_l IN ('01', '02', '03', '13')
+                ),
+                dissolved AS (
+                  SELECT official_key,
+                         max(name) AS name,
+                         max(area_type) AS area_type,
+                         max(state_code) AS state_code,
+                         ST_Multi(
+                           ST_CollectionExtract(
+                             ST_MakeValid(ST_UnaryUnion(ST_Collect(geometry))),
+                             3
+                           )
+                         )::geometry(MultiPolygon, 4326) AS geometry
+                  FROM raw
+                  WHERE official_key IS NOT NULL
+                    AND name IS NOT NULL
+                    AND NOT ST_IsEmpty(geometry)
+                  GROUP BY official_key
+                )
+                INSERT INTO administrative_areas (
+                  level, official_key, name, area_type, state_code, parent_id,
+                  source_id, source_layer, geometry, label_point, is_active, imported_at, updated_at
+                )
+                SELECT 'municipality', municipality.official_key, municipality.name,
+                       municipality.area_type, municipality.state_code, county.id,
+                       %s, %s, municipality.geometry, ST_PointOnSurface(municipality.geometry), true, now(), now()
+                FROM dissolved municipality
+                JOIN administrative_areas county
+                  ON county.level = 'county'
+                 AND county.official_key = left(municipality.official_key, 5)
+                 AND county.is_active = true
+                ON CONFLICT (level, official_key) DO UPDATE
+                SET name = EXCLUDED.name,
+                    area_type = EXCLUDED.area_type,
+                    state_code = EXCLUDED.state_code,
+                    parent_id = EXCLUDED.parent_id,
+                    source_id = EXCLUDED.source_id,
+                    source_layer = EXCLUDED.source_layer,
+                    geometry = EXCLUDED.geometry,
+                    label_point = EXCLUDED.label_point,
+                    is_active = true,
+                    imported_at = now(),
+                    updated_at = now()
+                """,
+                [source_id, selected_layers["municipality"]],
             )
             cur.execute("SELECT state_code, name, ST_Area(geometry::geography) FROM admin_boundaries ORDER BY state_code")
-            rows = cur.fetchall()
+            boundary_rows = cur.fetchall()
+            cur.execute(
+                """
+                SELECT level, state_code, count(*)
+                FROM administrative_areas
+                WHERE is_active = true
+                  AND source_id = %s
+                GROUP BY level, state_code
+                ORDER BY level, state_code
+                """,
+                [source_id],
+            )
+            area_rows = cur.fetchall()
         conn.commit()
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text(
         json.dumps(
-            {"layer": layer, "layers": layers, "states": [{"state_code": r[0], "name": r[1], "area_m2": float(r[2])} for r in rows]},
+            {
+                "layers": selected_layers,
+                "available_layers": layers,
+                "states": [{"state_code": r[0], "name": r[1], "area_m2": float(r[2])} for r in boundary_rows],
+                "administrative_areas": [
+                    {"level": row[0], "state_code": row[1], "count": row[2]} for row in area_rows
+                ],
+            },
             indent=2,
             ensure_ascii=False,
         ),
         encoding="utf-8",
     )
-    print(json.dumps({"imported_states": [row[0] for row in rows], "report": str(REPORT)}, ensure_ascii=False))
+    print(
+        json.dumps(
+            {
+                "imported_states": [row[0] for row in boundary_rows],
+                "administrative_area_count": sum(row[2] for row in area_rows),
+                "report": str(REPORT),
+            },
+            ensure_ascii=False,
+        )
+    )
 
 
 def main() -> None:
     gpkg = extract()
-    layer, layers = inspect_gpkg(gpkg)
-    docker_gdal_import(gpkg, layer)
-    normalize_import(layer, layers)
+    selected_layers, layers = inspect_gpkg(gpkg)
+    subprocess.run(["docker", "pull", GDAL_IMAGE], check=True)
+
+    for level, layer in selected_layers.items():
+        docker_gdal_import(gpkg, layer, IMPORT_LAYERS[level][1])
+
+    normalize_import(selected_layers, layers)
 
 
 if __name__ == "__main__":

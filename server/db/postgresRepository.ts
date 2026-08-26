@@ -1,6 +1,7 @@
 import pg from 'pg'
 import type {
   ApiItineraryResponse,
+  AdministrativeAreaLevel,
   ApiMetrics,
   ApiPlace,
   ApiPlaceCreateRequest,
@@ -18,6 +19,7 @@ import { findRoutePattern } from './queries/routePatternQueries'
 import { findCurrentSnapshot } from './queries/snapshotQueries'
 import { findStopDetails, searchStops as searchStopsQuery } from './queries/stopQueries'
 import {
+  administrativeAreaTile as administrativeAreaTileQuery,
   placeTile as placeTileQuery,
   railNetworkTile as railNetworkTileQuery,
   routeTile as routeTileQuery,
@@ -97,5 +99,15 @@ export class PostgresRepository implements RegionfinderRepository {
 
   placeTile(z: number, x: number, y: number, categories: PlaceCategory[] = [], states: string[] = []): Promise<Buffer | null> {
     return placeTileQuery(this.pool, z, x, y, categories, states)
+  }
+
+  administrativeAreaTile(
+    z: number,
+    x: number,
+    y: number,
+    levels: AdministrativeAreaLevel[] = [],
+    states: string[] = [],
+  ): Promise<Buffer | null> {
+    return administrativeAreaTileQuery(this.pool, z, x, y, levels, states)
   }
 }

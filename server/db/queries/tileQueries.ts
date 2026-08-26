@@ -1,4 +1,97 @@
 import type { Queryable } from '../queryTypes'
+import type { AdministrativeAreaLevel } from '../../../src/api/contracts'
+
+export async function administrativeAreaTile(
+  db: Queryable,
+  z: number,
+  x: number,
+  y: number,
+  levels: AdministrativeAreaLevel[] = [],
+  states: string[] = [],
+): Promise<Buffer | null> {
+  return mvtTile(
+    db,
+    `
+    WITH bounds AS (
+      SELECT ST_TileEnvelope($1, $2, $3) AS geom,
+             ST_Transform(ST_TileEnvelope($1, $2, $3, margin => 64.0 / 4096.0), 4326) AS query_wgs84
+    ),
+    visible_areas AS (
+      SELECT area.id,
+             area.level,
+             area.name,
+             area.area_type,
+             area.official_key,
+             area.state_code,
+             area.parent_id,
+             parent.name AS parent_name,
+             area.geometry,
+             area.label_point
+      FROM administrative_areas area
+      LEFT JOIN administrative_areas parent ON parent.id = area.parent_id
+      CROSS JOIN bounds
+      WHERE area.is_active = true
+        AND area.geometry && bounds.query_wgs84
+        AND ST_Intersects(area.geometry, bounds.query_wgs84)
+        AND (cardinality($4::text[]) = 0 OR area.level = ANY($4::text[]))
+        AND (cardinality($5::text[]) = 0 OR area.state_code = ANY($5::text[]))
+        AND (area.level = 'county' OR $1 >= 9)
+    ),
+    polygons AS (
+      SELECT id::text AS id,
+             level,
+             name,
+             area_type,
+             official_key,
+             state_code,
+             parent_id::text AS parent_id,
+             parent_name,
+             ST_AsMVTGeom(
+               CASE
+                 WHEN $1 < 7 THEN ST_SimplifyPreserveTopology(ST_Transform(geometry, 3857), 500)
+                 WHEN $1 < 9 THEN ST_SimplifyPreserveTopology(ST_Transform(geometry, 3857), 150)
+                 WHEN $1 < 11 THEN ST_SimplifyPreserveTopology(ST_Transform(geometry, 3857), 40)
+                 ELSE ST_Transform(geometry, 3857)
+               END,
+               bounds.geom,
+               4096,
+               64,
+               true
+             ) AS geom
+      FROM visible_areas
+      CROSS JOIN bounds
+    ),
+    labels AS (
+      SELECT id::text AS id,
+             level,
+             name,
+             area_type,
+             official_key,
+             state_code,
+             parent_id::text AS parent_id,
+             parent_name,
+             ST_AsMVTGeom(ST_Transform(label_point, 3857), bounds.geom, 4096, 64, true) AS geom
+      FROM visible_areas
+      CROSS JOIN bounds
+      WHERE (level = 'county' AND $1 >= 7 AND $1 < 10)
+         OR (level = 'municipality' AND $1 >= 10)
+    )
+    SELECT COALESCE(
+             (SELECT ST_AsMVT(polygons, 'administrative_areas', 4096, 'geom') FROM polygons),
+             ''::bytea
+           )
+        || COALESCE(
+             (SELECT ST_AsMVT(labels, 'administrative_area_labels', 4096, 'geom') FROM labels),
+             ''::bytea
+           ) AS tile
+    `,
+    z,
+    x,
+    y,
+    levels,
+    states,
+  )
+}
 
 export async function stopTile(
   db: Queryable,

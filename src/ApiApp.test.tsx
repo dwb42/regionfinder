@@ -4,9 +4,10 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ApiSnapshot } from './api/contracts'
+import type { ApiPlace, ApiSnapshot } from './api/contracts'
 
 const mapMocks = vi.hoisted(() => ({
+  renderedAdministrativeAreaLevels: [] as string[][],
   renderedSchoolCategories: [] as string[][],
   renderedPlaceCategories: [] as string[][],
 }))
@@ -14,9 +15,14 @@ const mapMocks = vi.hoisted(() => ({
 const apiMocks = vi.hoisted(() => ({
   fetchCurrentSnapshot: vi.fn(),
   fetchDrivingRoute: vi.fn(),
+  fetchPlace: vi.fn(),
+  fetchPlaces: vi.fn(),
   fetchRealtimeItineraries: vi.fn(),
   fetchStopDetails: vi.fn(),
   fetchStopMetrics: vi.fn(),
+  createPlace: vi.fn(),
+  deletePlace: vi.fn(),
+  updatePlace: vi.fn(),
 }))
 
 vi.mock('./data/api', () => ({
@@ -26,15 +32,55 @@ vi.mock('./data/api', () => ({
 }))
 
 vi.mock('./apiApp/MapLibreCanvas', () => ({
-  MapLibreCanvas: ({ schoolCategories, placeCategories }: { schoolCategories: string[]; placeCategories: string[] }) => {
+  MapLibreCanvas: ({
+    schoolCategories,
+    placeCategories,
+    administrativeAreaLevels,
+    onSelectPlace,
+    onSelectAdministrativeArea,
+  }: {
+    schoolCategories: string[]
+    placeCategories: string[]
+    administrativeAreaLevels: Array<'county' | 'municipality'>
+    onSelectPlace: (placeId: string) => void
+    onSelectAdministrativeArea: (selection: {
+      id: string
+      level: 'county' | 'municipality'
+      name: string
+      areaType: string
+      officialKey: string
+      stateCode: string
+      parentId: string | null
+      parentName: string | null
+    }) => void
+  }) => {
+    mapMocks.renderedAdministrativeAreaLevels.push(administrativeAreaLevels)
     mapMocks.renderedSchoolCategories.push(schoolCategories)
     mapMocks.renderedPlaceCategories.push(placeCategories)
     return (
-      <div
-        data-testid="maplibre-canvas"
-        data-school-categories={schoolCategories.join(',')}
-        data-place-categories={placeCategories.join(',')}
-      />
+      <div data-testid="maplibre-canvas" data-school-categories={schoolCategories.join(',')} data-place-categories={placeCategories.join(',')}>
+        <button type="button" data-testid="select-place" onClick={() => onSelectPlace('place-1')}>
+          Ort wählen
+        </button>
+        <button
+          type="button"
+          data-testid="select-administrative-area"
+          onClick={() =>
+            onSelectAdministrativeArea({
+              id: 'municipality-1',
+              level: 'municipality',
+              name: 'Testgemeinde',
+              areaType: 'Gemeinde',
+              officialKey: '01053001',
+              stateCode: 'SH',
+              parentId: 'county-1',
+              parentName: 'Herzogtum Lauenburg',
+            })
+          }
+        >
+          Gemeinde wählen
+        </button>
+      </div>
     )
   },
 }))
@@ -63,6 +109,29 @@ const snapshot: ApiSnapshot = {
   qualityStatus: 'fixture_ready',
 }
 
+const place: ApiPlace = {
+  id: 'place-1',
+  sourceId: 'ferienhoefe_web_research',
+  sourcePlaceId: 'source-place-1',
+  origin: 'imported',
+  category: 'ferienhof',
+  name: 'Ferienhof Test',
+  stateCode: 'MV',
+  address: 'Testweg 1, 23999 Testort',
+  website: 'https://ferienhof.example',
+  coordinate: {
+    lat: 53.8,
+    lon: 10.7,
+  },
+  rawProperties: {
+    detail_url: 'https://www.openstreetmap.org/way/123',
+  },
+  importedAt: '2026-07-01T10:00:00.000Z',
+  createdAt: '2026-07-01T10:00:00.000Z',
+  updatedAt: '2026-07-01T10:00:00.000Z',
+  deletedAt: null,
+}
+
 let root: Root | null = null
 let container: HTMLDivElement | null = null
 
@@ -83,7 +152,10 @@ describe('ApiApp POI layer controls', () => {
     vi.clearAllMocks()
     mapMocks.renderedSchoolCategories.length = 0
     mapMocks.renderedPlaceCategories.length = 0
+    mapMocks.renderedAdministrativeAreaLevels.length = 0
     apiMocks.fetchCurrentSnapshot.mockResolvedValue(snapshot)
+    apiMocks.fetchPlace.mockResolvedValue(place)
+    apiMocks.fetchPlaces.mockResolvedValue([])
     container = document.createElement('div')
     document.body.append(container)
     root = createRoot(container)
@@ -154,5 +226,68 @@ describe('ApiApp POI layer controls', () => {
 
     expect(mapMocks.renderedPlaceCategories.at(-1)).toEqual(['hof', 'gut'])
     expect(container?.querySelector('[data-place-categories="hof,gut"]')).not.toBeNull()
+  })
+
+  it('starts administrative areas disabled and toggles counties and municipalities independently', async () => {
+    await act(async () => {
+      root?.render(<ApiApp />)
+    })
+    await waitFor(() => Boolean(container?.querySelector('[data-testid="maplibre-canvas"]')))
+
+    const countyCheckbox = container?.querySelector<HTMLInputElement>('#administrative-area-layer-county')
+    const municipalityCheckbox = container?.querySelector<HTMLInputElement>('#administrative-area-layer-municipality')
+
+    expect(countyCheckbox?.checked).toBe(false)
+    expect(municipalityCheckbox?.checked).toBe(false)
+    expect(mapMocks.renderedAdministrativeAreaLevels.at(-1)).toEqual([])
+
+    await act(async () => {
+      countyCheckbox?.click()
+      municipalityCheckbox?.click()
+    })
+
+    expect(mapMocks.renderedAdministrativeAreaLevels.at(-1)).toEqual(['county', 'municipality'])
+  })
+
+  it('opens administrative area details with municipality hierarchy data', async () => {
+    await act(async () => {
+      root?.render(<ApiApp />)
+    })
+    await waitFor(() => Boolean(container?.querySelector('[data-testid="maplibre-canvas"]')))
+
+    await act(async () => {
+      container?.querySelector<HTMLButtonElement>('[data-testid="select-administrative-area"]')?.click()
+    })
+
+    const panel = container?.querySelector<HTMLElement>('[aria-label="Verwaltungsgebiets-Details"]')
+    expect(panel).not.toBeNull()
+    expect(panel?.textContent).toContain('Testgemeinde')
+    expect(panel?.textContent).toContain('Gemeinde')
+    expect(panel?.textContent).toContain('Amtlicher Schlüssel: 01053001')
+    expect(panel?.textContent).toContain('Landkreis: Herzogtum Lauenburg')
+  })
+
+  it('opens place details in the right panel with place and source websites', async () => {
+    await act(async () => {
+      root?.render(<ApiApp />)
+    })
+    await waitFor(() => Boolean(container?.querySelector('[data-testid="maplibre-canvas"]')))
+
+    await act(async () => {
+      container?.querySelector<HTMLButtonElement>('[data-testid="select-place"]')?.click()
+    })
+
+    await waitFor(() => container?.textContent?.includes('Ferienhof Test') ?? false)
+
+    expect(apiMocks.fetchPlace).toHaveBeenCalledWith('place-1')
+    expect(container?.querySelector<HTMLElement>('[aria-label="Ort-Details"]')).not.toBeNull()
+    expect(container?.textContent).toContain('Ferienhof Test')
+    expect(container?.textContent).toContain('Ferienhof')
+    expect(container?.textContent).toContain('Testweg 1, 23999 Testort')
+    expect(container?.textContent).toContain('Website öffnen')
+    expect(container?.textContent).toContain('Quelle in OpenStreetMap öffnen')
+    expect(container?.textContent).not.toContain('MV')
+    expect(container?.querySelector<HTMLAnchorElement>('a[href="https://ferienhof.example"]')).not.toBeNull()
+    expect(container?.querySelector<HTMLAnchorElement>('a[href="https://www.openstreetmap.org/way/123"]')).not.toBeNull()
   })
 })

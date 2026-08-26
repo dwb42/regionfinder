@@ -2,6 +2,9 @@ import { z } from 'zod'
 
 export const placeCategories = ['hof', 'ferienhof', 'gut', 'museum'] as const
 export const placeCategorySchema = z.enum(placeCategories)
+export const administrativeAreaLevels = ['county', 'municipality'] as const
+export const administrativeAreaLevelSchema = z.enum(administrativeAreaLevels)
+export const administrativeAreaStateSchema = z.enum(['HH', 'SH', 'MV', 'NI'])
 
 export const stopSearchQuerySchema = z.object({
   q: z.string().default(''),
@@ -44,6 +47,11 @@ export const schoolTileQuerySchema = z.object({
 
 export const placeTileQuerySchema = z.object({
   categories: z.string().optional(),
+  states: z.string().optional(),
+})
+
+export const administrativeAreaTileQuerySchema = z.object({
+  levels: z.string().optional(),
   states: z.string().optional(),
 })
 

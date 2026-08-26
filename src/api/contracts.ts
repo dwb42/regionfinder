@@ -46,6 +46,19 @@ export type ApiStopSelectionPreview = Pick<ApiStopSearchResult, 'publicId' | 'na
   routeCount: number | null
 }
 
+export type AdministrativeAreaLevel = 'county' | 'municipality'
+
+export type AdministrativeAreaSelection = {
+  id: string
+  level: AdministrativeAreaLevel
+  name: string
+  areaType: string
+  officialKey: string
+  stateCode: string
+  parentId: string | null
+  parentName: string | null
+}
+
 export type ApiStopDetails = ApiStopSearchResult & {
   dataStand: {
     snapshotId: string

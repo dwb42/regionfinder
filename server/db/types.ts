@@ -1,5 +1,6 @@
 import type {
   ApiItineraryResponse,
+  AdministrativeAreaLevel,
   ApiMetrics,
   ApiPlace,
   ApiPlaceCreateRequest,
@@ -42,4 +43,5 @@ export type RegionfinderRepository = {
   railNetworkTile(z: number, x: number, y: number): Promise<Buffer | null>
   schoolTile(z: number, x: number, y: number, categories?: string[], states?: string[]): Promise<Buffer | null>
   placeTile(z: number, x: number, y: number, categories?: PlaceCategory[], states?: string[]): Promise<Buffer | null>
+  administrativeAreaTile(z: number, x: number, y: number, levels?: AdministrativeAreaLevel[], states?: string[]): Promise<Buffer | null>
 }
