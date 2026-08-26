@@ -11,15 +11,9 @@ export const mapLibreBaseStyle: StyleSpecification = {
   sources: {
     'street-base': {
       type: 'raster',
-      tiles: [
-        'https://a.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png',
-        'https://b.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png',
-        'https://c.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png',
-        'https://d.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png',
-      ],
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
       tileSize: 256,
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     },
     'satellite-base': {
       type: 'raster',
@@ -27,17 +21,13 @@ export const mapLibreBaseStyle: StyleSpecification = {
       tileSize: 256,
       attribution: 'Tiles &copy; Esri, Maxar, Earthstar Geographics, and the GIS User Community',
     },
-    'place-labels': {
+    'satellite-reference': {
       type: 'raster',
       tiles: [
-        'https://a.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}.png',
-        'https://b.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}.png',
-        'https://c.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}.png',
-        'https://d.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}.png',
+        'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
       ],
       tileSize: 256,
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      attribution: 'Tiles &copy; Esri',
     },
   },
   layers: [
@@ -53,9 +43,10 @@ export const mapLibreBaseStyle: StyleSpecification = {
       layout: { visibility: 'none' },
     },
     {
-      id: 'place-labels',
+      id: 'satellite-reference',
       type: 'raster',
-      source: 'place-labels',
+      source: 'satellite-reference',
+      layout: { visibility: 'none' },
     },
   ],
 }

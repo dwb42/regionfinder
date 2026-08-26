@@ -229,7 +229,7 @@ Der ausgelieferte Vite-Code enthaelt `VITE_REGIONFINDER_API_BASE_URL="http://127
 
 Nachgezogene UI-/Kartenfunktionen:
 
-- Basiskarten-Umschalter zwischen CARTO/OSM-Straßenkarte und Esri-Satellit; beide Modi verwenden ein CARTO-Ortslabel-Overlay.
+- Basiskarten-Umschalter zwischen OpenStreetMap-Straßenkarte und Esri-Satellit; der Satellitenmodus verwendet ein Esri-Orts- und Grenzlabel-Overlay.
 - StopPlaces aus MVT-Kacheln sind anklickbar und laden das API-Detailpanel.
 - Verkehrsmittel-Checkboxen filtern die MVT-Kacheln.
 - Die frühere Sidebar-Suche und Suchtrefferliste ist im API-UI entfernt. StopPlace-Details werden über Klick auf MVT-StopPlaces in der Karte geöffnet.

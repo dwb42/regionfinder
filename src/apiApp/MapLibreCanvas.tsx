@@ -401,6 +401,7 @@ export function MapLibreCanvas({
 
     map.setLayoutProperty('street-base', 'visibility', mapBaseLayer === 'street' ? 'visible' : 'none')
     map.setLayoutProperty('satellite-base', 'visibility', mapBaseLayer === 'satellite' ? 'visible' : 'none')
+    map.setLayoutProperty('satellite-reference', 'visibility', mapBaseLayer === 'satellite' ? 'visible' : 'none')
   }, [mapBaseLayer, mapReady])
 
   useEffect(() => {

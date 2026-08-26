@@ -120,7 +120,7 @@ Aktueller API-Modus:
 - Der Client entfernt und erneuert die MapLibre-Quellen bei Moduswechseln, damit keine alten ungefilterten Tiles im MapLibre-Cache sichtbar bleiben.
 - StopPlace-MVT-Features sind anklickbar und öffnen das Detailpanel.
 - Die frühere Sidebar-Suche und Suchtrefferliste ist im API-UI entfernt; der Suchendpunkt bleibt nur technische API-Oberfläche.
-- Basiskarten sind CARTO/OSM-Straßenkarte und Esri-Satellit. Beide nutzen ein gemeinsames CARTO-Ortslabel-Overlay, damit Ortsnamen in beiden Modi sichtbar sind.
+- Basiskarten sind die OpenStreetMap-Straßenkarte mit integrierten Labels und Esri-Satellit mit Esri-Orts- und Grenzlabel-Overlay.
 - Das Detailpanel rendert DB-Echtzeitverbindungen unter der Überschrift `DB Echtzeit`; lokale `/itineraries` werden dort nicht als eigener Block angezeigt.
 - Der Metrikblock zeigt `fastestSeconds` und eine tagesgenaue Direktverbindungszahl aus `directConnectionCount`, wenn `metrics` mit `date=YYYY-MM-DD` abgefragt wird.
 - Datenstand und technische StopPlace-Details sind einklappbar.

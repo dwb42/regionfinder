@@ -132,8 +132,8 @@ Aktuelle UI-Funktionen im API-Modus:
 - Die Überschrift für Verbindungsauskunft lautet `DB Echtzeit`; der frühere lokale Block `Konkrete Verbindung`/`Unser System` wird im API-Detailpanel nicht mehr gerendert.
 - Die Startzeit fuer `DB Echtzeit` sitzt im Detailpanel. `Frühere` und `Spätere` setzen die Startzeit relativ zu den aktuell geladenen Alternativen; die linke Sidebar enthält keine separate Abfahrtszeitsteuerung mehr.
 - Basiskarten-Umschalter:
-  - CARTO/OSM-Straßenkarte ohne Labels plus CARTO-Ortslabel-Overlay.
-  - Esri-Satellit plus dasselbe CARTO-Ortslabel-Overlay.
+  - OpenStreetMap-Straßenkarte mit integrierten Labels.
+  - Esri-Satellit plus Esri-Orts- und Grenzlabel-Overlay.
 - Zoom-Control sitzt links oben in der Map-Card; die aktuelle Zoomstufe wird direkt darunter angezeigt.
 - ÖPNV-Layer:
   - `Regional/Fern`

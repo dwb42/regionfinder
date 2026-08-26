@@ -155,8 +155,8 @@ Wichtige UX-Entscheidungen:
 
 - MapLibre als Kartenrenderer.
 - Basiskarten-Umschalter:
-  - CARTO/OSM-Straßenkarte ohne Labels plus CARTO-Ortslabel-Overlay
-  - Esri World Imagery Satellit plus dasselbe CARTO-Ortslabel-Overlay
+  - OpenStreetMap-Straßenkarte mit integrierten Labels
+  - Esri World Imagery Satellit plus Esri-Orts- und Grenzlabel-Overlay
 - StopPlaces und Route Patterns werden als MVTs geladen, nicht als vollständige JSON-Dateien.
 - Stationen aus Vektor-Tiles sind anklickbar und öffnen rechts StopPlace-Details, Metriken, DB-Echtzeitverbindungen und Linien.
 - Das Detailpanel zeigt unter `DB Echtzeit` bis zu drei Live-Alternativen ab der Detailpanel-Startzeit. Die Startzeit besitzt `Frühere`-/`Spätere`-Navigation; lokale `/itineraries` werden dort nicht mehr als eigener Vergleichsblock gerendert.

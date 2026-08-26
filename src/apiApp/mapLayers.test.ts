@@ -9,8 +9,24 @@ import {
   administrativeAreaSelectionFromProperties,
   administrativeAreaTileSourceKey,
   applyAdministrativeAreaSelection,
+  mapLibreBaseStyle,
   preferredAdministrativeAreaSelection,
 } from './mapLayers'
+
+describe('base map layers', () => {
+  it('uses keyless street and satellite reference tiles', () => {
+    const style = JSON.stringify(mapLibreBaseStyle)
+    const streetSource = mapLibreBaseStyle.sources?.['street-base'] as { tiles?: string[] }
+    const referenceSource = mapLibreBaseStyle.sources?.['satellite-reference'] as { tiles?: string[] }
+
+    expect(streetSource.tiles).toEqual(['https://tile.openstreetmap.org/{z}/{x}/{y}.png'])
+    expect(referenceSource.tiles?.[0]).toContain('/Reference/World_Boundaries_and_Places/')
+    expect(style).not.toContain('cartocdn.com')
+    expect(mapLibreBaseStyle.layers?.find((layer) => layer.id === 'satellite-reference')).toMatchObject({
+      layout: { visibility: 'none' },
+    })
+  })
+})
 
 describe('administrative area map layers', () => {
   it('creates zoom-dependent county and municipality layers below thematic layers', () => {
