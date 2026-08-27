@@ -3,6 +3,10 @@ import type {
   AdministrativeAreaLevel,
   ApiItineraryResponse,
   ApiMetrics,
+  ApiMunicipalityList,
+  ApiMunicipalityListCreateRequest,
+  ApiMunicipalityListMemberships,
+  ApiMunicipalityListUpdateRequest,
   ApiPlace,
   ApiPlaceCreateRequest,
   ApiPlaceUpdateRequest,
@@ -209,11 +213,16 @@ const fixturePlaces: ApiPlace[] = [
   },
 ]
 
+const fixtureMunicipalityOfficialKeys = new Set(['01053001', '02000000', '03159016', '13076090'])
+
 function searchText(stop: ApiStopSearchResult): string {
   return [stop.publicId, stop.name, stop.dhid, stop.municipalityName].filter(Boolean).join(' ').toLocaleLowerCase('de-DE')
 }
 
 export class FixtureRepository implements RegionfinderRepository {
+  private readonly fixtureMunicipalityLists: ApiMunicipalityList[] = []
+  private readonly fixtureMunicipalityMemberships = new Map<string, Set<string>>()
+
   async currentSnapshot(): Promise<ApiSnapshot> {
     return snapshot
   }
@@ -465,6 +474,132 @@ export class FixtureRepository implements RegionfinderRepository {
     return true
   }
 
+  async municipalityLists(): Promise<ApiMunicipalityList[]> {
+    return this.fixtureMunicipalityLists.map((list) => ({ ...list }))
+  }
+
+  async createMunicipalityList(input: ApiMunicipalityListCreateRequest): Promise<ApiMunicipalityList | null> {
+    if (this.fixtureMunicipalityLists.some((list) => normalizeListName(list.name) === normalizeListName(input.name))) {
+      return null
+    }
+
+    const now = new Date().toISOString()
+    const list: ApiMunicipalityList = {
+      id: crypto.randomUUID(),
+      name: input.name,
+      color: input.color.toUpperCase(),
+      municipalityCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    }
+    this.fixtureMunicipalityLists.push(list)
+    return { ...list }
+  }
+
+  async updateMunicipalityList(
+    id: string,
+    input: ApiMunicipalityListUpdateRequest,
+  ): Promise<import('./queries/municipalityListQueries').MunicipalityListUpdateResult> {
+    const list = this.fixtureMunicipalityLists.find((entry) => entry.id === id)
+
+    if (!list) {
+      return { status: 'not_found' }
+    }
+
+    if (
+      input.name &&
+      this.fixtureMunicipalityLists.some(
+        (entry) => entry.id !== id && normalizeListName(entry.name) === normalizeListName(input.name ?? ''),
+      )
+    ) {
+      return { status: 'conflict' }
+    }
+
+    Object.assign(list, {
+      name: input.name ?? list.name,
+      color: input.color?.toUpperCase() ?? list.color,
+      updatedAt: nextTimestamp(list.updatedAt),
+    })
+    return { status: 'ok', list: { ...list } }
+  }
+
+  async deleteMunicipalityList(id: string): Promise<boolean> {
+    const index = this.fixtureMunicipalityLists.findIndex((list) => list.id === id)
+
+    if (index < 0) {
+      return false
+    }
+
+    this.fixtureMunicipalityLists.splice(index, 1)
+    for (const listIds of this.fixtureMunicipalityMemberships.values()) {
+      listIds.delete(id)
+    }
+    return true
+  }
+
+  async municipalityListMemberships(officialKey: string): Promise<ApiMunicipalityListMemberships | null> {
+    if (!fixtureMunicipalityOfficialKeys.has(officialKey)) {
+      return null
+    }
+
+    return {
+      officialKey,
+      listIds: Array.from(this.fixtureMunicipalityMemberships.get(officialKey) ?? []),
+    }
+  }
+
+  async addMunicipalityListMember(
+    listId: string,
+    officialKey: string,
+  ): Promise<import('./queries/municipalityListQueries').MunicipalityMembershipMutationResult> {
+    const list = this.fixtureMunicipalityLists.find((entry) => entry.id === listId)
+
+    if (!list) {
+      return { status: 'list_not_found' }
+    }
+
+    if (!fixtureMunicipalityOfficialKeys.has(officialKey)) {
+      return { status: 'municipality_not_found' }
+    }
+
+    const memberships = this.fixtureMunicipalityMemberships.get(officialKey) ?? new Set<string>()
+    const changed = !memberships.has(listId)
+    memberships.add(listId)
+    this.fixtureMunicipalityMemberships.set(officialKey, memberships)
+
+    if (changed) {
+      list.municipalityCount += 1
+      list.updatedAt = nextTimestamp(list.updatedAt)
+    }
+
+    return { status: 'ok', changed }
+  }
+
+  async removeMunicipalityListMember(
+    listId: string,
+    officialKey: string,
+  ): Promise<import('./queries/municipalityListQueries').MunicipalityMembershipMutationResult> {
+    const list = this.fixtureMunicipalityLists.find((entry) => entry.id === listId)
+
+    if (!list) {
+      return { status: 'list_not_found' }
+    }
+
+    if (!fixtureMunicipalityOfficialKeys.has(officialKey)) {
+      return { status: 'municipality_not_found' }
+    }
+
+    const memberships = this.fixtureMunicipalityMemberships.get(officialKey)
+    const changed = memberships?.delete(listId) ?? false
+
+    if (changed) {
+      list.municipalityCount -= 1
+      list.updatedAt = nextTimestamp(list.updatedAt)
+    }
+
+    return { status: 'ok', changed }
+  }
+
   async stopTile(): Promise<Buffer | null> {
     return Buffer.alloc(0)
   }
@@ -530,4 +665,26 @@ export class FixtureRepository implements RegionfinderRepository {
 
     return Buffer.alloc(0)
   }
+
+  async municipalityListHighlightTile(
+    _z?: number,
+    _x?: number,
+    _y?: number,
+    _listIds?: string[],
+  ): Promise<Buffer | null> {
+    void _z
+    void _x
+    void _y
+    void _listIds
+
+    return Buffer.alloc(0)
+  }
+}
+
+function normalizeListName(name: string): string {
+  return name.trim().toLocaleLowerCase('de-DE')
+}
+
+function nextTimestamp(current: string): string {
+  return new Date(Math.max(Date.now(), Date.parse(current) + 1)).toISOString()
 }

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
-import { Building2, Clock, ExternalLink, GraduationCap, Layers, MapPinned, Satellite, X, TrainFront } from 'lucide-react'
+import { Building2, Clock, ExternalLink, GraduationCap, Layers, ListChecks, MapPinned, Satellite, X, TrainFront } from 'lucide-react'
 import type {
   AdministrativeAreaSelection,
   ApiPlace,
@@ -7,6 +7,7 @@ import type {
   PlaceCategory,
 } from './api/contracts'
 import { DrivingRouteBlock, MetricCard, RealtimeItineraryBlock } from './apiApp/ItineraryComponents'
+import { MunicipalityListControls } from './apiApp/MunicipalityListControls'
 import {
   defaultDepartureTime,
   defaultProfile,
@@ -38,6 +39,7 @@ import {
 import { useApiStartup, useMapUpdateStatus, useSelectedStopDetails } from './apiApp/hooks'
 import { administrativeAreaLevelLabel, modesForLayers, placeCategoryLabel } from './apiApp/mapLayers'
 import { placeDetailLinks } from './apiApp/placeDetails'
+import { useMunicipalityLists } from './apiApp/useMunicipalityLists'
 import { createPlace, deletePlace, fetchPlace, fetchPlaces, updatePlace } from './data/api'
 
 const MapLibreCanvas = lazy(() =>
@@ -94,6 +96,9 @@ function ApiApp() {
   const [isSavingPlace, setIsSavingPlace] = useState(false)
   const [showResidentialRegions, setShowResidentialRegions] = useState(false)
   const [residentialRadiusMinutes, setResidentialRadiusMinutes] = useState(15)
+  const selectedMunicipalityOfficialKey =
+    selectedAdministrativeArea?.level === 'municipality' ? selectedAdministrativeArea.officialKey : null
+  const municipalityLists = useMunicipalityLists(selectedMunicipalityOfficialKey)
   const { mapUpdateState, handleMapTileLoadingChange } = useMapUpdateStatus()
   const { selectedStop, metrics, realtimeItineraries, drivingRoute, clearDetails } = useSelectedStopDetails({
     selectedPublicId,
@@ -502,6 +507,24 @@ function ApiApp() {
           </div>
         </div>
 
+        <div className="control-group municipality-lists-panel">
+          <div className="label-like">
+            <ListChecks size={16} />
+            Gemeindelisten
+          </div>
+          <MunicipalityListControls
+            lists={municipalityLists.lists}
+            activeListIds={municipalityLists.activeListIds}
+            suggestedColor={municipalityLists.suggestedColor}
+            isLoading={municipalityLists.isLoading}
+            error={municipalityLists.error}
+            onToggleActive={municipalityLists.toggleActiveList}
+            onCreate={municipalityLists.createList}
+            onUpdate={municipalityLists.updateList}
+            onDelete={municipalityLists.deleteList}
+          />
+        </div>
+
         {placeAdminEnabled ? (
           <div className="control-group place-admin-panel">
             <div className="label-like">
@@ -612,6 +635,7 @@ function ApiApp() {
             schoolCategories={schoolCategories}
             placeCategories={placeCategories}
             administrativeAreaLevels={activeAdministrativeAreaLayers}
+            activeMunicipalityLists={municipalityLists.activeLists}
             selectedAdministrativeAreaId={selectedAdministrativeArea?.id ?? null}
             tileModes={tileModes}
             selectedTimeWindows={selectedTimeWindows}
@@ -638,6 +662,9 @@ function ApiApp() {
           {placeCategories.includes('ferienhof') ? <span><i className="legend-place-ferienhof" /> Ferienhof</span> : null}
           {placeCategories.includes('gut') ? <span><i className="legend-place-gut" /> Gut</span> : null}
           {placeCategories.includes('museum') ? <span><i className="legend-place-museum" /> Museum</span> : null}
+          {municipalityLists.activeLists.map((list) => (
+            <span key={list.id}><i style={{ backgroundColor: list.color }} /> {list.name}</span>
+          ))}
         </div>
       </section>
 
@@ -674,6 +701,35 @@ function ApiApp() {
                   <p>Landkreis: {selectedAdministrativeArea.parentName}</p>
                 ) : null}
               </div>
+              {selectedAdministrativeArea.level === 'municipality' ? (
+                <div className="api-municipality-memberships">
+                  <h3>Gemeindelisten</h3>
+                  {municipalityLists.isMembershipLoading ? (
+                    <p className="api-inline-status">Mitgliedschaften werden geladen …</p>
+                  ) : municipalityLists.lists.length === 0 ? (
+                    <p>Noch keine Liste vorhanden. Neue Listen können links unter „Gemeindelisten“ angelegt werden.</p>
+                  ) : (
+                    <div className="api-municipality-membership-list">
+                      {municipalityLists.lists.map((list) => (
+                        <label key={list.id} className="api-municipality-membership-row">
+                          <input
+                            id={`municipality-list-membership-${list.id}`}
+                            type="checkbox"
+                            checked={municipalityLists.membershipListIds.includes(list.id)}
+                            disabled={municipalityLists.pendingMembershipListIds.includes(list.id)}
+                            onChange={(event) => void municipalityLists.setMembership(list.id, event.target.checked)}
+                          />
+                          <span className="municipality-list-swatch" style={{ backgroundColor: list.color }} aria-hidden="true" />
+                          <span>{list.name}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                  {municipalityLists.membershipError ? (
+                    <p className="api-inline-error">{municipalityLists.membershipError}</p>
+                  ) : null}
+                </div>
+              ) : null}
             </section>
           ) : selectedPlaceId ? (
             <>

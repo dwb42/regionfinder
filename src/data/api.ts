@@ -2,6 +2,10 @@ import type {
   ApiDrivingRouteResponse,
   ApiItineraryResponse,
   ApiMetrics,
+  ApiMunicipalityList,
+  ApiMunicipalityListCreateRequest,
+  ApiMunicipalityListMemberships,
+  ApiMunicipalityListUpdateRequest,
   ApiPlace,
   ApiPlaceCreateRequest,
   ApiPlaceUpdateRequest,
@@ -170,4 +174,51 @@ export async function deletePlace(id: string): Promise<void> {
   await fetchApi<void>(`/api/v1/places/${encodeURIComponent(id)}`, {
     method: 'DELETE',
   })
+}
+
+export function fetchMunicipalityLists(): Promise<ApiMunicipalityList[]> {
+  return fetchApi<ApiMunicipalityList[]>('/api/v1/municipality-lists')
+}
+
+export function createMunicipalityList(input: ApiMunicipalityListCreateRequest): Promise<ApiMunicipalityList> {
+  return fetchApi<ApiMunicipalityList>('/api/v1/municipality-lists', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+}
+
+export function updateMunicipalityList(
+  id: string,
+  input: ApiMunicipalityListUpdateRequest,
+): Promise<ApiMunicipalityList> {
+  return fetchApi<ApiMunicipalityList>(`/api/v1/municipality-lists/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+}
+
+export async function deleteMunicipalityList(id: string): Promise<void> {
+  await fetchApi<void>(`/api/v1/municipality-lists/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export function fetchMunicipalityListMemberships(officialKey: string): Promise<ApiMunicipalityListMemberships> {
+  return fetchApi<ApiMunicipalityListMemberships>(
+    `/api/v1/municipality-lists/memberships/${encodeURIComponent(officialKey)}`,
+  )
+}
+
+export async function addMunicipalityToList(listId: string, officialKey: string): Promise<void> {
+  await fetchApi<void>(
+    `/api/v1/municipality-lists/${encodeURIComponent(listId)}/municipalities/${encodeURIComponent(officialKey)}`,
+    { method: 'PUT' },
+  )
+}
+
+export async function removeMunicipalityFromList(listId: string, officialKey: string): Promise<void> {
+  await fetchApi<void>(
+    `/api/v1/municipality-lists/${encodeURIComponent(listId)}/municipalities/${encodeURIComponent(officialKey)}`,
+    { method: 'DELETE' },
+  )
 }

@@ -93,6 +93,58 @@ export async function administrativeAreaTile(
   )
 }
 
+export async function municipalityListHighlightTile(
+  db: Queryable,
+  z: number,
+  x: number,
+  y: number,
+  listIds: string[] = [],
+): Promise<Buffer | null> {
+  return mvtTile(
+    db,
+    `
+    WITH bounds AS (
+      SELECT ST_TileEnvelope($1, $2, $3) AS geom,
+             ST_Transform(ST_TileEnvelope($1, $2, $3, margin => 64.0 / 4096.0), 4326) AS query_wgs84
+    ),
+    mvtgeom AS (
+      SELECT member.list_id::text AS list_id,
+             area.id::text AS id,
+             area.official_key,
+             area.name,
+             area.state_code,
+             ST_AsMVTGeom(
+               CASE
+                 WHEN $1 < 7 THEN ST_SimplifyPreserveTopology(ST_Transform(area.geometry, 3857), 500)
+                 WHEN $1 < 9 THEN ST_SimplifyPreserveTopology(ST_Transform(area.geometry, 3857), 150)
+                 WHEN $1 < 11 THEN ST_SimplifyPreserveTopology(ST_Transform(area.geometry, 3857), 40)
+                 ELSE ST_Transform(area.geometry, 3857)
+               END,
+               bounds.geom,
+               4096,
+               64,
+               true
+             ) AS geom
+      FROM municipality_list_members member
+      JOIN administrative_areas area
+        ON area.id = member.administrative_area_id
+       AND area.level = 'municipality'
+       AND area.is_active = true
+      CROSS JOIN bounds
+      WHERE member.list_id = ANY($4::uuid[])
+        AND area.geometry && bounds.query_wgs84
+        AND ST_Intersects(area.geometry, bounds.query_wgs84)
+    )
+    SELECT ST_AsMVT(mvtgeom, 'municipality-list-highlights', 4096, 'geom') AS tile
+    FROM mvtgeom
+    `,
+    z,
+    x,
+    y,
+    listIds,
+  )
+}
+
 export async function stopTile(
   db: Queryable,
   z: number,

@@ -159,6 +159,7 @@ Aktuelle UI-Funktionen im API-Modus:
 - Beide Schul-Checkboxen sind standardmäßig aktiv. Der Client lädt Schools-MVTs über `categories=...` neu, wenn eine Checkbox umgeschaltet wird.
 - Schulmarker sind reine Karten-POIs ohne Detailpanel-Klick. Hover zeigt Name und offizielle Schulart. Gymnasien sind blau hervorgehoben; andere weiterführende Schulen bleiben neutral.
 - `Orte anzeigen`: Generische Places werden über `Höfe`, `Ferienhöfe`, `Güter` und `Museen` gesteuert. Diese Layer sind standardmäßig deaktiviert und werden nur nach Auswahl geladen.
+- `Gemeindelisten` ist der letzte reguläre Sidebar-Block. Listen und Mitgliedschaften werden global in PostGIS gespeichert, während aktive Listen-Checkboxen im Browser verbleiben. Im Gemeinde-Detailpanel sind Mehrfachzuordnungen möglich; die farbigen Highlight-MVTs werden unabhängig vom Schalter `Gemeinden` ab Zoom 6 geladen.
 - Place-Marker sind Karten-POIs aus dem Places-MVT. Hover zeigt Name und Kategorie; sie werden nicht durch ÖPNV-Modi oder Reisezeitfenster gefiltert.
 - Das interne Place-Admin-Formular erscheint nur mit `VITE_REGIONFINDER_ENABLE_PLACE_ADMIN=1` und erlaubt Anlegen, Bearbeiten und Soft-Delete von Places.
 

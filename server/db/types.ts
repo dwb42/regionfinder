@@ -2,6 +2,10 @@ import type {
   ApiItineraryResponse,
   AdministrativeAreaLevel,
   ApiMetrics,
+  ApiMunicipalityList,
+  ApiMunicipalityListCreateRequest,
+  ApiMunicipalityListMemberships,
+  ApiMunicipalityListUpdateRequest,
   ApiPlace,
   ApiPlaceCreateRequest,
   ApiPlaceUpdateRequest,
@@ -11,6 +15,7 @@ import type {
   ApiStopSearchResult,
   PlaceCategory,
 } from '../../src/api/contracts'
+import type { MunicipalityListUpdateResult, MunicipalityMembershipMutationResult } from './queries/municipalityListQueries'
 
 export type StopSearchFilters = {
   query: string
@@ -38,10 +43,18 @@ export type RegionfinderRepository = {
   createPlace(input: ApiPlaceCreateRequest): Promise<ApiPlace>
   updatePlace(id: string, input: ApiPlaceUpdateRequest): Promise<ApiPlace | null>
   deletePlace(id: string): Promise<boolean>
+  municipalityLists(): Promise<ApiMunicipalityList[]>
+  createMunicipalityList(input: ApiMunicipalityListCreateRequest): Promise<ApiMunicipalityList | null>
+  updateMunicipalityList(id: string, input: ApiMunicipalityListUpdateRequest): Promise<MunicipalityListUpdateResult>
+  deleteMunicipalityList(id: string): Promise<boolean>
+  municipalityListMemberships(officialKey: string): Promise<ApiMunicipalityListMemberships | null>
+  addMunicipalityListMember(listId: string, officialKey: string): Promise<MunicipalityMembershipMutationResult>
+  removeMunicipalityListMember(listId: string, officialKey: string): Promise<MunicipalityMembershipMutationResult>
   stopTile(z: number, x: number, y: number, modes?: string[], profile?: string): Promise<Buffer | null>
   routeTile(z: number, x: number, y: number, modes?: string[], profile?: string): Promise<Buffer | null>
   railNetworkTile(z: number, x: number, y: number): Promise<Buffer | null>
   schoolTile(z: number, x: number, y: number, categories?: string[], states?: string[]): Promise<Buffer | null>
   placeTile(z: number, x: number, y: number, categories?: PlaceCategory[], states?: string[]): Promise<Buffer | null>
   administrativeAreaTile(z: number, x: number, y: number, levels?: AdministrativeAreaLevel[], states?: string[]): Promise<Buffer | null>
+  municipalityListHighlightTile(z: number, x: number, y: number, listIds?: string[]): Promise<Buffer | null>
 }

@@ -55,6 +55,40 @@ export const administrativeAreaTileQuerySchema = z.object({
   states: z.string().optional(),
 })
 
+export const municipalityListTileQuerySchema = z.object({
+  listIds: z.string().optional(),
+  revision: z.string().max(200).default('0'),
+})
+
+export const municipalityListParamsSchema = z.object({
+  id: z.string().uuid(),
+})
+
+export const municipalityListMembershipParamsSchema = z.object({
+  id: z.string().uuid(),
+  officialKey: z.string().trim().min(1).max(20),
+})
+
+export const municipalityOfficialKeyParamsSchema = z.object({
+  officialKey: z.string().trim().min(1).max(20),
+})
+
+const municipalityListColorSchema = z.string().regex(/^#[0-9A-Fa-f]{6}$/)
+
+export const municipalityListCreateSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  color: municipalityListColorSchema,
+})
+
+export const municipalityListUpdateSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80).optional(),
+    color: municipalityListColorSchema.optional(),
+  })
+  .refine((input) => input.name !== undefined || input.color !== undefined, {
+    message: 'At least one property is required',
+  })
+
 export const placeListQuerySchema = z.object({
   categories: z.string().optional(),
   states: z.string().optional(),

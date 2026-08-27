@@ -1,6 +1,11 @@
 import type { Polygon } from 'geojson'
 import type { ExpressionSpecification, FilterSpecification, Map, StyleSpecification } from 'maplibre-gl'
-import type { AdministrativeAreaLevel, AdministrativeAreaSelection, PlaceCategory } from '../api/contracts'
+import type {
+  AdministrativeAreaLevel,
+  AdministrativeAreaSelection,
+  ApiMunicipalityList,
+  PlaceCategory,
+} from '../api/contracts'
 import { apiBaseUrl } from '../data/api'
 import { travelTimeWindowColors, travelTimeWindows, type ModeLayerId, type TravelTimeWindow } from './config'
 import { minutes } from './formatters'
@@ -198,8 +203,33 @@ function administrativeAreaTileUrl(levels: AdministrativeAreaLevel[]): string {
   return `${apiBaseUrl}/api/v1/tiles/administrative-areas/{z}/{x}/{y}.mvt?${params}`
 }
 
+function municipalityListHighlightTileUrl(lists: ApiMunicipalityList[]): string {
+  const params = new URLSearchParams({
+    listIds: lists.map((list) => list.id).join(','),
+    revision: municipalityListHighlightRevision(lists),
+  })
+
+  return `${apiBaseUrl}/api/v1/tiles/municipality-list-highlights/{z}/{x}/{y}.mvt?${params}`
+}
+
 export function administrativeAreaTileSourceKey(levels: AdministrativeAreaLevel[]): string {
   return levels.join(',')
+}
+
+export function municipalityListHighlightSourceKey(lists: ApiMunicipalityList[]): string {
+  return lists.map((list) => `${list.id}:${list.updatedAt}:${list.color}`).join('|')
+}
+
+function municipalityListHighlightRevision(lists: ApiMunicipalityList[]): string {
+  const sourceKey = municipalityListHighlightSourceKey(lists)
+  let hash = 2166136261
+
+  for (let index = 0; index < sourceKey.length; index += 1) {
+    hash ^= sourceKey.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+
+  return (hash >>> 0).toString(36)
 }
 
 export function administrativeAreaLevelLabel(level: AdministrativeAreaLevel): string {
@@ -591,6 +621,87 @@ export function addAdministrativeAreaTileLayers(map: Map, levels: Administrative
       'text-halo-width': 1.2,
     },
   })
+}
+
+export function addMunicipalityListHighlightLayers(map: Map, lists: ApiMunicipalityList[]) {
+  if (lists.length === 0) {
+    return
+  }
+
+  map.addSource('regionfinder-municipality-list-highlights', {
+    type: 'vector',
+    tiles: [municipalityListHighlightTileUrl(lists)],
+    minzoom: 6,
+    maxzoom: 14,
+  })
+
+  const beforeLayer = firstExistingLayer(map, [
+    'regionfinder-administrative-selection-fill',
+    'regionfinder-rail-routes-casing',
+    'regionfinder-routes-line',
+    'regionfinder-stops-symbol',
+  ])
+
+  for (const list of lists) {
+    const filter: FilterSpecification = ['==', ['get', 'list_id'], list.id]
+
+    map.addLayer(
+      {
+        id: municipalityListHighlightFillLayerId(list.id),
+        type: 'fill',
+        source: 'regionfinder-municipality-list-highlights',
+        'source-layer': 'municipality-list-highlights',
+        filter,
+        minzoom: 6,
+        paint: {
+          'fill-color': list.color,
+          'fill-opacity': 0.22,
+        },
+      },
+      beforeLayer,
+    )
+    map.addLayer(
+      {
+        id: municipalityListHighlightLineLayerId(list.id),
+        type: 'line',
+        source: 'regionfinder-municipality-list-highlights',
+        'source-layer': 'municipality-list-highlights',
+        filter,
+        minzoom: 6,
+        paint: {
+          'line-color': list.color,
+          'line-width': ['interpolate', ['linear'], ['zoom'], 6, 1.5, 11, 2.75],
+          'line-opacity': 0.92,
+        },
+      },
+      beforeLayer,
+    )
+  }
+}
+
+export function removeMunicipalityListHighlightLayers(map: Map) {
+  const layers = map.getStyle().layers ?? []
+
+  for (const layer of [...layers].reverse()) {
+    if (
+      layer.id.startsWith('regionfinder-municipality-list-highlight-fill-') ||
+      layer.id.startsWith('regionfinder-municipality-list-highlight-line-')
+    ) {
+      map.removeLayer(layer.id)
+    }
+  }
+
+  if (map.getSource('regionfinder-municipality-list-highlights')) {
+    map.removeSource('regionfinder-municipality-list-highlights')
+  }
+}
+
+function municipalityListHighlightFillLayerId(listId: string): string {
+  return `regionfinder-municipality-list-highlight-fill-${listId}`
+}
+
+function municipalityListHighlightLineLayerId(listId: string): string {
+  return `regionfinder-municipality-list-highlight-line-${listId}`
 }
 
 export function applyAdministrativeAreaSelection(map: Map, id: string | null) {

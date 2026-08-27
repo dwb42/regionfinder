@@ -67,6 +67,22 @@ function journeyPayload() {
 }
 
 describe('Regionfinder API', () => {
+  it.each(['PUT', 'PATCH', 'DELETE'])('allows cross-origin %s requests', async (method) => {
+    const app = await withApp()
+    const response = await app.inject({
+      method: 'OPTIONS',
+      url: '/api/v1/municipality-lists/11111111-1111-4111-8111-111111111111/municipalities/03353029',
+      headers: {
+        origin: 'http://127.0.0.1:5176',
+        'access-control-request-method': method,
+      },
+    })
+
+    expect(response.statusCode).toBe(204)
+    expect(response.headers['access-control-allow-origin']).toBe('http://127.0.0.1:5176')
+    expect(response.headers['access-control-allow-methods']).toContain(method)
+  })
+
   it('returns current snapshot metadata', async () => {
     const app = await withApp()
     const response = await app.inject('/api/v1/snapshots/current')
@@ -277,6 +293,88 @@ describe('Regionfinder API', () => {
 
     expect(invalidLevel.statusCode).toBe(400)
     expect(invalidState.statusCode).toBe(400)
+  })
+
+  it('creates, updates, and deletes global municipality lists with unique names', async () => {
+    const app = await withApp()
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/municipality-lists',
+      payload: { name: 'Favoriten', color: '#2563eb' },
+    })
+
+    expect(created.statusCode).toBe(201)
+    expect(created.json()).toMatchObject({ name: 'Favoriten', color: '#2563EB', municipalityCount: 0 })
+    const listId = created.json().id as string
+
+    const duplicate = await app.inject({
+      method: 'POST',
+      url: '/api/v1/municipality-lists',
+      payload: { name: ' favoriten ', color: '#DC2626' },
+    })
+    expect(duplicate.statusCode).toBe(409)
+    expect(duplicate.json()).toMatchObject({ error: 'municipality_list_name_conflict' })
+
+    const updated = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/municipality-lists/${listId}`,
+      payload: { name: 'Engere Wahl', color: '#16A34A' },
+    })
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json()).toMatchObject({ name: 'Engere Wahl', color: '#16A34A' })
+
+    const listed = await app.inject('/api/v1/municipality-lists')
+    expect(listed.json()).toHaveLength(1)
+
+    expect((await app.inject({ method: 'DELETE', url: `/api/v1/municipality-lists/${listId}` })).statusCode).toBe(204)
+    expect((await app.inject('/api/v1/municipality-lists')).json()).toEqual([])
+  })
+
+  it('manages municipality list memberships idempotently', async () => {
+    const app = await withApp()
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/municipality-lists',
+      payload: { name: 'Besichtigung', color: '#9333EA' },
+    })
+    const listId = created.json().id as string
+    const membershipUrl = `/api/v1/municipality-lists/${listId}/municipalities/01053001`
+
+    expect((await app.inject({ method: 'PUT', url: membershipUrl })).statusCode).toBe(204)
+    expect((await app.inject({ method: 'PUT', url: membershipUrl })).statusCode).toBe(204)
+
+    const memberships = await app.inject('/api/v1/municipality-lists/memberships/01053001')
+    expect(memberships.json()).toEqual({ officialKey: '01053001', listIds: [listId] })
+    expect((await app.inject('/api/v1/municipality-lists')).json()[0]).toMatchObject({ municipalityCount: 1 })
+
+    expect((await app.inject({ method: 'DELETE', url: membershipUrl })).statusCode).toBe(204)
+    expect((await app.inject({ method: 'DELETE', url: membershipUrl })).statusCode).toBe(204)
+    expect((await app.inject('/api/v1/municipality-lists/memberships/01053001')).json().listIds).toEqual([])
+    expect((await app.inject({ method: 'PUT', url: `/api/v1/municipality-lists/${listId}/municipalities/unknown` })).statusCode).toBe(404)
+  })
+
+  it('serves revision-keyed municipality list highlight tiles', async () => {
+    class CapturingMunicipalityListTileRepository extends FixtureRepository {
+      call: { z: number; x: number; y: number; listIds: string[] } | null = null
+
+      override async municipalityListHighlightTile(z: number, x: number, y: number, listIds: string[] = []) {
+        this.call = { z, x, y, listIds }
+        return Buffer.from('fixture-municipality-list-tile')
+      }
+    }
+
+    const repository = new CapturingMunicipalityListTileRepository()
+    const app = await buildApp({ repository, logger: false })
+    const listId = '11111111-1111-4111-8111-111111111111'
+    const response = await app.inject(
+      `/api/v1/tiles/municipality-list-highlights/6/33/20.mvt?listIds=${listId}&revision=42`,
+    )
+
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['cache-control']).toContain('max-age=60')
+    expect(response.headers.etag).toContain('municipality-list-highlights-6-33-20-42')
+    expect(response.body).toBe('fixture-municipality-list-tile')
+    expect(repository.call).toEqual({ z: 6, x: 33, y: 20, listIds: [listId] })
   })
 
   it('rejects unsupported place categories', async () => {

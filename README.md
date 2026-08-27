@@ -182,6 +182,7 @@ Wichtige UX-Entscheidungen:
   - `andere weiterf. Schulen`
 - Schulmarker kommen aus dem Schools-MVT, öffnen kein Detailpanel und zeigen bei Hover Name und Schulart. Gymnasien sind farblich blau hervorgehoben; andere Schulformen bleiben neutral markiert.
 - `Orte anzeigen`: generische Places werden über `Höfe`, `Ferienhöfe`, `Güter` und `Museen` ein- und ausgeblendet. Sie kommen aus dem Places-MVT, sind unabhängig von ÖPNV-Modi und Reisezeitfenstern und sind standardmäßig deaktiviert.
+- `Gemeindelisten`: global in PostGIS gespeicherte, frei benannte Listen können im letzten regulären Sidebar-Block angelegt, eingefärbt und aktiviert werden. Gemeinden werden im Detailpanel mehreren Listen zugeordnet; aktive Listen laden einen eigenen MVT-Layer ab Zoom 6 und bleiben unabhängig vom normalen Gemeinde-Layer sichtbar. Nur die aktiven Checkboxen werden pro Browser gespeichert.
 - Eine metrische Maßstabsleiste sitzt unten rechts in der MapLibre-Karte.
 
 ## Daten und Artefakte

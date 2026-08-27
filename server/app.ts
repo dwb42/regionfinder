@@ -11,6 +11,12 @@ import {
   administrativeAreaTileQuerySchema,
   itineraryQuerySchema,
   metricsQuerySchema,
+  municipalityListCreateSchema,
+  municipalityListMembershipParamsSchema,
+  municipalityListParamsSchema,
+  municipalityListTileQuerySchema,
+  municipalityListUpdateSchema,
+  municipalityOfficialKeyParamsSchema,
   placeCategorySchema,
   placeCreateSchema,
   placeListQuerySchema,
@@ -59,6 +65,10 @@ function administrativeAreaStates(value: string | undefined) {
   return splitCsv(value).map((state) => administrativeAreaStateSchema.parse(state))
 }
 
+function municipalityListIds(value: string | undefined) {
+  return splitCsv(value).map((id) => municipalityListParamsSchema.shape.id.parse(id))
+}
+
 function publicIdAliases(publicId: string): string[] {
   const aliases = [publicId]
   const compactEvaPublicIdMatch = publicId.match(/^(.*:)(1\d{7})$/)
@@ -93,6 +103,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
 
   await app.register(cors, {
     origin: true,
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   })
 
   app.setErrorHandler((error, _request, reply) => {
@@ -321,6 +332,93 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     return reply.code(204).send()
   })
 
+  app.get('/api/v1/municipality-lists', async () => options.repository.municipalityLists())
+
+  app.post('/api/v1/municipality-lists', async (request, reply) => {
+    const input = municipalityListCreateSchema.parse(request.body)
+    const list = await options.repository.createMunicipalityList(input)
+
+    if (!list) {
+      return reply.code(409).send({
+        error: 'municipality_list_name_conflict',
+        message: `Eine Gemeindeliste mit dem Namen „${input.name}“ existiert bereits.`,
+      })
+    }
+
+    return reply.code(201).send(list)
+  })
+
+  app.patch('/api/v1/municipality-lists/:id', async (request, reply) => {
+    const params = municipalityListParamsSchema.parse(request.params)
+    const input = municipalityListUpdateSchema.parse(request.body)
+    const result = await options.repository.updateMunicipalityList(params.id, input)
+
+    if (result.status === 'not_found') {
+      return reply.code(404).send(notFound(`Unknown municipality list ${params.id}`))
+    }
+
+    if (result.status === 'conflict') {
+      return reply.code(409).send({
+        error: 'municipality_list_name_conflict',
+        message: `Eine Gemeindeliste mit dem Namen „${input.name}“ existiert bereits.`,
+      })
+    }
+
+    return result.list
+  })
+
+  app.delete('/api/v1/municipality-lists/:id', async (request, reply) => {
+    const params = municipalityListParamsSchema.parse(request.params)
+    const deleted = await options.repository.deleteMunicipalityList(params.id)
+
+    if (!deleted) {
+      return reply.code(404).send(notFound(`Unknown municipality list ${params.id}`))
+    }
+
+    return reply.code(204).send()
+  })
+
+  app.get('/api/v1/municipality-lists/memberships/:officialKey', async (request, reply) => {
+    const params = municipalityOfficialKeyParamsSchema.parse(request.params)
+    const memberships = await options.repository.municipalityListMemberships(params.officialKey)
+
+    if (!memberships) {
+      return reply.code(404).send(notFound(`Unknown municipality ${params.officialKey}`))
+    }
+
+    return memberships
+  })
+
+  app.put('/api/v1/municipality-lists/:id/municipalities/:officialKey', async (request, reply) => {
+    const params = municipalityListMembershipParamsSchema.parse(request.params)
+    const result = await options.repository.addMunicipalityListMember(params.id, params.officialKey)
+
+    if (result.status === 'list_not_found') {
+      return reply.code(404).send(notFound(`Unknown municipality list ${params.id}`))
+    }
+
+    if (result.status === 'municipality_not_found') {
+      return reply.code(404).send(notFound(`Unknown municipality ${params.officialKey}`))
+    }
+
+    return reply.code(204).send()
+  })
+
+  app.delete('/api/v1/municipality-lists/:id/municipalities/:officialKey', async (request, reply) => {
+    const params = municipalityListMembershipParamsSchema.parse(request.params)
+    const result = await options.repository.removeMunicipalityListMember(params.id, params.officialKey)
+
+    if (result.status === 'list_not_found') {
+      return reply.code(404).send(notFound(`Unknown municipality list ${params.id}`))
+    }
+
+    if (result.status === 'municipality_not_found') {
+      return reply.code(404).send(notFound(`Unknown municipality ${params.officialKey}`))
+    }
+
+    return reply.code(204).send()
+  })
+
   app.get('/api/v1/tiles/stops/:z/:x/:y.mvt', async (request, reply) => {
     const params = tileParamsSchema.parse(request.params)
     const query = tileQuerySchema.parse(request.query)
@@ -398,6 +496,22 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     reply.header(
       'ETag',
       `"administrative-areas-${params.z}-${params.x}-${params.y}-${levels.join('-')}-${states.join('-')}"`,
+    )
+
+    return tile ?? Buffer.alloc(0)
+  })
+
+  app.get('/api/v1/tiles/municipality-list-highlights/:z/:x/:y.mvt', async (request, reply) => {
+    const params = tileParamsSchema.parse(request.params)
+    const query = municipalityListTileQuerySchema.parse(request.query)
+    const listIds = municipalityListIds(query.listIds)
+    const tile = await options.repository.municipalityListHighlightTile(params.z, params.x, params.y, listIds)
+
+    reply.header('Content-Type', 'application/vnd.mapbox-vector-tile')
+    reply.header('Cache-Control', 'public, max-age=60')
+    reply.header(
+      'ETag',
+      `"municipality-list-highlights-${params.z}-${params.x}-${params.y}-${query.revision}"`,
     )
 
     return tile ?? Buffer.alloc(0)

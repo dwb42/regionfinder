@@ -4,9 +4,10 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ApiPlace, ApiSnapshot } from './api/contracts'
+import type { ApiMunicipalityList, ApiPlace, ApiSnapshot } from './api/contracts'
 
 const mapMocks = vi.hoisted(() => ({
+  renderedActiveMunicipalityListIds: [] as string[][],
   renderedAdministrativeAreaLevels: [] as string[][],
   renderedSchoolCategories: [] as string[][],
   renderedPlaceCategories: [] as string[][],
@@ -21,6 +22,13 @@ const apiMocks = vi.hoisted(() => ({
   fetchStopDetails: vi.fn(),
   fetchStopMetrics: vi.fn(),
   createPlace: vi.fn(),
+  createMunicipalityList: vi.fn(),
+  deleteMunicipalityList: vi.fn(),
+  fetchMunicipalityListMemberships: vi.fn(),
+  fetchMunicipalityLists: vi.fn(),
+  addMunicipalityToList: vi.fn(),
+  removeMunicipalityFromList: vi.fn(),
+  updateMunicipalityList: vi.fn(),
   deletePlace: vi.fn(),
   updatePlace: vi.fn(),
 }))
@@ -36,12 +44,14 @@ vi.mock('./apiApp/MapLibreCanvas', () => ({
     schoolCategories,
     placeCategories,
     administrativeAreaLevels,
+    activeMunicipalityLists,
     onSelectPlace,
     onSelectAdministrativeArea,
   }: {
     schoolCategories: string[]
     placeCategories: string[]
     administrativeAreaLevels: Array<'county' | 'municipality'>
+    activeMunicipalityLists: Array<{ id: string }>
     onSelectPlace: (placeId: string) => void
     onSelectAdministrativeArea: (selection: {
       id: string
@@ -55,6 +65,7 @@ vi.mock('./apiApp/MapLibreCanvas', () => ({
     }) => void
   }) => {
     mapMocks.renderedAdministrativeAreaLevels.push(administrativeAreaLevels)
+    mapMocks.renderedActiveMunicipalityListIds.push(activeMunicipalityLists.map((list) => list.id))
     mapMocks.renderedSchoolCategories.push(schoolCategories)
     mapMocks.renderedPlaceCategories.push(placeCategories)
     return (
@@ -132,6 +143,15 @@ const place: ApiPlace = {
   deletedAt: null,
 }
 
+const municipalityList: ApiMunicipalityList = {
+  id: '11111111-1111-4111-8111-111111111111',
+  name: 'Favoriten',
+  color: '#2563EB',
+  municipalityCount: 0,
+  createdAt: '2026-08-26T10:00:00.000Z',
+  updatedAt: '2026-08-26T10:00:00.000Z',
+}
+
 let root: Root | null = null
 let container: HTMLDivElement | null = null
 
@@ -153,9 +173,14 @@ describe('ApiApp POI layer controls', () => {
     mapMocks.renderedSchoolCategories.length = 0
     mapMocks.renderedPlaceCategories.length = 0
     mapMocks.renderedAdministrativeAreaLevels.length = 0
+    mapMocks.renderedActiveMunicipalityListIds.length = 0
     apiMocks.fetchCurrentSnapshot.mockResolvedValue(snapshot)
     apiMocks.fetchPlace.mockResolvedValue(place)
     apiMocks.fetchPlaces.mockResolvedValue([])
+    apiMocks.fetchMunicipalityLists.mockResolvedValue([])
+    apiMocks.fetchMunicipalityListMemberships.mockResolvedValue({ officialKey: '01053001', listIds: [] })
+    apiMocks.addMunicipalityToList.mockResolvedValue(undefined)
+    apiMocks.removeMunicipalityFromList.mockResolvedValue(undefined)
     container = document.createElement('div')
     document.body.append(container)
     root = createRoot(container)
@@ -265,6 +290,34 @@ describe('ApiApp POI layer controls', () => {
     expect(panel?.textContent).toContain('Gemeinde')
     expect(panel?.textContent).toContain('Amtlicher Schlüssel: 01053001')
     expect(panel?.textContent).toContain('Landkreis: Herzogtum Lauenburg')
+  })
+
+  it('activates a municipality list independently and edits membership in municipality details', async () => {
+    apiMocks.fetchMunicipalityLists.mockResolvedValue([municipalityList])
+    apiMocks.fetchMunicipalityListMemberships.mockResolvedValue({ officialKey: '01053001', listIds: [] })
+
+    await act(async () => {
+      root?.render(<ApiApp />)
+    })
+    await waitFor(() => Boolean(container?.querySelector(`#municipality-list-active-${municipalityList.id}`)))
+
+    await act(async () => {
+      container?.querySelector<HTMLInputElement>(`#municipality-list-active-${municipalityList.id}`)?.click()
+    })
+    expect(mapMocks.renderedActiveMunicipalityListIds.at(-1)).toEqual([municipalityList.id])
+
+    await act(async () => {
+      container?.querySelector<HTMLButtonElement>('[data-testid="select-administrative-area"]')?.click()
+    })
+    await waitFor(() => Boolean(container?.querySelector(`#municipality-list-membership-${municipalityList.id}`)))
+
+    await act(async () => {
+      container?.querySelector<HTMLInputElement>(`#municipality-list-membership-${municipalityList.id}`)?.click()
+    })
+    await waitFor(() => apiMocks.addMunicipalityToList.mock.calls.length === 1)
+
+    expect(apiMocks.fetchMunicipalityListMemberships).toHaveBeenCalledWith('01053001')
+    expect(apiMocks.addMunicipalityToList).toHaveBeenCalledWith(municipalityList.id, '01053001')
   })
 
   it('opens place details in the right panel with place and source websites', async () => {

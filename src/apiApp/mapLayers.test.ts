@@ -5,11 +5,13 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Map, StyleSpecification } from 'maplibre-gl'
 import {
   addAdministrativeAreaTileLayers,
+  addMunicipalityListHighlightLayers,
   administrativeAreaHigherPriorityClickLayerIds,
   administrativeAreaSelectionFromProperties,
   administrativeAreaTileSourceKey,
   applyAdministrativeAreaSelection,
   mapLibreBaseStyle,
+  municipalityListHighlightSourceKey,
   preferredAdministrativeAreaSelection,
 } from './mapLayers'
 
@@ -127,5 +129,47 @@ describe('administrative area map layers', () => {
       'regionfinder-administrative-selection-fill',
       ['==', ['get', 'id'], 'area-id'],
     )
+  })
+})
+
+describe('municipality list highlight layers', () => {
+  it('creates independent low-zoom layers with stable list colors and revision keys', () => {
+    const styleLayers: Array<Record<string, unknown>> = []
+    let source: Record<string, unknown> | null = null
+    const map = {
+      addSource: vi.fn((_id: string, nextSource: Record<string, unknown>) => {
+        source = nextSource
+      }),
+      addLayer: vi.fn((layer: Record<string, unknown>) => styleLayers.push(layer)),
+      getLayer: vi.fn((id: string) => (id === 'regionfinder-rail-routes-casing' ? { id } : undefined)),
+    } as unknown as Map
+    const lists = [
+      {
+        id: '11111111-1111-4111-8111-111111111111',
+        name: 'Favoriten',
+        color: '#2563EB',
+        municipalityCount: 2,
+        createdAt: '2026-08-26T10:00:00.000Z',
+        updatedAt: '2026-08-26T10:01:00.000Z',
+      },
+      {
+        id: '22222222-2222-4222-8222-222222222222',
+        name: 'Besichtigung',
+        color: '#DC2626',
+        municipalityCount: 1,
+        createdAt: '2026-08-26T10:02:00.000Z',
+        updatedAt: '2026-08-26T10:03:00.000Z',
+      },
+    ]
+
+    addMunicipalityListHighlightLayers(map, lists)
+
+    expect(source).toMatchObject({ minzoom: 6, maxzoom: 14 })
+    expect(String((source as { tiles: string[] }).tiles[0])).toContain('listIds=11111111-1111-4111-8111-111111111111%2C22222222-2222-4222-8222-222222222222')
+    expect(styleLayers).toHaveLength(4)
+    expect(styleLayers[0]).toMatchObject({ minzoom: 6, filter: ['==', ['get', 'list_id'], lists[0].id] })
+    expect(styleLayers[0].paint).toMatchObject({ 'fill-color': '#2563EB', 'fill-opacity': 0.22 })
+    expect(styleLayers[2].paint).toMatchObject({ 'fill-color': '#DC2626', 'fill-opacity': 0.22 })
+    expect(municipalityListHighlightSourceKey(lists)).toContain(`${lists[0].id}:${lists[0].updatedAt}`)
   })
 })

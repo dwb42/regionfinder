@@ -3,6 +3,10 @@ import type {
   ApiItineraryResponse,
   AdministrativeAreaLevel,
   ApiMetrics,
+  ApiMunicipalityList,
+  ApiMunicipalityListCreateRequest,
+  ApiMunicipalityListMemberships,
+  ApiMunicipalityListUpdateRequest,
   ApiPlace,
   ApiPlaceCreateRequest,
   ApiPlaceUpdateRequest,
@@ -13,6 +17,17 @@ import type {
   PlaceCategory,
 } from '../../src/api/contracts'
 import { findItineraries } from './queries/itineraryQueries'
+import {
+  addMunicipalityListMember,
+  createMunicipalityList,
+  deleteMunicipalityList,
+  listMunicipalityLists,
+  municipalityListMemberships,
+  removeMunicipalityListMember,
+  updateMunicipalityList,
+  type MunicipalityListUpdateResult,
+  type MunicipalityMembershipMutationResult,
+} from './queries/municipalityListQueries'
 import { findStopMetrics } from './queries/metricQueries'
 import { createPlace, deletePlace, findPlace, listPlaces, updatePlace } from './queries/placeQueries'
 import { findRoutePattern } from './queries/routePatternQueries'
@@ -20,6 +35,7 @@ import { findCurrentSnapshot } from './queries/snapshotQueries'
 import { findStopDetails, searchStops as searchStopsQuery } from './queries/stopQueries'
 import {
   administrativeAreaTile as administrativeAreaTileQuery,
+  municipalityListHighlightTile as municipalityListHighlightTileQuery,
   placeTile as placeTileQuery,
   railNetworkTile as railNetworkTileQuery,
   routeTile as routeTileQuery,
@@ -81,6 +97,34 @@ export class PostgresRepository implements RegionfinderRepository {
     return deletePlace(this.pool, id)
   }
 
+  municipalityLists(): Promise<ApiMunicipalityList[]> {
+    return listMunicipalityLists(this.pool)
+  }
+
+  createMunicipalityList(input: ApiMunicipalityListCreateRequest): Promise<ApiMunicipalityList | null> {
+    return createMunicipalityList(this.pool, input)
+  }
+
+  updateMunicipalityList(id: string, input: ApiMunicipalityListUpdateRequest): Promise<MunicipalityListUpdateResult> {
+    return updateMunicipalityList(this.pool, id, input)
+  }
+
+  deleteMunicipalityList(id: string): Promise<boolean> {
+    return deleteMunicipalityList(this.pool, id)
+  }
+
+  municipalityListMemberships(officialKey: string): Promise<ApiMunicipalityListMemberships | null> {
+    return municipalityListMemberships(this.pool, officialKey)
+  }
+
+  addMunicipalityListMember(listId: string, officialKey: string): Promise<MunicipalityMembershipMutationResult> {
+    return addMunicipalityListMember(this.pool, listId, officialKey)
+  }
+
+  removeMunicipalityListMember(listId: string, officialKey: string): Promise<MunicipalityMembershipMutationResult> {
+    return removeMunicipalityListMember(this.pool, listId, officialKey)
+  }
+
   stopTile(z: number, x: number, y: number, modes: string[] = [], profile = 'regular_tue_thu'): Promise<Buffer | null> {
     return stopTileQuery(this.pool, z, x, y, modes, profile)
   }
@@ -109,5 +153,9 @@ export class PostgresRepository implements RegionfinderRepository {
     states: string[] = [],
   ): Promise<Buffer | null> {
     return administrativeAreaTileQuery(this.pool, z, x, y, levels, states)
+  }
+
+  municipalityListHighlightTile(z: number, x: number, y: number, listIds: string[] = []): Promise<Buffer | null> {
+    return municipalityListHighlightTileQuery(this.pool, z, x, y, listIds)
   }
 }

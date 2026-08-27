@@ -5,12 +5,14 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import type {
   AdministrativeAreaLevel,
   AdministrativeAreaSelection,
+  ApiMunicipalityList,
   ApiStopSelectionPreview,
   PlaceCategory,
 } from '../api/contracts'
 import type { MapBaseLayer, TravelTimeWindow } from './config'
 import {
   addAdministrativeAreaTileLayers,
+  addMunicipalityListHighlightLayers,
   addPlaceTileLayer,
   addRailRouteTileLayers,
   addRouteTileLayers,
@@ -27,10 +29,12 @@ import {
   createSchoolHoverPopupContent,
   createStopHoverPopupContent,
   mapLibreBaseStyle,
+  municipalityListHighlightSourceKey,
   numericFeatureProperty,
   placeTileSourceKey,
   preferredAdministrativeAreaSelection,
   removeAdministrativeAreaTileLayers,
+  removeMunicipalityListHighlightLayers,
   removePlaceTileLayer,
   removeSchoolTileLayer,
   removeRailRouteTileLayers,
@@ -70,6 +74,7 @@ export function MapLibreCanvas({
   schoolCategories,
   placeCategories,
   administrativeAreaLevels,
+  activeMunicipalityLists,
   selectedAdministrativeAreaId,
   tileModes,
   selectedTimeWindows,
@@ -86,6 +91,7 @@ export function MapLibreCanvas({
   schoolCategories: string[]
   placeCategories: PlaceCategory[]
   administrativeAreaLevels: AdministrativeAreaLevel[]
+  activeMunicipalityLists: ApiMunicipalityList[]
   selectedAdministrativeAreaId: string | null
   tileModes: string[]
   selectedTimeWindows: TravelTimeWindow[]
@@ -106,6 +112,7 @@ export function MapLibreCanvas({
   const activeSchoolTileSourceKeyRef = useRef(schoolTileSourceKey(schoolCategories))
   const activePlaceTileSourceKeyRef = useRef(placeTileSourceKey(placeCategories))
   const activeAdministrativeAreaTileSourceKeyRef = useRef(administrativeAreaTileSourceKey(administrativeAreaLevels))
+  const activeMunicipalityListSourceKeyRef = useRef(municipalityListHighlightSourceKey(activeMunicipalityLists))
   const hoverPopupRef = useRef<maplibregl.Popup | null>(null)
   const currentHoverFeatureRef = useRef<string | null>(null)
   const residentialSettingsRef = useRef({ showResidentialRegions, residentialRadiusMeters })
@@ -489,6 +496,46 @@ export function MapLibreCanvas({
 
     applyAdministrativeAreaSelection(map, selectedAdministrativeAreaId)
   }, [administrativeAreaLevels, mapReady, selectedAdministrativeAreaId])
+
+  useEffect(() => {
+    const map = mapRef.current
+
+    if (!mapReady || !map) {
+      return
+    }
+
+    const sourceKey = municipalityListHighlightSourceKey(activeMunicipalityLists)
+
+    if (sourceKey === activeMunicipalityListSourceKeyRef.current && map.getSource('regionfinder-municipality-list-highlights')) {
+      return
+    }
+
+    removeMunicipalityListHighlightLayers(map)
+    activeMunicipalityListSourceKeyRef.current = sourceKey
+
+    if (activeMunicipalityLists.length === 0) {
+      return
+    }
+
+    onTileLoadingChange(true)
+    addMunicipalityListHighlightLayers(map, activeMunicipalityLists)
+
+    const handleSourceData = (event: maplibregl.MapSourceDataEvent) => {
+      if (
+        event.sourceId === 'regionfinder-municipality-list-highlights' &&
+        map.isSourceLoaded('regionfinder-municipality-list-highlights')
+      ) {
+        onTileLoadingChange(false)
+      }
+    }
+
+    map.on('sourcedata', handleSourceData)
+
+    return () => {
+      map.off('sourcedata', handleSourceData)
+      removeMunicipalityListHighlightLayers(map)
+    }
+  }, [activeMunicipalityLists, mapReady, onTileLoadingChange])
 
   useEffect(() => {
     const map = mapRef.current

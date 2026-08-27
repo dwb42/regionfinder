@@ -133,6 +133,7 @@ Aktueller API-Modus:
 - Schul-POIs werden als eigener MVT-Layer geladen, nicht durch ÖPNV-Modi oder Reisezeitfenster gefiltert. Das Frontend filtert sie ausschließlich über `categories` und legt die MapLibre-Quelle bei Kategorienwechsel neu an.
 - Gymnasien sind in der Karte farblich hervorgehoben; andere weiterführende Schulen sind neutral markiert. Hover zeigt Name und offizielle Schulart. Klick öffnet im ersten Schritt kein Detailpanel.
 - Generische Places werden unter `Orte anzeigen` über `Höfe`, `Ferienhöfe`, `Güter` und `Museen` geschaltet. Diese Layer sind standardmäßig aus und werden unabhängig von Routingprofil, Reisezeitfenstern und Verkehrsmittel-Layern geladen.
+- Globale Gemeindelisten liegen in `municipality_lists` und `municipality_list_members`. Ihre CRUD- und Mitgliedschafts-Endpunkte verwenden den amtlichen Gemeindeschlüssel; aktive Listen werden über einen eigenen, revisionsabhängigen MVT-Endpunkt unabhängig vom vollständigen Verwaltungsgebiets-Layer dargestellt.
 - Das interne Place-Admin-Formular wird nur mit `VITE_REGIONFINDER_ENABLE_PLACE_ADMIN=1` gerendert und nutzt die Places-CRUD-Endpunkte für manuelle Pflege.
 - Die Karte besitzt eine metrische Maßstabsleiste unten rechts.
 

@@ -59,6 +59,27 @@ export type AdministrativeAreaSelection = {
   parentName: string | null
 }
 
+export type ApiMunicipalityList = {
+  id: string
+  name: string
+  color: string
+  municipalityCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type ApiMunicipalityListCreateRequest = {
+  name: string
+  color: string
+}
+
+export type ApiMunicipalityListUpdateRequest = Partial<ApiMunicipalityListCreateRequest>
+
+export type ApiMunicipalityListMemberships = {
+  officialKey: string
+  listIds: string[]
+}
+
 export type ApiStopDetails = ApiStopSearchResult & {
   dataStand: {
     snapshotId: string
