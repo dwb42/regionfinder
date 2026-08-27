@@ -14,17 +14,17 @@ export const mapLibreBaseStyle: StyleSpecification = {
   version: 8,
   glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
   sources: {
+    // Keep this on the Esri basemap family (same provider as satellite-base/satellite-reference
+    // below, both proven working in production). CARTO's anonymous rastertiles now silently
+    // return a 200 PNG with an "API KEY REQUIRED" watermark baked into the image instead of an
+    // error, and raw tile.openstreetmap.org blocks non-openstreetmap.org production traffic per
+    // their tile usage policy. Both looked fine in a plain curl status/size check — only an
+    // actual rendered/visual check catches the CARTO watermark.
     'street-base': {
       type: 'raster',
-      tiles: [
-        'https://a.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png',
-        'https://b.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png',
-        'https://c.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png',
-        'https://d.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}.png',
-      ],
+      tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}'],
       tileSize: 256,
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      attribution: 'Tiles &copy; Esri',
     },
     'satellite-base': {
       type: 'raster',

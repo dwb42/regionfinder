@@ -20,10 +20,11 @@ describe('base map layers', () => {
     const streetSource = mapLibreBaseStyle.sources?.['street-base'] as { tiles?: string[] }
     const referenceSource = mapLibreBaseStyle.sources?.['satellite-reference'] as { tiles?: string[] }
 
-    expect(streetSource.tiles).toEqual(
-      expect.arrayContaining([expect.stringContaining('basemaps.cartocdn.com/rastertiles/voyager_nolabels')]),
-    )
+    expect(streetSource.tiles).toEqual([
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    ])
     expect(streetSource.tiles).not.toEqual(expect.arrayContaining(['https://tile.openstreetmap.org/{z}/{x}/{y}.png']))
+    expect(JSON.stringify(streetSource.tiles)).not.toContain('cartocdn.com')
     expect(referenceSource.tiles?.[0]).toContain('/Reference/World_Boundaries_and_Places/')
     expect(mapLibreBaseStyle.layers?.find((layer) => layer.id === 'satellite-reference')).toMatchObject({
       layout: { visibility: 'none' },
