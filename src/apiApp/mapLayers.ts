@@ -10,22 +10,34 @@ import { apiBaseUrl } from '../data/api'
 import { travelTimeWindowColors, travelTimeWindows, type ModeLayerId, type TravelTimeWindow } from './config'
 import { minutes } from './formatters'
 
-export const mapLibreBaseStyle: StyleSpecification = {
-  version: 8,
-  glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
-  sources: {
-    // Keep this on the Esri basemap family (same provider as satellite-base/satellite-reference
-    // below, both proven working in production). CARTO's anonymous rastertiles now silently
-    // return a 200 PNG with an "API KEY REQUIRED" watermark baked into the image instead of an
-    // error, and raw tile.openstreetmap.org blocks non-openstreetmap.org production traffic per
-    // their tile usage policy. Both looked fine in a plain curl status/size check — only an
-    // actual rendered/visual check catches the CARTO watermark.
-    'street-base': {
+// MapTiler mirrors the standard OSM "Mapnik" cartography under a proper commercial ToS with a
+// free tier, key-authenticated and origin-restricted -- unlike raw tile.openstreetmap.org (whose
+// usage policy explicitly disallows this kind of embedding and which silently soft-blocks
+// production traffic with no warning) or CARTO's now key-gated anonymous rastertiles. Falls back
+// to keyless Esri World_Street_Map when no key is configured (e.g. a checkout without .env set up).
+const maptilerKey = import.meta.env.VITE_MAPTILER_KEY as string | undefined
+
+const streetBaseSource: StyleSpecification['sources'][string] = maptilerKey
+  ? {
+      type: 'raster',
+      // MapTiler serves this style at 512px per tile, not the 256px OSM raw tiles use.
+      tiles: [`https://api.maptiler.com/maps/openstreetmap/{z}/{x}/{y}.png?key=${maptilerKey}`],
+      tileSize: 512,
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://www.maptiler.com/copyright/">MapTiler</a>',
+    }
+  : {
       type: 'raster',
       tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}'],
       tileSize: 256,
       attribution: 'Tiles &copy; Esri',
-    },
+    }
+
+export const mapLibreBaseStyle: StyleSpecification = {
+  version: 8,
+  glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
+  sources: {
+    'street-base': streetBaseSource,
     'satellite-base': {
       type: 'raster',
       tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
