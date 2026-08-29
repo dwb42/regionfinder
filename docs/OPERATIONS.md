@@ -32,6 +32,28 @@ docker compose --profile motis up motis
 
 Der Container ist versioniert gepinnt und nicht öffentlich exponiert.
 
+## Basiskarten-Konfiguration
+
+Der bevorzugte Straßenmodus nutzt MapTilers `openstreetmap`-Rasterstil. Lokal wird der Key vor dem Vite-Start gesetzt; beim Container-Build wird er als Build-Argument übergeben:
+
+```bash
+VITE_MAPTILER_KEY=... npm run dev
+docker build --build-arg VITE_MAPTILER_KEY=... -f Dockerfile.web .
+```
+
+Ohne konfigurierten `VITE_MAPTILER_KEY` fällt der Straßenmodus beim Build auf Esri `World_Street_Map` zurück. Satellit verwendet Esri `World_Imagery` plus `Reference/World_Boundaries_and_Places`. Weil Vite den Key in das Browser-Bundle einbettet, muss er bei MapTiler auf die vorgesehenen Origins beschränkt werden; er ist kein serverseitiges Geheimnis.
+
+CARTOs anonyme Rastertiles dürfen nicht als Fallback verwendet werden: Sie können trotz HTTP `200` ein eingebranntes `API KEY REQUIRED` liefern. Auch direkte Produktionseinbindung von `tile.openstreetmap.org` ist wegen der Tile-Nutzungsrichtlinie kein zulässiger Fallback. Bei Basiskartenproblemen deshalb gerenderte Tiles visuell prüfen, nicht nur Statuscode und Dateigröße.
+
+## Produktions-Deployment (Docker)
+
+`Dockerfile.web` baut das Frontend mit zwei Build-Args:
+
+- `VITE_REGIONFINDER_API_BASE_URL` (Pflicht für Produktionsbuilds; MapLibre lädt Kacheln aus einem Web Worker, wo relative URLs gegen die `blob:`-Worker-URL statt der Seiten-URL aufgelöst werden — absolute URL nötig).
+- `VITE_MAPTILER_KEY` (optional; aktiviert die MapTiler-Straßenkarte, siehe oben. Ohne Wert greift der Esri-Fallback).
+
+`Dockerfile.api` kopiert neben `server` und `src/api` auch `scripts/migrate-db.ts` und `db/migrations` in das Image, damit `npm run db:migrate` produktiv innerhalb eines Containers laufen kann (z.B. als `docker compose run --rm api npm run db:migrate` vor dem eigentlichen Start). Ein Deploy, der diesen Schritt ausläßt, hinterlässt den Code auf dem neuesten Stand, aber das Schema veraltet lautlos — Migrationen sollten bei jedem Deploy als eigener Schritt laufen, nicht nur bei Bedarf von Hand.
+
 ## DB-Echtzeit
 
 Der API-Prozess lädt Echtzeitverbindungen serverseitig. Relevante Variablen:
@@ -110,10 +132,14 @@ Secrets liegen nur in Environment-Variablen. `.env.example` enthält Beispielwer
 - Bei Direktverbindungszahlen prüfen, ob der Metrics-Request `?date=YYYY-MM-DD` enthält; ohne Datum bleibt `directConnectionCount` leer.
 - Beim Schools-Layer prüfen, ob Tile-Requests `/api/v1/tiles/schools/...` mit passenden `?categories=...&states=HH,SH,MV,NI` laufen. `Gymnasium` fragt nur `categories=gymnasium` an; `andere weiterf. Schulen` fragt `comprehensive,waldorf,vocational,upper_secondary` an.
 - Beim Places-Layer prüfen, ob Tile-Requests `/api/v1/tiles/places/...` mit passenden `?categories=...&states=HH,SH,MV,NI` laufen. `Höfe`, `Ferienhöfe`, `Güter` und `Museen` werden als getrennte Kategorien geladen und sind standardmäßig aus.
+- Bei Verwaltungsgebieten prüfen, ob `/api/v1/tiles/administrative-areas/...` die aktiven `levels=county,municipality` und `states=HH,SH,MV,NI` erhält. Gemeindegeometrien erscheinen absichtlich erst ab Zoom 9.
+- Bei Gemeindelisten-Highlights müssen die Requests `/api/v1/tiles/municipality-list-highlights/...` nur aktive `listIds` und einen aktuellen `revision`-Wert enthalten. Listen und Mitgliedschaften sind global; die aktiven Checkboxen stehen browserlokal in `localStorage`.
 - Für interne manuelle Places-Pflege müssen API und Frontend explizit mit `REGIONFINDER_ENABLE_PLACE_ADMIN=1` und `VITE_REGIONFINDER_ENABLE_PLACE_ADMIN=1` laufen; ohne API-Flag liefern Schreibzugriffe auf `/api/v1/places` `403`.
 - MapLibre-Sources werden im API-Modus bei Moduswechsel entfernt und neu angelegt, damit keine alten ungefilterten Tiles aus dem Cache sichtbar bleiben.
 - Schools-MapLibre-Source wird bei Kategorienwechsel ebenfalls entfernt und neu angelegt, damit keine alten POI-Kategorien aus dem Cache sichtbar bleiben.
 - Places-MapLibre-Source wird bei Kategorienwechsel ebenfalls entfernt und neu angelegt, damit keine alten POI-Kategorien aus dem Cache sichtbar bleiben.
-- Ortsnamen kommen in Straßen- und Satellitenmodus aus `voyager_only_labels`; bei fehlenden Ortsnamen Label-Tile-Requests prüfen.
+- Ortsnamen im Straßenmodus sind im MapTiler-`openstreetmap`-Kachelbild enthalten (kein separater Label-Layer). Im Satellitenmodus kommen Orts-/Grenzlabels aus dem separaten Esri-`Reference/World_Boundaries_and_Places`-Overlay (Source `satellite-reference`); bei fehlenden Labels dort die Tile-Requests prüfen.
+- Straßen-Basiskarte: bei blankem Kartenhintergrund zuerst prüfen, ob `VITE_MAPTILER_KEY` gesetzt und in MapTiler für die anfragende Origin freigegeben ist. Der Esri-`World_Street_Map`-Fallback wird nur gewählt, wenn beim Build kein Key gesetzt ist; ein vorhandener, aber ungültiger oder falsch beschränkter Key fällt nicht zur Laufzeit zurück.
 - Niedrigkonfidente OSM-Schienenmatches sind Diagnosematerial. Wenn in der Karte wieder blaue Diagonalen oder falsche Korridore erscheinen, zuerst prüfen, ob `osm_reconstructed_low_confidence` oder `official_gtfs` versehentlich im Standardlayer sichtbar sind.
-- Nach Änderungen an `server/app.ts`, `server/schemas.ts`, `server/db/queries/tileQueries.ts` oder `server/db/queries/placeQueries.ts` den API-Prozess neu starten; sonst kann der laufende Prozess neue Tile-Endpunkte wie `/tiles/schools` oder `/tiles/places` noch nicht kennen.
+- Nach Änderungen an `server/app.ts`, `server/schemas.ts` oder Query-Modulen unter `server/db/queries/` den API-Prozess neu starten; sonst kennt der laufende Prozess neue Endpunkte oder SQL-Pfade noch nicht.
+- Browserzugriffe auf Listenmitgliedschaften und Places-Administration verwenden `PUT`, `PATCH` beziehungsweise `DELETE`. Wenn sie nur im Browser mit `Failed to fetch` scheitern, zuerst den CORS-Preflight prüfen; die API muss `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE` und `OPTIONS` erlauben.

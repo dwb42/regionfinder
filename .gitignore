@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Local secrets (DB credentials, API keys) -- .env.example documents the shape, never commit .env
+.env
+
 # Generated/raw transit data that is too large for GitHub.
 data/raw/
 data/processed/

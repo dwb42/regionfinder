@@ -27,6 +27,8 @@ Frontend-URL in der lokalen Entwicklungsumgebung: `http://localhost:5176/`.
 `REGIONFINDER_API_PORT=4001` und `VITE_REGIONFINDER_API_BASE_URL=http://127.0.0.1:4001`
 gesetzt, sofern sie nicht bereits im Environment überschrieben sind.
 
+Für die OpenStreetMap-Straßenkarte über MapTiler kann `VITE_MAPTILER_KEY` gesetzt werden. Ohne Key verwendet der Straßenmodus automatisch Esri `World_Street_Map`; Satellit nutzt unabhängig davon Esri `World_Imagery` mit Orts- und Grenzlabel-Overlay. `VITE_`-Variablen werden beim Frontend-Build eingebettet, daher sollte ein MapTiler-Key auf die vorgesehenen Origins beschränkt sein.
+
 Fixture-API für Tests:
 
 ```bash
@@ -133,11 +135,20 @@ Implementierte Endpunkte:
 - `POST /api/v1/places`
 - `PATCH /api/v1/places/:id`
 - `DELETE /api/v1/places/:id`
+- `GET /api/v1/municipality-lists`
+- `POST /api/v1/municipality-lists`
+- `PATCH /api/v1/municipality-lists/:id`
+- `DELETE /api/v1/municipality-lists/:id`
+- `GET /api/v1/municipality-lists/memberships/:officialKey`
+- `PUT /api/v1/municipality-lists/:id/municipalities/:officialKey`
+- `DELETE /api/v1/municipality-lists/:id/municipalities/:officialKey`
 - `GET /api/v1/tiles/stops/{z}/{x}/{y}.mvt?modes=...`
 - `GET /api/v1/tiles/routes/{z}/{x}/{y}.mvt?modes=...`
 - `GET /api/v1/tiles/rail-network/{z}/{x}/{y}.mvt`
 - `GET /api/v1/tiles/schools/{z}/{x}/{y}.mvt?categories=...&states=...`
 - `GET /api/v1/tiles/places/{z}/{x}/{y}.mvt?categories=...&states=...`
+- `GET /api/v1/tiles/administrative-areas/{z}/{x}/{y}.mvt?levels=...&states=...`
+- `GET /api/v1/tiles/municipality-list-highlights/{z}/{x}/{y}.mvt?listIds=...&revision=...`
 
 Die Tile-Endpunkte filtern serverseitig nach Verkehrsmitteln. Stop-Tiles akzeptieren zusätzlich `profile`, damit Reisezeitfarben und Hover-Metriken aus dem passenden Metric Run kommen. Der Client entfernt und erneuert die MapLibre-Vector-Tile-Sources beim Umschalten der Layer, damit keine alten ungefilterten Tiles aus dem MapLibre-Cache sichtbar bleiben.
 
@@ -155,7 +166,7 @@ Wichtige UX-Entscheidungen:
 
 - MapLibre als Kartenrenderer.
 - Basiskarten-Umschalter:
-  - OpenStreetMap-Straßenkarte mit integrierten Labels
+  - OpenStreetMap-Straßenkarte über MapTiler, wenn `VITE_MAPTILER_KEY` gesetzt ist; andernfalls Esri `World_Street_Map`
   - Esri World Imagery Satellit plus Esri-Orts- und Grenzlabel-Overlay
 - StopPlaces und Route Patterns werden als MVTs geladen, nicht als vollständige JSON-Dateien.
 - Stationen aus Vektor-Tiles sind anklickbar und öffnen rechts StopPlace-Details, Metriken, DB-Echtzeitverbindungen und Linien.
@@ -182,7 +193,9 @@ Wichtige UX-Entscheidungen:
   - `andere weiterf. Schulen`
 - Schulmarker kommen aus dem Schools-MVT, öffnen kein Detailpanel und zeigen bei Hover Name und Schulart. Gymnasien sind farblich blau hervorgehoben; andere Schulformen bleiben neutral markiert.
 - `Orte anzeigen`: generische Places werden über `Höfe`, `Ferienhöfe`, `Güter` und `Museen` ein- und ausgeblendet. Sie kommen aus dem Places-MVT, sind unabhängig von ÖPNV-Modi und Reisezeitfenstern und sind standardmäßig deaktiviert.
-- `Gemeindelisten`: global in PostGIS gespeicherte, frei benannte Listen können im letzten regulären Sidebar-Block angelegt, eingefärbt und aktiviert werden. Gemeinden werden im Detailpanel mehreren Listen zugeordnet; aktive Listen laden einen eigenen MVT-Layer ab Zoom 6 und bleiben unabhängig vom normalen Gemeinde-Layer sichtbar. Nur die aktiven Checkboxen werden pro Browser gespeichert.
+- Place-Marker sind anklickbar und öffnen ein Detailpanel mit Kategorie, Adresse sowie getrennten Links zur Website des Ortes und zur recherchierten Quelle, soweit vorhanden.
+- `Verwaltungsgebiete`: Landkreise und Gemeinden werden separat über PostGIS-MVTs geschaltet. Ein Klick markiert das Gebiet und öffnet ein Detailpanel mit Typ, amtlichem Schlüssel und bei Gemeinden dem Landkreis.
+- `Gemeindelisten`: global in PostGIS gespeicherte, frei benannte Listen können im letzten regulären Sidebar-Block angelegt, eingefärbt, umbenannt, gelöscht und aktiviert werden. Gemeinden werden im Detailpanel mehreren Listen zugeordnet; aktive Listen laden einen eigenen MVT-Layer ab Zoom 6 und bleiben unabhängig vom normalen Gemeinde-Layer sichtbar. Nur die aktiven Checkboxen werden pro Browser gespeichert.
 - Eine metrische Maßstabsleiste sitzt unten rechts in der MapLibre-Karte.
 
 ## Daten und Artefakte

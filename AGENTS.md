@@ -112,6 +112,8 @@ Benannte Korridore stehen in `pipeline/rail_network.py`. Aktuell sind viele S-/R
 - StopPlaces und Route Patterns im API-Modus über Vector Tiles aus PostGIS laden.
 - Weiterführende Schulen sind snapshot-unabhängige POIs in `schools` und werden über `/api/v1/tiles/schools/{z}/{x}/{y}.mvt?categories=...&states=...` geladen.
 - Generische Places sind snapshot-unabhängige POIs in `places` und werden über `/api/v1/tiles/places/{z}/{x}/{y}.mvt?categories=...&states=...` geladen. Schreibende Places-Endpunkte sind interne Pflege und erfordern `REGIONFINDER_ENABLE_PLACE_ADMIN=1`.
+- Klickbare Landkreise und Gemeinden liegen snapshot-unabhängig in `administrative_areas` und werden über `/api/v1/tiles/administrative-areas/{z}/{x}/{y}.mvt?levels=...&states=...` geladen. `pipeline/admin_boundaries.py` importiert dafür BKG-VG250-`krs` und `gem`; `admin_boundaries` bleibt die gröbere Tabelle für Bundeslandzuordnungen.
+- Gemeindelisten sind globaler Instanzzustand in `municipality_lists` und `municipality_list_members`; es gibt derzeit keine Benutzer-/Mandantenzuordnung. Mitgliedschaften referenzieren Gemeinden in `administrative_areas` und werden über amtliche Gemeindeschlüssel mutiert. Nur aktive Listen-Checkboxen sind browserlokal (`regionfinder.municipality-lists.active.v1`).
 - Tile-Endpunkte mit `?modes=...` filtern, wenn UI-Layer aktiv/deaktiv sind. Stop-Tiles zusätzlich mit `?profile=...` anfragen, damit Reisezeitfarben und Hover-Metriken zum Routingprofil passen.
 - Bei Moduswechseln MapLibre-Vector-Tile-Sources entfernen und neu anlegen; `setTiles()` allein kann alte ungefilterte Tiles sichtbar lassen.
 - Route-MVTs sollen `route_color` liefern. Das Frontend nutzt echte GTFS-Farben bevorzugt und Fallbackfarben nach Modus.
@@ -127,6 +129,9 @@ Benannte Korridore stehen in `pipeline/rail_network.py`. Aktuell sind viele S-/R
 - API-Frontend-Code liegt unter `src/apiApp/`: Hooks, MapLibre-Canvas, Layerdefinitionen, Formatter und Detailpanel-Komponenten. `src/ApiApp.tsx` bleibt Layout/Verdrahtung.
 - `MapLibreCanvas` wird lazy geladen. Große MapLibre-Abhängigkeiten nicht wieder statisch in den App-Shell importieren.
 - Der große lazy MapLibre-Chunk ist bewusst isoliert; Vite nutzt `chunkSizeWarningLimit: 1100`.
+- CORS muss `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE` und `OPTIONS` erlauben. Insbesondere Gemeindelisten-Mitgliedschaften und Places-Administration lösen bei getrennten Frontend-/API-Origins Browser-Preflights aus.
+- Für die Straßen-Basiskarte nicht zu CARTOs `basemaps.cartocdn.com`-Rastertiles oder zu rohem `tile.openstreetmap.org` zurückwechseln: CARTOs anonyme Kacheln verlangen inzwischen einen Key (liefern sonst `200 OK` mit „API KEY REQUIRED“ als Wasserzeichen im Bildinhalt, nicht als Fehlerstatus) und rohes `tile.openstreetmap.org` verstößt gegen dessen Nutzungsrichtlinie und kann Produktionsverkehr ohne Vorwarnung sperren. MapTiler (mit Fallback auf Esri) ist die aktuelle, geprüft stabile Wahl.
+- `Dockerfile.api` kopiert neben `server` und `src/api` auch `scripts/migrate-db.ts` und `db/migrations`, damit `npm run db:migrate` innerhalb des gebauten API-Images läuft (Voraussetzung für den Migrations-Schritt im Produktions-Deploy). Diese Dateien nicht als „im Server ungenutzt" entfernen.
 
 ## UX-Konventionen
 
@@ -137,7 +142,7 @@ API-Modus:
 - `Bus` ist standardmäßig deaktiviert. `Fähre` ist im API-UI aktuell nicht als eigener Layer-Schalter verfügbar.
 - Klick auf StopPlace aus MVT aktualisiert das rechte Detailpanel.
 - Die frühere Sidebar-Suche/Suchtrefferliste ist im API-UI entfernt; Detailpanel-Öffnung erfolgt über die Karte.
-- Basiskarten-Umschalter: CARTO/OSM-Straßenkarte und Esri-Satellit; beide mit CARTO-Ortslabel-Overlay.
+- Basiskarten-Umschalter: OpenStreetMap-Straßenkarte über MapTiler (`openstreetmap`-Rasterstil, `VITE_MAPTILER_KEY`, 512px-Kacheln) und Esri-Satellit (`World_Imagery`) mit Esri-Orts-/Grenzlabel-Overlay (`Reference/World_Boundaries_and_Places`, nur im Satellitenmodus sichtbar). Ohne gesetzten `VITE_MAPTILER_KEY` fällt der Straßenmodus automatisch auf das schlüssellose Esri `World_Street_Map` zurück (siehe `src/apiApp/mapLayers.ts`).
 - Detailpanel-Überschrift für Verbindungen ist `DB Echtzeit`, nicht `Konkrete Verbindung`; der alte lokale `Unser System`-Block ist im API-Detailpanel entfernt.
 - Die DB-Echtzeit-Startzeit sitzt im Detailpanel mit `Frühere`-/`Spätere`-Buttons. Die Sidebar enthält keine separate Abfahrtszeitsteuerung mehr.
 - Datenstand und technische StopPlace-Details sind einklappbar.
@@ -148,9 +153,10 @@ API-Modus:
 - Wohnregionen sind geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele; Radius = Minuten * `0,75 km`, Optionen 5/10/15/20 Minuten.
 - Zoom-Control sitzt links oben in der Map-Card; Zoomstufe sichtbar anzeigen.
 - MVT-Kacheln und abgeleitete Overlays müssen konsistent nach aktiven Modi und Reisezeitfenstern gefiltert sein.
+- `Verwaltungsgebiete` enthält `Landkreise` und `Gemeinden`; beide sind standardmäßig aus. Klick öffnet ein Gebietsdetailpanel, Gemeinden zeigen zusätzlich Landkreis und Gemeindelisten-Mitgliedschaften. Gemeindegeometrien beginnen bei Zoom 9, Listen-Highlights unabhängig davon bei Zoom 6.
 - Zusatzlayer sitzen unten in der Sidebar. Weiterführende Schulen stehen unter `Schulen anzeigen` und sind getrennt schaltbar als `Gymnasium` und `andere weiterf. Schulen`; beide sind standardmäßig aktiv. Generische Places stehen unter `Orte anzeigen`, sind getrennt schaltbar als `Höfe`, `Ferienhöfe`, `Güter`, `Museen` und standardmäßig aus. `Gemeindelisten` ist der letzte reguläre Filterblock; Listendaten und Mitgliedschaften sind global in PostGIS, aktive Checkboxen bleiben browserlokal. Aktive Listen markieren Gemeinden über einen eigenen MVT-Layer unabhängig vom vollständigen Gemeinde-Layer.
 - Schulmarker werden nicht durch Reisezeitfenster oder ÖPNV-Modi gefiltert. Gymnasien sind blau hervorgehoben, andere weiterführende Schulen neutral. Hover zeigt Name und Schulart; Klick öffnet aktuell kein Detailpanel.
-- Place-Marker werden nicht durch Reisezeitfenster oder ÖPNV-Modi gefiltert. Hover zeigt Name und Kategorie; Klick öffnet aktuell kein Detailpanel. Das interne Place-Admin-Formular erscheint nur mit `VITE_REGIONFINDER_ENABLE_PLACE_ADMIN=1`.
+- Place-Marker werden nicht durch Reisezeitfenster oder ÖPNV-Modi gefiltert. Hover zeigt Name und Kategorie; Klick öffnet ein Detailpanel mit Kategorie, Adresse, Ortswebsite und Quellenlink, soweit vorhanden. Das interne Place-Admin-Formular erscheint nur mit `VITE_REGIONFINDER_ENABLE_PLACE_ADMIN=1`.
 - Die Karte zeigt unten rechts eine metrische Maßstabsleiste.
 
 ## Nächster fachlicher Schwerpunkt

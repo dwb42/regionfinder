@@ -1,6 +1,6 @@
 # Current State
 
-Stand: 2026-07-15 nach Regionfinder V2 Produktionsintegration, API-/MapLibre-UX-Nachzug, DB-Echtzeitintegration, erstem OSM-Schienenkorridor-Matching, Schools-POI-Layer und generischem Places-Layer.
+Stand: 2026-08-29 nach Regionfinder V2 Produktionsintegration, API-/MapLibre-UX-Nachzug, DB-Echtzeitintegration, OSM-Schienenkorridor-Matching, Schools-/Places-POIs, klickbaren Verwaltungsgebieten und persistenten Gemeindelisten.
 
 ## Produktstand
 
@@ -86,6 +86,20 @@ Der Import läuft über `pipeline/places.py` und schreibt CSV/TSV/JSON/GeoJSON i
 
 Interne manuelle Pflege ist über API und optionales UI vorbereitet. Schreibende API-Endpunkte sind deaktiviert, solange `REGIONFINDER_ENABLE_PLACE_ADMIN=1` nicht gesetzt ist. Das Frontend zeigt das Admin-Formular nur mit `VITE_REGIONFINDER_ENABLE_PLACE_ADMIN=1`.
 
+## Zusatzdaten: Verwaltungsgebiete und Gemeindelisten
+
+`pipeline/admin_boundaries.py` importiert aus BKG VG250 neben den Bundesländern auch Landkreise (`krs`) und Gemeinden (`gem`) für `HH`, `SH`, `MV` und `NI`. Bundesländer bleiben für räumliche Zuordnung in `admin_boundaries`; die klickbaren Hierarchieebenen liegen snapshot-unabhängig in `administrative_areas`.
+
+`administrative_areas` enthält je aktivem Gebiet:
+
+- Ebene `county` oder `municipality`
+- amtlichen Schlüssel, Namen, Gebietstyp und Bundesland
+- bei Gemeinden eine Referenz auf den Landkreis
+- MultiPolygon-Geometrie und einen stabilen Labelpunkt
+- Quelle, Quell-Layer und Importzeitpunkt
+
+Die Gemeindelisten aus `municipality_lists` und `municipality_list_members` sind ebenfalls snapshot-unabhängig. Listennamen sind nach Trimmen und ohne Beachtung der Groß-/Kleinschreibung global eindeutig; Farben müssen `#RRGGBB` entsprechen. Eine Gemeinde kann mehreren Listen angehören, und das Löschen einer Liste entfernt ihre Mitgliedschaften per Cascade. Es gibt derzeit kein Benutzer- oder Mandantenmodell: Listen und Mitgliedschaften sind für alle Nutzer derselben Instanz gemeinsam.
+
 ## Produktionsmetriken
 
 Aktive Metrikengine:
@@ -132,8 +146,8 @@ Aktuelle UI-Funktionen im API-Modus:
 - Die Überschrift für Verbindungsauskunft lautet `DB Echtzeit`; der frühere lokale Block `Konkrete Verbindung`/`Unser System` wird im API-Detailpanel nicht mehr gerendert.
 - Die Startzeit fuer `DB Echtzeit` sitzt im Detailpanel. `Frühere` und `Spätere` setzen die Startzeit relativ zu den aktuell geladenen Alternativen; die linke Sidebar enthält keine separate Abfahrtszeitsteuerung mehr.
 - Basiskarten-Umschalter:
-  - OpenStreetMap-Straßenkarte mit integrierten Labels.
-  - Esri-Satellit plus Esri-Orts- und Grenzlabel-Overlay.
+  - OpenStreetMap-Straßenkarte über MapTiler (`openstreetmap`-Rasterstil, Schlüssel `VITE_MAPTILER_KEY`, 512px-Kacheln, mit integrierten Labels). Ohne gesetzten Schlüssel automatischer Fallback auf schlüsselloses Esri `World_Street_Map`.
+  - Esri-Satellit (`World_Imagery`) plus Esri-Orts- und Grenzlabel-Overlay (`Reference/World_Boundaries_and_Places`), nur im Satellitenmodus sichtbar.
 - Zoom-Control sitzt links oben in der Map-Card; die aktuelle Zoomstufe wird direkt darunter angezeigt.
 - ÖPNV-Layer:
   - `Regional/Fern`
@@ -159,8 +173,9 @@ Aktuelle UI-Funktionen im API-Modus:
 - Beide Schul-Checkboxen sind standardmäßig aktiv. Der Client lädt Schools-MVTs über `categories=...` neu, wenn eine Checkbox umgeschaltet wird.
 - Schulmarker sind reine Karten-POIs ohne Detailpanel-Klick. Hover zeigt Name und offizielle Schulart. Gymnasien sind blau hervorgehoben; andere weiterführende Schulen bleiben neutral.
 - `Orte anzeigen`: Generische Places werden über `Höfe`, `Ferienhöfe`, `Güter` und `Museen` gesteuert. Diese Layer sind standardmäßig deaktiviert und werden nur nach Auswahl geladen.
+- Place-Marker sind anklickbare Karten-POIs aus dem Places-MVT. Sie werden nicht durch ÖPNV-Modi oder Reisezeitfenster gefiltert; Hover zeigt Name und Kategorie. Das rechte Detailpanel zeigt Kategorie, Adresse und – sofern vorhanden – getrennte Links zur Website des Ortes und zum recherchierten Quelleintrag.
+- `Verwaltungsgebiete` bietet getrennte Checkboxen für `Landkreise` und `Gemeinden`. Die Auswahl wird auf der Karte hervorgehoben und öffnet rechts Typ, amtlichen Schlüssel und bei Gemeinden den übergeordneten Landkreis. Gemeindegeometrien werden erst ab Zoom 9, Gemeindelabels ab Zoom 10 geliefert.
 - `Gemeindelisten` ist der letzte reguläre Sidebar-Block. Listen und Mitgliedschaften werden global in PostGIS gespeichert, während aktive Listen-Checkboxen im Browser verbleiben. Im Gemeinde-Detailpanel sind Mehrfachzuordnungen möglich; die farbigen Highlight-MVTs werden unabhängig vom Schalter `Gemeinden` ab Zoom 6 geladen.
-- Place-Marker sind Karten-POIs aus dem Places-MVT. Hover zeigt Name und Kategorie; sie werden nicht durch ÖPNV-Modi oder Reisezeitfenster gefiltert.
 - Das interne Place-Admin-Formular erscheint nur mit `VITE_REGIONFINDER_ENABLE_PLACE_ADMIN=1` und erlaubt Anlegen, Bearbeiten und Soft-Delete von Places.
 
 ## DB-Echtzeitverbindungen und Direktverbindungen
@@ -222,7 +237,10 @@ Wichtige Einschränkung: Viele S-/Regional-Patterns sind zwar OSM-geroutet, erre
 - Stop- und Route-Tiles akzeptieren `?modes=...`; Stop-Tiles akzeptieren zusätzlich `?profile=...`.
 - Schools-Tiles akzeptieren `?categories=...&states=...` und nutzen den MVT-Layernamen `schools`.
 - Places-Tiles akzeptieren `?categories=...&states=...` und nutzen den MVT-Layernamen `places`.
+- Administrative-Area-Tiles akzeptieren `?levels=county,municipality&states=...` und enthalten getrennte Polygon- und Label-Layer.
+- Gemeindelisten-Highlights werden ausschließlich für aktive Listen über `?listIds=...&revision=...` geladen. Der revisionsabhängige Source-Key sorgt dafür, dass Mitgliedschaftsänderungen nicht durch alte MapLibre-Tiles verdeckt werden.
 - Schreibende Places-Endpunkte sind interne Pflegeoberfläche und werden serverseitig über `REGIONFINDER_ENABLE_PLACE_ADMIN=1` freigeschaltet.
+- Fastify-CORS erlaubt neben `GET`/`POST` ausdrücklich `PUT`, `PATCH`, `DELETE` und `OPTIONS`, damit Mitgliedschafts- und Admin-Mutationen aus einem separat laufenden Vite-Frontend die Browser-Preflight-Prüfung bestehen.
 - Stop-Metriken akzeptieren zusätzlich `?date=YYYY-MM-DD`, wenn eine tagesgenaue Direktverbindungszahl gebraucht wird.
 - Aktueller Default-Referenztag im API-Frontend ist `2026-09-15`, passend zum Produktions-Metrikprofil.
 - Route-Tiles liefern `route_color`, normalisiert auf `#RRGGBB`, wenn eine echte GTFS-Farbe existiert.
@@ -297,6 +315,31 @@ GET /api/v1/tiles/places/{z}/{x}/{y}.mvt?categories=hof,ferienhof,gut,museum&sta
 ```
 
 MVT-Properties: `id`, `name`, `category`, `state_code`, `origin`.
+
+## Verwaltungsgebiete und Gemeindelisten: Datenmodell und API
+
+`db/migrations/011_administrative_areas.sql` definiert `administrative_areas` mit einer eindeutigen Kombination aus `level` und `official_key`, Landkreis-Gemeinde-Hierarchie, aktiver MultiPolygon-Geometrie, Labelpunkt sowie räumlichen und fachlichen Indizes. `pipeline/admin_boundaries.py` aktualisiert die Tabelle beim BKG-Import und markiert nicht mehr gelieferte Datensätze aus derselben Quelle inaktiv.
+
+`db/migrations/012_municipality_lists.sql` definiert:
+
+- `municipality_lists`: UUID, global eindeutiger Name, Farbe, Erstellungs- und Änderungszeitpunkt
+- `municipality_list_members`: zusammengesetzter Primärschlüssel aus Liste und `administrative_areas`-Gemeinde
+
+SQL für Listen und Mitgliedschaften liegt im fokussierten Modul `server/db/queries/municipalityListQueries.ts`; Geometrien bleiben im Tile-Query-Modul. Implementierte Endpunkte:
+
+```text
+GET    /api/v1/municipality-lists
+POST   /api/v1/municipality-lists
+PATCH  /api/v1/municipality-lists/:id
+DELETE /api/v1/municipality-lists/:id
+GET    /api/v1/municipality-lists/memberships/:officialKey
+PUT    /api/v1/municipality-lists/:id/municipalities/:officialKey
+DELETE /api/v1/municipality-lists/:id/municipalities/:officialKey
+GET    /api/v1/tiles/administrative-areas/{z}/{x}/{y}.mvt?levels=county,municipality&states=HH,SH,MV,NI
+GET    /api/v1/tiles/municipality-list-highlights/{z}/{x}/{y}.mvt?listIds=...&revision=...
+```
+
+Die Mitgliedschaftsmutationen sind idempotent. Unbekannte Listen oder Gemeinden liefern `404`, Namenskonflikte liefern `409 municipality_list_name_conflict`. Die aktiven Listen-IDs sind absichtlich kein Serverzustand; der Browser speichert sie unter `regionfinder.municipality-lists.active.v1` in `localStorage`.
 
 ## Verifikation
 

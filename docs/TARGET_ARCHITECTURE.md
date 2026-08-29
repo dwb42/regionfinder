@@ -16,6 +16,7 @@ Pipeline (Python)
   -> Snapshots importieren und normalisieren
   -> zertifizierte Batchmetriken berechnen: MOTIS one-to-all primaer, R5/r5py optional
   -> OSM-Schienen importieren und Route-Pattern-Anzeigegeometrien rekonstruieren
+  -> BKG-Verwaltungsgebiete auf Landkreis- und Gemeindeebene normalisieren
   -> offizielle Schulstandorte als snapshot-unabhängige POIs importieren
   -> generische Places und Ferienhof-Kandidaten als snapshot-unabhängige POIs importieren
   -> Qualitätsberichte und Artefakt-Hashes speichern
@@ -29,7 +30,7 @@ Pipeline (Python)
 4. Eine zertifizierte Metrikengine berechnet Metriken ueber konkrete Fahrplandaten und gewuenschte Abfahrtszeitpunkte.
    Fuer den Produktionssnapshot `delfi-bb69c7e2c8d5` ist `motis_one_to_all` die aktive Engine.
 5. Ein Snapshot wird erst nach bestandenen Gates aktiv.
-6. Snapshot-unabhängige Zusatzdaten wie Schulen und generische Places werden in eigenen Tabellen importiert und über eigene MVT-Endpunkte bereitgestellt.
+6. Snapshot-unabhängige Zusatzdaten wie Verwaltungsgebiete, Gemeindelisten, Schulen und generische Places liegen in eigenen Tabellen und werden über fokussierte API-/MVT-Endpunkte bereitgestellt.
 7. Das Frontend lädt im API-Modus nur API-Antworten und MVT-Kacheln.
 
 ## Snapshot-Lebenszyklus
@@ -90,13 +91,21 @@ Implementiert:
 - `POST /api/v1/places`
 - `PATCH /api/v1/places/:id`
 - `DELETE /api/v1/places/:id`
+- `GET|POST /api/v1/municipality-lists`
+- `PATCH|DELETE /api/v1/municipality-lists/:id`
+- `GET /api/v1/municipality-lists/memberships/:officialKey`
+- `PUT|DELETE /api/v1/municipality-lists/:id/municipalities/:officialKey`
 - `GET /api/v1/tiles/stops/{z}/{x}/{y}.mvt`
 - `GET /api/v1/tiles/routes/{z}/{x}/{y}.mvt`
 - `GET /api/v1/tiles/rail-network/{z}/{x}/{y}.mvt`
 - `GET /api/v1/tiles/schools/{z}/{x}/{y}.mvt`
 - `GET /api/v1/tiles/places/{z}/{x}/{y}.mvt`
+- `GET /api/v1/tiles/administrative-areas/{z}/{x}/{y}.mvt`
+- `GET /api/v1/tiles/municipality-list-highlights/{z}/{x}/{y}.mvt`
 
 Request-Validierung liegt in `server/schemas.ts`, gemeinsame Antworttypen in `src/api/contracts.ts`.
+
+Da das Frontend in der Entwicklung auf einem anderen Origin läuft, muss Fastify-CORS die tatsächlich verwendeten Methoden `GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE` und `OPTIONS` explizit erlauben. Das ist Teil des API-Vertrags für Gemeindelisten und Places-Administration.
 
 Schreibende Places-Endpunkte sind interne Pflegefunktionen. Sie sind nur aktiv, wenn der API-Prozess mit `REGIONFINDER_ENABLE_PLACE_ADMIN=1` läuft.
 
@@ -120,7 +129,7 @@ Aktueller API-Modus:
 - Der Client entfernt und erneuert die MapLibre-Quellen bei Moduswechseln, damit keine alten ungefilterten Tiles im MapLibre-Cache sichtbar bleiben.
 - StopPlace-MVT-Features sind anklickbar und öffnen das Detailpanel.
 - Die frühere Sidebar-Suche und Suchtrefferliste ist im API-UI entfernt; der Suchendpunkt bleibt nur technische API-Oberfläche.
-- Basiskarten sind die OpenStreetMap-Straßenkarte mit integrierten Labels und Esri-Satellit mit Esri-Orts- und Grenzlabel-Overlay.
+- Basiskarten sind die OpenStreetMap-Straßenkarte über MapTiler (`openstreetmap`-Rasterstil, Schlüssel `VITE_MAPTILER_KEY`, 512px-Kacheln, mit integrierten Labels; ohne Schlüssel Fallback auf schlüsselloses Esri `World_Street_Map`) und Esri-Satellit mit Esri-Orts- und Grenzlabel-Overlay (nur im Satellitenmodus sichtbar).
 - Das Detailpanel rendert DB-Echtzeitverbindungen unter der Überschrift `DB Echtzeit`; lokale `/itineraries` werden dort nicht als eigener Block angezeigt.
 - Der Metrikblock zeigt `fastestSeconds` und eine tagesgenaue Direktverbindungszahl aus `directConnectionCount`, wenn `metrics` mit `date=YYYY-MM-DD` abgefragt wird.
 - Datenstand und technische StopPlace-Details sind einklappbar.
@@ -133,6 +142,8 @@ Aktueller API-Modus:
 - Schul-POIs werden als eigener MVT-Layer geladen, nicht durch ÖPNV-Modi oder Reisezeitfenster gefiltert. Das Frontend filtert sie ausschließlich über `categories` und legt die MapLibre-Quelle bei Kategorienwechsel neu an.
 - Gymnasien sind in der Karte farblich hervorgehoben; andere weiterführende Schulen sind neutral markiert. Hover zeigt Name und offizielle Schulart. Klick öffnet im ersten Schritt kein Detailpanel.
 - Generische Places werden unter `Orte anzeigen` über `Höfe`, `Ferienhöfe`, `Güter` und `Museen` geschaltet. Diese Layer sind standardmäßig aus und werden unabhängig von Routingprofil, Reisezeitfenstern und Verkehrsmittel-Layern geladen.
+- Place-Features sind anklickbar und laden `GET /api/v1/places/:id` für ein Detailpanel. UI-Links unterscheiden die eigene Website des Ortes von einem recherchierten Quelleintrag in `raw_properties.detail_url`.
+- Landkreise und Gemeinden werden über einen eigenen Administrative-Area-MVT geschaltet. Das MVT enthält Polygon- und Label-Layer; Gemeindegeometrien werden erst ab Zoom 9 geliefert. Klickauswahl und Selektionshighlight bleiben getrennt von Gemeindelisten-Highlights.
 - Globale Gemeindelisten liegen in `municipality_lists` und `municipality_list_members`. Ihre CRUD- und Mitgliedschafts-Endpunkte verwenden den amtlichen Gemeindeschlüssel; aktive Listen werden über einen eigenen, revisionsabhängigen MVT-Endpunkt unabhängig vom vollständigen Verwaltungsgebiets-Layer dargestellt.
 - Das interne Place-Admin-Formular wird nur mit `VITE_REGIONFINDER_ENABLE_PLACE_ADMIN=1` gerendert und nutzt die Places-CRUD-Endpunkte für manuelle Pflege.
 - Die Karte besitzt eine metrische Maßstabsleiste unten rechts.
@@ -211,6 +222,29 @@ Queryparameter:
 - `states`: CSV aus `HH`, `SH`, `MV`, `NI`
 
 Places-Tiles werden unabhängig von Routingprofil, Reisezeitfenstern und Verkehrsmittel-Layern geladen.
+
+Administrative-Area-MVTs werden aus der snapshot-unabhängigen Tabelle `administrative_areas` erzeugt. Der Polygon-Layer `administrative_areas` und der Punkt-Layer `administrative_area_labels` enthalten:
+
+- `id`
+- `level` (`county` oder `municipality`)
+- `name`, `area_type`, `official_key`, `state_code`
+- `parent_id`, `parent_name`
+- `geom`
+
+Queryparameter sind `levels` und `states`. Landkreise können auf niedrigen Zoomstufen erscheinen; Gemeinden werden erst ab Zoom 9 und deren Labels ab Zoom 10 geliefert.
+
+Der MVT-Layer `municipality-list-highlights` enthält für die per `listIds` angeforderten Mitgliedschaften `list_id`, Gemeinde-ID, amtlichen Schlüssel, Namen, Bundesland und Geometrie. Er wird unabhängig vom allgemeinen Gemeindelayer ab Zoom 6 genutzt. Der zusätzliche Parameter `revision` gehört zum Client-/Cache-Vertrag: Listendatenänderungen erzeugen einen neuen Source-Key und ETag, damit MapLibre keine veralteten Highlights weiterverwendet.
+
+## Verwaltungsgebiete und Gemeindelisten
+
+`db/migrations/011_administrative_areas.sql` trennt klickbare Landkreise und Gemeinden von den gröberen, snapshotbezogenen Zuordnungsaufgaben. `administrative_areas` speichert eine eindeutige Kombination aus Ebene und amtlichem Schlüssel, die Landkreis-Gemeinde-Hierarchie, aktive MultiPolygon-Geometrien und Labelpunkte. `pipeline/admin_boundaries.py` normalisiert dafür die BKG-VG250-Layer `krs` und `gem`.
+
+`db/migrations/012_municipality_lists.sql` hält Listen und Mitgliedschaften global und snapshot-unabhängig:
+
+- `municipality_lists`: UUID, case-insensitiv eindeutiger getrimmter Name, `#RRGGBB`-Farbe und Zeitstempel
+- `municipality_list_members`: n:m-Verknüpfung zu Gemeinden in `administrative_areas`, mit Cascade beim Löschen
+
+Eine Gemeinde darf mehreren Listen angehören. Das System besitzt aktuell keine Benutzer- oder Mandantenzuordnung; alle Nutzer einer Instanz teilen Listen und Mitgliedschaften. Nur die Auswahl aktiver Listen ist Clientzustand in `localStorage` (`regionfinder.municipality-lists.active.v1`). SQL für CRUD und Mitgliedschaften liegt in `server/db/queries/municipalityListQueries.ts`; `PostgresRepository` bleibt Adapter.
 
 ## Places-Import
 

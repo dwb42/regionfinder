@@ -66,11 +66,14 @@ Die UI verwendet nicht direkt `route_pattern_rail_matches`, sondern die View `ro
 
 ## Verwaltungsgrenzen
 
-Produktive Bundeslandzuordnung nutzt im aktuellen Stand BKG VG250:
+Produktive Bundeslandzuordnung und die klickbaren Landkreis-/Gemeindegrenzen nutzen im aktuellen Stand BKG VG250:
 
 - Datei: `data/raw/bkg/vg250_01-01.utm32s.gpkg.ebenen.zip`
 - SHA-256: `0a3c106a7537e1b47e97077d923c660e22510f73031463a420e7718c6f129e42`
 - Importierte Länder: `DE-HH`, `DE-SH`, `DE-MV`, `DE-NI`, `DE-HB`
+- Quelldatensätze: `lan` für Bundesländer, `krs` für Landkreise und `gem` für Gemeinden
+
+Die normalisierten Bundeslandpolygone liegen weiterhin in `admin_boundaries` und dienen unter anderem der räumlichen Zuordnung von Stops und Places. `pipeline/admin_boundaries.py` importiert zusätzlich die Ebenen `county` und `municipality` für `HH`, `SH`, `MV` und `NI` nach `administrative_areas`; Bremen wird dort derzeit nicht als interaktive Ebene geführt. Gemeinden referenzieren ihren Landkreis über den fünfstelligen Landkreisanteil des amtlichen Schlüssels. Quelle, Quell-Layer, Polygon und `ST_PointOnSurface`-Labelpunkt werden mitgeführt.
 
 Für neue Läufe:
 
