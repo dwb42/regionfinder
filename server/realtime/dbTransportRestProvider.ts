@@ -1,3 +1,4 @@
+import { berlinDateTime } from '../../src/api/time'
 import type { ApiItineraryResponse, ApiStopDetails } from '../../src/api/contracts'
 import { bahnWebLocationSearchUrl, fetchBahnWebJourneys, fetchBahnWebJson } from './bahnWebClient'
 import { ExpiringCache } from './cache'
@@ -60,7 +61,7 @@ export class DbTransportRestProvider implements RealtimeItineraryProvider {
 
   async plan(request: RealtimeItineraryRequest): Promise<ApiItineraryResponse> {
     const destinationDbStopId = await this.resolveDestinationStopId(request.stop)
-    const requestedDeparture = `${request.date}T${request.time}:00+02:00`
+    const requestedDeparture = berlinDateTime(`${request.date}T${request.time}:00`)
     const journeyCacheKey = `${this.originDbStopId}:${destinationDbStopId}:${requestedDeparture.slice(0, 16)}`
     const cachedJourney = this.journeyCache.read(journeyCacheKey)
 
@@ -127,6 +128,9 @@ export class DbTransportRestProvider implements RealtimeItineraryProvider {
       timeoutMs: this.timeoutMs,
       enableCurlFallback: this.enableCurlFallback,
     })
+    if (!Array.isArray(payload.verbindungen)) {
+      throw new RealtimeProviderError(502, 'realtime_unavailable', 'Bahn returned an invalid journey response')
+    }
     const alternatives = Array.isArray(payload.verbindungen)
       ? payload.verbindungen
           .slice(0, 3)
@@ -163,39 +167,21 @@ export class DbTransportRestProvider implements RealtimeItineraryProvider {
       return directCandidate
     }
 
-    const nearby = await this.tryResolveLocation(() => this.findNearbyStop(stop))
-    if (nearby) {
-      this.stopMappingCache.write(cacheKey, nearby, this.mappingTtlMs)
-      return nearby
-    }
-
-    const byName = await this.tryResolveLocation(() => this.findStopByName(stop))
-    if (byName) {
-      this.stopMappingCache.write(cacheKey, byName, this.mappingTtlMs)
-      return byName
-    }
-
     if (this.backend === 'bahn-web') {
-      const bahnWebLocation = await this.findBahnWebLocationByName(stop)
-      if (bahnWebLocation) {
-        this.stopMappingCache.write(cacheKey, bahnWebLocation, this.mappingTtlMs)
-        return bahnWebLocation
+      const location = await this.findBahnWebLocationByName(stop)
+      if (location) {
+        this.stopMappingCache.write(cacheKey, location, this.mappingTtlMs)
+        return location
+      }
+    } else {
+      const location = await this.findNearbyStop(stop) ?? await this.findStopByName(stop)
+      if (location) {
+        this.stopMappingCache.write(cacheKey, location, this.mappingTtlMs)
+        return location
       }
     }
 
     throw new RealtimeProviderError(404, 'db_stop_unmapped', `No DB stop mapping for ${stop.publicId}`)
-  }
-
-  private async tryResolveLocation(resolve: () => Promise<string | null>): Promise<string | null> {
-    try {
-      return await resolve()
-    } catch (error) {
-      if (this.backend === 'bahn-web' && error instanceof RealtimeProviderError) {
-        return null
-      }
-
-      throw error
-    }
   }
 
   private async findNearbyStop(stop: ApiStopDetails): Promise<string | null> {

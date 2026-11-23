@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { berlinDate } from '../api/time'
 import type { ApiMetrics, ApiSnapshot, ApiStopDetails } from '../api/contracts'
 import { fetchCurrentSnapshot, fetchDrivingRoute, fetchRealtimeItineraries, fetchStopDetails, fetchStopMetrics } from '../data/api'
 import { displayDate, drivingRouteErrorMessage, realtimeErrorMessage } from './formatters'
@@ -113,88 +114,77 @@ export function useSelectedStopDetails({
     response: null,
     error: null,
   })
-  const previousPublicIdRef = useRef<string | null>(null)
-
   useEffect(() => {
-    if (!selectedPublicId) {
-      previousPublicIdRef.current = null
-      return
-    }
-
+    if (!selectedPublicId) return
     let cancelled = false
-    const publicId = selectedPublicId
-    const isNewSelection = previousPublicIdRef.current !== publicId
-    previousPublicIdRef.current = publicId
+    const controller = new AbortController()
 
-    async function loadDetails() {
+    async function load() {
+      setSelectedStop(null)
       setStatus('Details werden geladen')
-      if (isNewSelection) {
-        setSelectedStop(null)
-        setMetrics(null)
-      }
-      setRealtimeItineraries({ status: 'loading', response: null, error: null })
-      if (isNewSelection) {
-        setDrivingRoute({ status: 'loading', response: null, error: null })
-      }
-      const realtimeRequest = fetchRealtimeItineraries(publicId, displayDate(), departureTime, profile)
-        .then((response) => ({ response, error: null }))
-        .catch((error: unknown) => ({
-          response: null,
-          error: realtimeErrorMessage(error),
-        }))
-      const drivingRouteRequest = isNewSelection
-        ? fetchDrivingRoute(publicId)
-            .then((response) => ({ response, error: null }))
-            .catch((error: unknown) => ({
-              response: null,
-              error: drivingRouteErrorMessage(error),
-            }))
-        : null
-
       try {
-        const [details, currentMetrics] = await Promise.all([
-          fetchStopDetails(publicId),
-          fetchStopMetrics(publicId, profile, displayDate()).catch(() => null),
-        ])
-
+        const details = await fetchStopDetails(selectedPublicId!, controller.signal)
         if (!cancelled) {
           setSelectedStop(details)
-          setMetrics(currentMetrics)
           setStatus('bereit')
         }
-
-        const realtimeResult = await realtimeRequest
-        const drivingRouteResult = await drivingRouteRequest
-
-        if (!cancelled) {
-          setRealtimeItineraries(
-            realtimeResult.response
-              ? { status: 'ready', response: realtimeResult.response, error: null }
-              : { status: 'error', response: null, error: realtimeResult.error },
-          )
-          if (drivingRouteResult) {
-            setDrivingRoute(
-              drivingRouteResult.response
-                ? { status: 'ready', response: drivingRouteResult.response, error: null }
-                : { status: 'error', response: null, error: drivingRouteResult.error },
-            )
-          }
-        }
       } catch (error) {
-        if (!cancelled) {
-          setStatus(error instanceof Error ? error.message : String(error))
-          setRealtimeItineraries({ status: 'idle', response: null, error: null })
-          setDrivingRoute({ status: 'idle', response: null, error: null })
-        }
+        if (!cancelled) setStatus(error instanceof Error ? error.message : String(error))
       }
     }
+    void load()
+    return () => { cancelled = true; controller.abort() }
+  }, [selectedPublicId, setStatus])
 
-    void loadDetails()
+  useEffect(() => {
+    if (!selectedPublicId) return
+    let cancelled = false
+    const controller = new AbortController()
 
-    return () => {
-      cancelled = true
+    async function load() {
+      setMetrics(null)
+      const result = await fetchStopMetrics(selectedPublicId!, profile, displayDate(), controller.signal).catch(() => null)
+      if (!cancelled) setMetrics(result)
     }
-  }, [departureTime, profile, selectedPublicId, setStatus])
+    void load()
+    return () => { cancelled = true; controller.abort() }
+  }, [selectedPublicId, profile])
+
+  useEffect(() => {
+    if (!selectedPublicId) return
+    let cancelled = false
+    const controller = new AbortController()
+
+    async function load() {
+      setRealtimeItineraries({ status: 'loading', response: null, error: null })
+      try {
+        const response = await fetchRealtimeItineraries(selectedPublicId!, berlinDate(), departureTime, profile, controller.signal)
+        if (!cancelled) setRealtimeItineraries({ status: 'ready', response, error: null })
+      } catch (error) {
+        if (!cancelled) setRealtimeItineraries({ status: 'error', response: null, error: realtimeErrorMessage(error) })
+      }
+    }
+    void load()
+    return () => { cancelled = true; controller.abort() }
+  }, [selectedPublicId, departureTime, profile])
+
+  useEffect(() => {
+    if (!selectedPublicId) return
+    let cancelled = false
+    const controller = new AbortController()
+
+    async function load() {
+      setDrivingRoute({ status: 'loading', response: null, error: null })
+      try {
+        const response = await fetchDrivingRoute(selectedPublicId!, controller.signal)
+        if (!cancelled) setDrivingRoute({ status: 'ready', response, error: null })
+      } catch (error) {
+        if (!cancelled) setDrivingRoute({ status: 'error', response: null, error: drivingRouteErrorMessage(error) })
+      }
+    }
+    void load()
+    return () => { cancelled = true; controller.abort() }
+  }, [selectedPublicId])
 
   const clearDetails = useCallback(() => {
     setSelectedStop(null)

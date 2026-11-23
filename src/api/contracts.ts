@@ -169,6 +169,7 @@ export type ApiDrivingRouteResponse = {
   originName: string
   destinationPublicId: string
   provider: string
+  trafficAware?: boolean
   durationSeconds: number
   distanceMeters: number
   sourceAttribution: string

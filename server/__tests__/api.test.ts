@@ -598,6 +598,32 @@ describe('Regionfinder API', () => {
     expect(response.json()).toMatchObject({ error: 'realtime_unavailable' })
   })
 
+  it('rejects invalid Bahn payloads instead of displaying no connections', async () => {
+    const app = await withApp(vi.fn(async (input: URL | RequestInfo) => {
+      const url = new URL(String(input))
+      return jsonResponse(url.pathname.endsWith('/orte') ? [] : { status: 'ERROR', code: 'OPS_BLOCKED' })
+    }) as typeof fetch, 'bahn-web')
+    const response = await app.inject(
+      '/api/v1/stops/de:02000:8002550/realtime-itineraries?date=2026-11-23&time=08:00&profile=regular_tue_thu',
+    )
+    expect(response.statusCode).toBe(502)
+    expect(response.json()).toMatchObject({ error: 'realtime_unavailable' })
+  })
+
+  it('uses Berlin winter time for realtime departure requests', async () => {
+    const fetchImpl = vi.fn(async (input: URL | RequestInfo) => {
+      const url = new URL(String(input))
+      expect(url.searchParams.get('departure')).toBe('2026-11-23T08:00:00+01:00')
+      return jsonResponse({ journeys: [] })
+    }) as typeof fetch
+    const app = await withApp(fetchImpl)
+    const response = await app.inject(
+      '/api/v1/stops/de:02000:8002550/realtime-itineraries?date=2026-11-23&time=08:00&profile=regular_tue_thu',
+    )
+    expect(response.statusCode).toBe(200)
+    expect(response.json().requestedDeparture).toBe('2026-11-23T08:00:00+01:00')
+  })
+
   it('caches realtime journeys for the same origin, destination, and minute', async () => {
     const fetchImpl = vi.fn(async (input: URL | RequestInfo) => {
       const url = new URL(String(input))

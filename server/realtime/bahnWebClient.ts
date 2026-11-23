@@ -38,12 +38,14 @@ export async function fetchBahnWebJson<T>({
       headers: bahnWebHeaders(),
       signal: controller.signal,
     })
+    rejectBlockedResponse(response)
     if (!response.ok) {
       throw new RealtimeProviderError(502, 'realtime_unavailable', `Bahn web upstream returned ${response.status}`)
     }
 
     return (await response.json()) as T
   } catch (error) {
+    if (error instanceof RealtimeProviderError && error.reason === 'realtime_blocked') throw error
     if (enableCurlFallback) {
       return fetchBahnWebJsonWithCurl<T>(url, timeoutMs)
     }
@@ -89,6 +91,7 @@ export async function fetchBahnWebJourneys({
       headers: bahnWebHeaders(),
       signal: controller.signal,
     })
+    rejectBlockedResponse(warmupResponse)
     if (!warmupResponse.ok) {
       throw new Error(`Bahn web warmup returned ${warmupResponse.status}`)
     }
@@ -106,12 +109,14 @@ export async function fetchBahnWebJourneys({
       signal: controller.signal,
     })
 
+    rejectBlockedResponse(response)
     if (!response.ok) {
       throw new RealtimeProviderError(502, 'realtime_unavailable', `Bahn web upstream returned ${response.status}`)
     }
 
     return (await response.json()) as BahnWebJourneyPayload
   } catch (error) {
+    if (error instanceof RealtimeProviderError && error.reason === 'realtime_blocked') throw error
     if (enableCurlFallback) {
       return fetchBahnWebJourneysWithCurl(requestBody, timeoutMs)
     }
@@ -137,6 +142,7 @@ async function fetchBahnWebJsonWithCurl<T>(url: URL, timeoutMs: number): Promise
       [
         '--compressed',
         '-sS',
+        '--fail',
         '-H',
         `accept: ${bahnWebHeaders().accept}`,
         '-H',
@@ -168,6 +174,7 @@ async function fetchBahnWebJourneysWithCurl(
       'curl',
       [
         '-sS',
+        '--fail',
         '-c',
         cookieJar,
         '-H',
@@ -183,6 +190,7 @@ async function fetchBahnWebJourneysWithCurl(
       [
         '--compressed',
         '-sS',
+        '--fail',
         '-b',
         cookieJar,
         '-c',
@@ -269,4 +277,10 @@ function bahnWebJourneyRequest(originDbStopId: string, destinationDbStopId: stri
 
 function bahnWebLocationReference(value: string): string {
   return value.startsWith('A=') ? value : `A=1@L=${value}@`
+}
+
+function rejectBlockedResponse(response: Response): void {
+  if (response.status === 401 || response.status === 403) {
+    throw new RealtimeProviderError(502, 'realtime_blocked', 'Bahn currently denies access to its journey API')
+  }
 }

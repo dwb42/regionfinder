@@ -62,6 +62,12 @@ export function timeLabel(value: string | null | undefined): string {
   return value ? value.slice(11, 16) : 'n/a'
 }
 
+export function berlinTimeLabel(value: string): string {
+  return new Intl.DateTimeFormat('de-DE', {
+    timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit',
+  }).format(new Date(value))
+}
+
 export function earliestAlternativeDepartureMinutes(response: ApiItineraryResponse | null): number | null {
   const values = response?.alternatives
     .map((itinerary) => clockTimeToMinutes(timeLabel(itinerary.actualFirstDepartureAt)))
@@ -97,6 +103,10 @@ export function realtimeErrorMessage(error: unknown): string {
       return 'Keine passende DB-Haltestelle für diese Station gefunden.'
     }
 
+    if (error.errorCode === 'realtime_blocked') {
+      return 'Die Bahn blockiert derzeit den automatischen Abruf. Bitte die Verbindung direkt bei bahn.de öffnen.'
+    }
+
     if (error.errorCode === 'realtime_unavailable') {
       return 'DB-Echtzeit ist aktuell nicht verfügbar.'
     }
@@ -111,6 +121,9 @@ export function realtimeErrorMessage(error: unknown): string {
 
 export function drivingRouteErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
+    if (error.errorCode === 'driving_route_rate_limited') {
+      return 'Gerade werden viele Autofahrzeiten abgefragt. Bitte in einer Minute erneut versuchen.'
+    }
     if (error.errorCode === 'driving_route_no_route') {
       return 'Keine Autoroute für diese Station gefunden.'
     }

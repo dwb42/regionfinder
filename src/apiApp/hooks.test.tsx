@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { act, useEffect } from 'react'
+import { act, StrictMode, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ApiDrivingRouteResponse, ApiStopDetails } from '../api/contracts'
@@ -62,10 +62,10 @@ let root: Root | null = null
 let container: HTMLDivElement | null = null
 const setStatusMock = vi.fn()
 
-function Probe() {
+function Probe({ publicId = stopDetails.publicId, departureTime = '08:00' }: { publicId?: string | null; departureTime?: string }) {
   const state = useSelectedStopDetails({
-    selectedPublicId: stopDetails.publicId,
-    departureTime: '08:00',
+    selectedPublicId: publicId,
+    departureTime,
     profile: 'regular_tue_thu',
     setStatus: setStatusMock,
   })
@@ -131,4 +131,57 @@ describe('useSelectedStopDetails', () => {
       error: 'DB unavailable',
     })
   })
+  it('shows routes without waiting for metrics or stop details', async () => {
+    apiMocks.fetchStopMetrics.mockReturnValue(new Promise(() => {}))
+    apiMocks.fetchStopDetails.mockReturnValue(new Promise(() => {}))
+    await act(async () => { root?.render(<Probe />) })
+    expect(latestState?.drivingRoute.status).toBe('ready')
+    expect(latestState?.realtimeItineraries.status).toBe('error')
+    expect(latestState?.selectedStop).toBeNull()
+  })
+
+  it('shows driving results while realtime is pending, including after a time change', async () => {
+    apiMocks.fetchRealtimeItineraries.mockReturnValue(new Promise(() => {}))
+    let resolveDriving!: (value: ApiDrivingRouteResponse) => void
+    apiMocks.fetchDrivingRoute.mockReturnValue(new Promise((resolve) => { resolveDriving = resolve }))
+    await act(async () => { root?.render(<Probe />) })
+    await act(async () => { root?.render(<Probe departureTime="09:00" />) })
+    await act(async () => { resolveDriving(drivingRoute) })
+    expect(latestState?.drivingRoute.status).toBe('ready')
+    expect(latestState?.realtimeItineraries.status).toBe('loading')
+    expect(apiMocks.fetchDrivingRoute).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows realtime results while driving is pending and requests today', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-22T23:30:00Z'))
+    try {
+      apiMocks.fetchDrivingRoute.mockReturnValue(new Promise(() => {}))
+      apiMocks.fetchRealtimeItineraries.mockResolvedValue({ alternatives: [] })
+      await act(async () => { root?.render(<Probe />) })
+      expect(latestState?.realtimeItineraries.status).toBe('ready')
+      expect(latestState?.drivingRoute.status).toBe('loading')
+      expect(apiMocks.fetchRealtimeItineraries).toHaveBeenCalledWith(stopDetails.publicId, '2026-11-23', '08:00', 'regular_tue_thu', expect.any(AbortSignal))
+      expect(apiMocks.fetchStopMetrics).toHaveBeenCalledWith(stopDetails.publicId, 'regular_tue_thu', '2026-09-15', expect.any(AbortSignal))
+    } finally { vi.useRealTimers() }
+  })
+
+  it('does not strand the driving request on StrictMode effect replay', async () => {
+    await act(async () => { root?.render(<StrictMode><Probe /></StrictMode>) })
+    expect(latestState?.drivingRoute.status).toBe('ready')
+  })
+
+  it('ignores stale responses after selecting another stop and aborts the old request', async () => {
+    let resolveOld!: (value: ApiDrivingRouteResponse) => void
+    apiMocks.fetchDrivingRoute.mockReturnValueOnce(new Promise((resolve) => { resolveOld = resolve }))
+    await act(async () => { root?.render(<Probe />) })
+    const oldSignal = apiMocks.fetchDrivingRoute.mock.calls[0][1] as AbortSignal
+    const next = { ...drivingRoute, destinationPublicId: 'another-stop', durationSeconds: 123 }
+    apiMocks.fetchDrivingRoute.mockResolvedValue(next)
+    await act(async () => { root?.render(<Probe publicId="another-stop" />) })
+    await act(async () => { resolveOld(drivingRoute) })
+    expect(oldSignal.aborted).toBe(true)
+    expect(latestState?.drivingRoute.response).toEqual(next)
+  })
+
 })

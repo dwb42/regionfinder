@@ -54,6 +54,78 @@ CARTOs anonyme Rastertiles dürfen nicht als Fallback verwendet werden: Sie kön
 
 `Dockerfile.api` kopiert neben `server` und `src/api` auch `scripts/migrate-db.ts` und `db/migrations` in das Image, damit `npm run db:migrate` produktiv innerhalb eines Containers laufen kann (z.B. als `docker compose run --rm api npm run db:migrate` vor dem eigentlichen Start). Ein Deploy, der diesen Schritt ausläßt, hinterlässt den Code auf dem neuesten Stand, aber das Schema veraltet lautlos — Migrationen sollten bei jedem Deploy als eigener Schritt laufen, nicht nur bei Bedarf von Hand.
 
+### Routing-Hotfix vom 2026-11-23
+
+Der zunächst separat ausgelieferte Hotfix läuft aus
+`/docker/regionfinder/releases/routing-fix-20261123/source` mit einem Compose-Override.
+Seine Änderungen sind inzwischen in den regulären Quellcode übernommen und werden
+beim nächsten Aufruf von `/docker/regionfinder/deploy.sh` regulär gebaut.
+Die Produktions-`.env` setzt `REGIONFINDER_REALTIME_PROVIDER=bahn-web` und
+`REGIONFINDER_REALTIME_TIMEOUT_MS=12000`, sodass die Konfiguration erhalten bleibt.
+Vorherige Images und eine ausführbare Rollback-Anweisung liegen im selben Release-Verzeichnis.
+
+## KFZ-Fahrzeiten mit Google Routes
+
+Der Standardprovider `google-routes` fragt ausschließlich im API-Server
+`https://routes.googleapis.com/directions/v2:computeRoutes` ab. Verwendet werden
+`DRIVE`, `TRAFFIC_AWARE_OPTIMAL` und `BEST_GUESS`; ohne `departureTime` gilt die
+aktuelle Zeit bei Google. Ursprung ist Hamburg Hbf (53.5527, 10.0064), Ziel der
+exakte ausgewählte StopPlace. Die Uhrzeitsteuerung im Bahn-Block betrifft nur Bahn.
+Die Google-Fahrzeit wird mit „Abfahrt jetzt“, Quellenangabe und Abrufzeit in
+`Europe/Berlin` angezeigt. Sie ist keine automatische, kontinuierliche Aktualisierung.
+Ein erneuter Stationsaufruf holt eine neue Fahrzeit.
+
+Konfiguration (nur Server, niemals `VITE_`):
+
+- `REGIONFINDER_DRIVING_PROVIDER`: Default `google-routes`; `osrm` ist ein expliziter
+  alternativer Modus ohne Live-Verkehr. Keine automatische Umschaltung bei Google-Fehlern.
+- `REGIONFINDER_GOOGLE_ROUTES_API_KEY`: Google-Schlüssel mit Freigabe für Routes API.
+- `REGIONFINDER_GOOGLE_ROUTES_MAX_REQUESTS_PER_MINUTE`: Default 60 pro API-Prozess;
+  lokales Limit gegen Anfrage-Spitzen, kein kontoweites Kostenlimit.
+- `REGIONFINDER_DRIVING_ORIGIN_NAME`, `REGIONFINDER_DRIVING_ORIGIN_LAT`,
+  `REGIONFINDER_DRIVING_ORIGIN_LON`: optionale Ursprungs-Overrides.
+
+Der Produktionsschlüssel liegt in `/docker/regionfinder/secrets/google-routes.env`
+(Dateimodus 0600, Verzeichnis 0700), außerhalb des Git-Repositories und aller
+Docker-Build-Kontexte. `/docker/regionfinder/docker-compose.yml` lädt diese Datei
+nur für `api` über `env_file` und setzt den Provider explizit auf `google-routes`.
+Google-Projekt: `quixotic-sol-462215-v9`; Schlüssel eingeschränkt auf Routes API
+und die IPv4-Adresse `76.13.153.215`. Bestehender Browser-/MapTiler-Key bleibt separat.
+Backups der vorherigen Compose- und Umgebungskonfiguration liegen geschützt unter
+`/docker/regionfinder/releases/google-routes-20261123/`.
+
+Die Serverkonfiguration ist vorbereitet; der laufende Dienst wurde dafür noch
+nicht neu gestartet. Regulärer Deploy nach Pull des neuen Commits:
+
+```bash
+ssh ubuntu@76.13.153.215 /docker/regionfinder/deploy.sh
+curl -fsS https://regionfinder.b42.io/api/v1/stops/de%3A02000%3A8006197/driving-route
+```
+
+Erwartet: `provider: "google-routes"`, `trafficAware: true`, positive Fahrzeit und
+Distanz, `Cache-Control: no-store`. Ein isolierter Smoke-Test mit dem neuen
+Provider und dem Produktionsschlüssel war am 23.11.2026 vom VPS erfolgreich.
+Er benötigt keinen Neustart der laufenden App.
+
+Google-Aufrufe brechen nach 10 Sekunden ab; Fehlerantworten enthalten keine
+Upstream-Bodies oder Schlüssel. Gleichzeitige Anfragen zum selben Ziel teilen
+einen laufenden Request. Fertige Google-Routenergebnisse werden weder gecacht
+noch in PostGIS gespeichert. HTTP-Antworten dürfen ebenfalls nicht gecacht werden.
+Das API-Limit liefert `429/driving_route_rate_limited`, ein fehlender Schlüssel
+`503/driving_route_unavailable`, Upstream-Fehler `502/driving_route_unavailable`
+und fehlende Routen `404/driving_route_no_route`. Ein von Google gemeldeter Fallback
+ohne Verkehrsinformationen wird nicht als Live-Ergebnis ausgegeben.
+
+Der Field-Mask fordert nur Dauer, Distanz und Fallback-Status an, keine
+Routenbeschreibung, Abbiegehinweise oder Geometrie. Das entspricht dem hier
+verwendeten EEA-Anwendungsfall neben der bestehenden Karte; Google-Inhalte sind
+im KFZ-Block mit eigener Quellenangabe abgegrenzt.
+Siehe [Traffic-Präferenzen](https://developers.google.com/maps/documentation/routes/config_trade_offs),
+[Attribution und Datenhaltung](https://developers.google.com/maps/documentation/routes/policies)
+und [EEA-Servicebedingungen, Abschnitt 20](https://cloud.google.com/terms/maps-platform/eea/maps-service-terms).
+Für einen Vergleich mit Google Maps müssen Start, exaktes Ziel und Abrufzeit
+übereinstimmen; der Stadtteil Tonndorf ist ein anderes Ziel als der Bahnhof.
+
 ## DB-Echtzeit
 
 Der API-Prozess lädt Echtzeitverbindungen serverseitig. Relevante Variablen:
@@ -63,6 +135,22 @@ Der API-Prozess lädt Echtzeitverbindungen serverseitig. Relevante Variablen:
 - `DB_TRANSPORT_REST_BASE_URL`: Default `https://v6.db.transport.rest`.
 
 Der Standardpfad `bahn-web` nutzt einen kontrollierten `curl`-Fallback mit Cookie-Warmup. Deshalb muss `curl` im lokalen/API-Runtime-Umfeld verfügbar sein.
+
+Stand 2026-11-23: `v6.db.transport.rest` ist aus der lokalen Umgebung und vom
+Produktionsserver nicht per DNS auflösbar. Die direkte Bahn-Web-API liefert dort
+HTTP 403 (`OPS_BLOCKED`); diese externe Sperre kann die Anwendung nicht beheben.
+`REGIONFINDER_REALTIME_PROVIDER=db-transport-rest` deshalb nicht als Workaround setzen.
+Der Client meldet eine Zugriffssperre als `realtime_blocked`, ohne sie erneut mit curl
+zu versuchen; HTTP-Fehler im curl-Pfad dürfen nicht als leere Verbindungsliste gelten.
+Im Detailpanel führt ein Link zur manuellen Bahnauskunft. Für eine Wiederherstellung
+der eingebetteten Bahnverbindungen ist wieder ein zugänglicher Bahn-Dienst nötig.
+
+Bahnabfragen verwenden das heutige Datum in `Europe/Berlin`, inklusive Sommer-/Winterzeit.
+Die planmäßigen Direktverbindungsmetriken behalten den repräsentativen Fahrplantag
+2026-09-15. Stationsdetails, Metriken, Bahn und KFZ laden unabhängig voneinander;
+eine langsame Metrikabfrage darf die Routing-Ergebnisse nicht zurückhalten.
+Detailanfragen im Browser laufen nach 30 Sekunden aus, Bahn nach 90 Sekunden (mehrstufige
+Stationssuche/Fahrplanabfrage); veraltete Anfragen werden beim Auswahlwechsel abgebrochen.
 
 Live-Prüfung:
 

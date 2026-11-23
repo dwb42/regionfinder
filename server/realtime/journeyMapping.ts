@@ -1,3 +1,4 @@
+import { berlinDateTime } from '../../src/api/time'
 import type { ApiItinerary, ApiItineraryLeg } from '../../src/api/contracts'
 import { booleanOrFalse, numberOrNull, objectRecord, stringOrNull } from './valueHelpers'
 
@@ -253,7 +254,7 @@ function delaySeconds(plannedAt: string | null, actualAt: string | null): number
 }
 
 function localIsoToBerlin(value: string | null): string | null {
-  return value ? `${value}+02:00` : null
+  return value ? berlinDateTime(value) : null
 }
 
 function firstArrayRecord(value: unknown): Record<string, unknown> {

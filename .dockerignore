@@ -6,3 +6,7 @@ infra/motis
 *.dump
 *.sql
 .git
+.env
+.env.*
+!.env.example
+secrets

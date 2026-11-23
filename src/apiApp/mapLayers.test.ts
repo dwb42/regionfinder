@@ -1,8 +1,11 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, expect, it, vi } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 import type { Map, StyleSpecification } from 'maplibre-gl'
+// The fallback assertions must not depend on a developer's local MapTiler key.
+vi.hoisted(() => vi.stubEnv('VITE_MAPTILER_KEY', ''))
+afterAll(() => vi.unstubAllEnvs())
 import {
   addAdministrativeAreaTileLayers,
   addMunicipalityListHighlightLayers,

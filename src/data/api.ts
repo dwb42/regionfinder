@@ -33,7 +33,21 @@ export class ApiError extends Error {
   }
 }
 
-async function fetchApi<T>(path: string, init?: RequestInit): Promise<T> {
+async function fetchApi<T>(path: string, init?: RequestInit, timeoutMs?: number): Promise<T> {
+  if (timeoutMs === undefined) return fetchApiResponse<T>(path, init)
+  const timeout = AbortSignal.timeout(timeoutMs)
+  const signal = init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout
+  try {
+    return await fetchApiResponse<T>(path, { ...init, signal })
+  } catch (error) {
+    if (timeout.aborted) {
+      throw new ApiError(path, 408, 'Request Timeout', 'request_timeout', 'Die Anfrage dauert zu lange. Bitte erneut versuchen.')
+    }
+    throw error
+  }
+}
+
+async function fetchApiResponse<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, init)
 
   if (!response.ok) {
@@ -87,18 +101,18 @@ export function searchStops(query: string, options: StopSearchOptions = {}): Pro
   return fetchApi<ApiStopSearchResult[]>(`/api/v1/stops/search?${params}`)
 }
 
-export function fetchStopDetails(publicId: string): Promise<ApiStopDetails> {
-  return fetchApi<ApiStopDetails>(`/api/v1/stops/${encodeURIComponent(publicId)}`)
+export function fetchStopDetails(publicId: string, signal?: AbortSignal): Promise<ApiStopDetails> {
+  return fetchApi<ApiStopDetails>(`/api/v1/stops/${encodeURIComponent(publicId)}`, { signal }, 30_000)
 }
 
-export function fetchStopMetrics(publicId: string, profile: string, date?: string): Promise<ApiMetrics> {
+export function fetchStopMetrics(publicId: string, profile: string, date?: string, signal?: AbortSignal): Promise<ApiMetrics> {
   const params = new URLSearchParams({ profile })
 
   if (date) {
     params.set('date', date)
   }
 
-  return fetchApi<ApiMetrics>(`/api/v1/stops/${encodeURIComponent(publicId)}/metrics?${params}`)
+  return fetchApi<ApiMetrics>(`/api/v1/stops/${encodeURIComponent(publicId)}/metrics?${params}`, { signal }, 30_000)
 }
 
 export function fetchItineraries(publicId: string, date: string, time: string, profile: string): Promise<ApiItineraryResponse> {
@@ -112,14 +126,15 @@ export function fetchRealtimeItineraries(
   date: string,
   time: string,
   profile: string,
+  signal?: AbortSignal,
 ): Promise<ApiItineraryResponse> {
   const params = new URLSearchParams({ date, time, profile })
 
-  return fetchApi<ApiItineraryResponse>(`/api/v1/stops/${encodeURIComponent(publicId)}/realtime-itineraries?${params}`)
+  return fetchApi<ApiItineraryResponse>(`/api/v1/stops/${encodeURIComponent(publicId)}/realtime-itineraries?${params}`, { signal }, 90_000)
 }
 
-export function fetchDrivingRoute(publicId: string): Promise<ApiDrivingRouteResponse> {
-  return fetchApi<ApiDrivingRouteResponse>(`/api/v1/stops/${encodeURIComponent(publicId)}/driving-route`)
+export function fetchDrivingRoute(publicId: string, signal?: AbortSignal): Promise<ApiDrivingRouteResponse> {
+  return fetchApi<ApiDrivingRouteResponse>(`/api/v1/stops/${encodeURIComponent(publicId)}/driving-route`, { signal }, 30_000)
 }
 
 export function fetchRoutePattern(id: string): Promise<ApiRoutePattern> {

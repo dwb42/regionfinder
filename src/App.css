@@ -962,6 +962,15 @@ input.municipality-list-color {
   font-size: 12px;
 }
 
+.google-maps-attribution {
+  color: #5e5e5e;
+  font-style: normal;
+  font-weight: 400;
+  font-size: 12px;
+  letter-spacing: normal;
+  white-space: nowrap;
+}
+
 .api-leg-list {
   display: flex;
   flex-direction: column;

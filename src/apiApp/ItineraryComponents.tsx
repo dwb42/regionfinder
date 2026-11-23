@@ -1,6 +1,6 @@
 import { Route } from 'lucide-react'
 import type { ApiDrivingRouteResponse, ApiItinerary, ApiItineraryResponse } from '../api/contracts'
-import { compactMinutes, delayLabel, durationBetweenSeconds, kilometers, legLabel, timeLabel } from './formatters'
+import { berlinTimeLabel, compactMinutes, delayLabel, durationBetweenSeconds, kilometers, legLabel, timeLabel } from './formatters'
 
 export function MetricCard({
   label,
@@ -44,7 +44,12 @@ export function RealtimeItineraryBlock({
           <span>Verbindung wird geladen</span>
         </p>
       ) : null}
-      {!loading && error ? <p className="api-inline-error">{error}</p> : null}
+      {!loading && error ? (
+        <div>
+          <p className="api-inline-error">{error}</p>
+          <a href="https://www.bahn.de/" target="_blank" rel="noreferrer">Verbindung bei bahn.de suchen ↗</a>
+        </div>
+      ) : null}
       {!loading && !error && alternatives.length === 0 ? <p>{emptyText}</p> : null}
       {!loading && !error && alternatives.length > 0 ? (
         <ol className="api-itinerary-alternatives">
@@ -88,7 +93,15 @@ export function DrivingRouteBlock({
               <strong>{kilometers(response.distanceMeters)}</strong>
             </span>
           </div>
-          <p>OSM-Schätzung ohne Live-Verkehr</p>
+          {response.provider === 'google-routes' ? (
+            <>
+              <p>Abfahrt jetzt · aktuelle Verkehrslage</p>
+              <p className="api-driving-attribution">
+                <span className="google-maps-attribution" translate="no">Google Maps</span>
+                {response.fetchedAt ? ` · Stand ${berlinTimeLabel(response.fetchedAt)}` : ''}
+              </p>
+            </>
+          ) : <p>OSM-Schätzung ohne Live-Verkehr</p>}
         </>
       ) : null}
       {!loading && !error && !response ? <p>Keine Autofahrzeit für diese Station vorhanden.</p> : null}

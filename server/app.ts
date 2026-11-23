@@ -2,7 +2,7 @@ import cors from '@fastify/cors'
 import Fastify, { type FastifyInstance } from 'fastify'
 import { ZodError } from 'zod'
 import type { RegionfinderRepository } from './db/types'
-import { OsrmDrivingRouteProvider } from './driving/osrmDrivingRouteProvider'
+import { createDrivingRouteProvider } from './driving/createDrivingRouteProvider'
 import { DrivingRouteProviderError, type DrivingRouteProvider } from './driving/types'
 import { DbTransportRestProvider, RealtimeProviderError, type RealtimeItineraryProvider } from './realtime/dbTransportRestProvider'
 import {
@@ -98,7 +98,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   })
   const realtimeItineraryProvider = options.realtimeItineraryProvider ?? new DbTransportRestProvider()
   const drivingRouteProvider =
-    options.drivingRouteProvider ?? new OsrmDrivingRouteProvider()
+    options.drivingRouteProvider ?? createDrivingRouteProvider()
   const placeAdminEnabled = process.env.REGIONFINDER_ENABLE_PLACE_ADMIN === '1'
 
   await app.register(cors, {
@@ -241,6 +241,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   })
 
   app.get('/api/v1/stops/:publicId/driving-route', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
     const params = publicIdParamsSchema.parse(request.params)
     const stop = await firstResolved(publicIdAliases(params.publicId), (publicId) => options.repository.stopDetails(publicId))
 
