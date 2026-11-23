@@ -121,9 +121,9 @@ Benannte Korridore stehen in `pipeline/rail_network.py`. Aktuell sind viele S-/R
 - Stop-Metriken können `?date=YYYY-MM-DD` erhalten; dann liefert die API `directConnectionCount` als tagesgenaue Anzahl direkter Trips ohne Umstieg.
 - `ApiMetrics` ist absichtlich schlank: `fastestSeconds` plus optional `directConnectionCount`. Median, P90, Reachability-Quoten, Transferaggregate und `directConnectionRatio` sind keine aktuellen Produktmetriken mehr.
 - Produktionsmetriken gelten für den exakten Ziel-StopPlace. Der MOTIS-Batch nutzt initialen Fußweg zum Einstieg, aber keinen finalen Fußweg zu Nachbarhaltestellen.
-- DB-Echtzeitverbindungen laufen ausschließlich serverseitig über `server/realtime/dbTransportRestProvider.ts`; keine direkten DB-/bahn.de-Requests aus React. Die Implementierung ist in `server/realtime/` in Provider-Orchestrierung, bahn.de-/db.transport-Clients, Stop-Mapping, Journey-Mapping und Cache aufgeteilt.
-- Standard-Realtime-Backend ist `bahn-web`; `REGIONFINDER_REALTIME_PROVIDER=db-transport-rest` erzwingt den Wrapper `v6.db.transport.rest`. Ursprung bleibt Hamburg Hbf (`REGIONFINDER_ORIGIN_DB_STOP_ID=8002549`).
-- Realtime-Fehlercodes im UI freundlich behandeln: `db_stop_unmapped` und `realtime_unavailable` dürfen das Detailpanel nicht zerstören.
+- Bahnverbindungen laufen ausschließlich serverseitig über `server/realtime/createRealtimeProvider.ts` und `server/realtime/transitous/`; keine direkten Provider-Requests aus React. Transitous nutzt verifizierte DELFI-Stations-IDs, begrenztes Geocoding als Fallback, 60-Sekunden-Ergebniscache und deduplizierte laufende Abfragen.
+- Standard-Realtime-Backend ist `transitous`, ohne Key. Ursprung Hamburg Hbf (`de-DELFI_de:02000:10950_G`). Lokale Limits: 700 Plan-Abfragen/24 Stunden und 30/Minute pro API-Prozess, im Speicher (Neustart setzt sie zurück). Keine automatisierten Batch-Abfragen; bei Skalierung oder größerem Volumen vorher mit Transitous abstimmen. `bahn-web` und `db-transport-rest` bleiben explizit wählbare Legacy-Provider; nur dort gilt `REGIONFINDER_ORIGIN_DB_STOP_ID=8002549`. Regionfinder bleibt nichtkommerziell; Quellcode unter MIT.
+- Realtime-Fehlercodes im UI freundlich behandeln: `realtime_stop_unmapped`, `realtime_rate_limited`, `db_stop_unmapped` und `realtime_unavailable` dürfen das Detailpanel nicht zerstören.
 - KFZ-Fahrzeiten laufen serverseitig über Google Routes (`server/driving/googleRoutesDrivingRouteProvider.ts`, `DRIVE`/`TRAFFIC_AWARE_OPTIMAL`, Abfahrt jetzt). `REGIONFINDER_GOOGLE_ROUTES_API_KEY` niemals im Frontend/Repository ablegen. Google-Routen nicht cachen; nur laufende Requests zusammenführen. `REGIONFINDER_DRIVING_PROVIDER=osrm` ist ein expliziter Modus ohne Live-Verkehr, kein automatischer Fehler-Fallback. Produktionskonfiguration und Deployment stehen in `docs/OPERATIONS.md`.
 - Der API-Modus darf nicht stillschweigend auf Fixture-Daten zurückfallen.
 - `PostgresRepository` ist nur Adapter auf das Repository-Interface. SQL gehört in fokussierte Module unter `server/db/queries/`.
@@ -144,10 +144,10 @@ API-Modus:
 - Klick auf StopPlace aus MVT aktualisiert das rechte Detailpanel.
 - Die frühere Sidebar-Suche/Suchtrefferliste ist im API-UI entfernt; Detailpanel-Öffnung erfolgt über die Karte.
 - Basiskarten-Umschalter: OpenStreetMap-Straßenkarte über MapTiler (`openstreetmap`-Rasterstil, `VITE_MAPTILER_KEY`, 512px-Kacheln) und Esri-Satellit (`World_Imagery`) mit Esri-Orts-/Grenzlabel-Overlay (`Reference/World_Boundaries_and_Places`, nur im Satellitenmodus sichtbar). Ohne gesetzten `VITE_MAPTILER_KEY` fällt der Straßenmodus automatisch auf das schlüssellose Esri `World_Street_Map` zurück (siehe `src/apiApp/mapLayers.ts`).
-- Detailpanel-Überschrift für Verbindungen ist `DB Echtzeit`, nicht `Konkrete Verbindung`; der alte lokale `Unser System`-Block ist im API-Detailpanel entfernt.
-- Die DB-Echtzeit-Startzeit sitzt im Detailpanel mit `Frühere`-/`Spätere`-Buttons. Die Sidebar enthält keine separate Abfahrtszeitsteuerung mehr.
+- Detailpanel-Überschrift für Verbindungen ist `Bahn 🚂`; der alte lokale `Unser System`-Block ist im API-Detailpanel entfernt.
+- Die Bahn-Startzeit sitzt im Detailpanel mit `Frühere`-/`Spätere`-Buttons. Die Sidebar enthält keine separate Abfahrtszeitsteuerung mehr.
 - Datenstand und technische StopPlace-Details sind einklappbar.
-- DB-Echtzeit zeigt bis zu drei Alternativen mit Wunschzeit, erster Abfahrt, Ankunft, Dauer, Legs, Plattform, Verspätung, Ausfall und Remarks.
+- Bahn zeigt bis zu drei Alternativen mit Wunschzeit, erster Abfahrt, Ankunft, Dauer, Legs, Plattform, Verspätung, Ausfall und Remarks. Transitous-Quellenlink und OSM-Attribution anzeigen; fehlende Echtzeitdaten als Fahrplan kennzeichnen, niemals als pünktlich. Uhrzeiten in Europe/Berlin formatieren, auch wenn der Provider UTC liefert.
 - Reisezeitfenster und Station-Kreise nutzen dieselbe Farbskala: 30 grün, 45 teal, 60 ocker, 75 orange, 90 rot.
 - Reisezeitfenster filtern sichtbare MVT-StopPlaces anhand `fastest_seconds`.
 - Umstiegsfilter und `Unerreichbare anzeigen` sind im API-UI entfernt; verfügbare Ziele werden standardmäßig gezeigt und nur über Layer/Reisezeitfenster eingeschränkt.

@@ -971,6 +971,12 @@ input.municipality-list-color {
   white-space: nowrap;
 }
 
+.api-transit-attribution {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .api-leg-list {
   display: flex;
   flex-direction: column;

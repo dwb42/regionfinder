@@ -812,7 +812,7 @@ function ApiApp() {
                   loading={realtimeItineraries.status === 'loading'}
                   error={realtimeItineraries.error}
                   maxAlternatives={3}
-                  emptyText="Keine DB-Echtzeitverbindung für diese Auswahl vorhanden."
+                  emptyText="Keine Verbindung für diese Auswahl und Uhrzeit gefunden."
                 />
               </section>
 

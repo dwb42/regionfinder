@@ -2,7 +2,7 @@
 
 Regionfinder ist eine API-first-Anwendung:
 
-- **Produktionsmodus**: React 19, Vite, TypeScript, MapLibre, Fastify, PostgreSQL/PostGIS/pgRouting, MOTIS-Metriken, DB-Echtzeitvergleich und Mapbox Vector Tiles.
+- **Produktionsmodus**: React 19, Vite, TypeScript, MapLibre, Fastify, PostgreSQL/PostGIS/pgRouting, MOTIS-Metriken, Transitous-Verbindungsauskunft und Mapbox Vector Tiles.
 
 Der produktive Pfad nutzt den aktiven DELFI-Snapshot `delfi-bb69c7e2c8d5` aus PostGIS. Der Browser lädt keine vollständigen Fahrplan-JSONs und führt keine kanonischen Routing- oder Metrikberechnungen aus.
 
@@ -154,7 +154,7 @@ Die Tile-Endpunkte filtern serverseitig nach Verkehrsmitteln. Stop-Tiles akzepti
 
 Die Places-Schreibendpunkte sind nur für interne Pflege gedacht und liefern ohne `REGIONFINDER_ENABLE_PLACE_ADMIN=1` `403`. Die Admin-UI wird im Frontend nur mit `VITE_REGIONFINDER_ENABLE_PLACE_ADMIN=1` eingeblendet.
 
-Der Realtime-Endpunkt wird serverseitig geladen. Standard ist aktuell das bahn.de-Web-Backend mit kontrolliertem `curl`-Fallback, weil Node-`fetch` dort geblockt werden kann. `REGIONFINDER_REALTIME_PROVIDER=db-transport-rest` schaltet explizit auf den Wrapper `v6.db.transport.rest`. Ursprung ist per Default Hamburg Hbf (`REGIONFINDER_ORIGIN_DB_STOP_ID=8002549`).
+Der Realtime-Endpunkt lädt serverseitig Verbindungen über [Transitous](https://transitous.org/api/) ohne API-Key. Standard ist `REGIONFINDER_REALTIME_PROVIDER=transitous`, Ursprung Hamburg Hbf. Die API liefert Fahrplandaten und, je nach Quelle und Fahrt, Echtzeitdaten. Die Oberfläche unterscheidet diese ausdrücklich. Stations-IDs werden gegen DELFI geprüft; Abfragen teilen laufende Requests und nutzen einen 60-Sekunden-Cache. Betriebsgrenzen und alternative Provider stehen in [OPERATIONS.md](docs/OPERATIONS.md#bahnverbindungen-mit-transitous).
 
 ## Frontend
 
@@ -169,8 +169,8 @@ Wichtige UX-Entscheidungen:
   - OpenStreetMap-Straßenkarte über MapTiler, wenn `VITE_MAPTILER_KEY` gesetzt ist; andernfalls Esri `World_Street_Map`
   - Esri World Imagery Satellit plus Esri-Orts- und Grenzlabel-Overlay
 - StopPlaces und Route Patterns werden als MVTs geladen, nicht als vollständige JSON-Dateien.
-- Stationen aus Vektor-Tiles sind anklickbar und öffnen rechts StopPlace-Details, Metriken, DB-Echtzeitverbindungen und Linien.
-- Das Detailpanel zeigt unter `DB Echtzeit` bis zu drei Live-Alternativen ab der Detailpanel-Startzeit. Die Startzeit besitzt `Frühere`-/`Spätere`-Navigation; lokale `/itineraries` werden dort nicht mehr als eigener Vergleichsblock gerendert.
+- Stationen aus Vektor-Tiles sind anklickbar und öffnen rechts StopPlace-Details, Metriken, Bahnverbindungen und Linien.
+- Das Detailpanel zeigt unter `Bahn 🚂` bis zu drei Verbindungsalternativen ab der Detailpanel-Startzeit. Die Startzeit besitzt `Frühere`-/`Spätere`-Navigation; lokale `/itineraries` werden dort nicht mehr als eigener Vergleichsblock gerendert.
 - Datenstand und technische StopPlace-Details sind im Detailpanel als einklappbare Abschnitte untergebracht.
 - Verkehrsmittel-Layer:
   - `Regional/Fern`
@@ -210,3 +210,7 @@ Große Rohdaten, Routinggraphen, Reports und generierte Metriken liegen unter `d
 - `docs/TRAVEL_TIME_SEMANTICS.md`: Fahrzeitdefinitionen
 - `docs/IMPORT_RUNBOOK.md`: Import-, API- und Metrikbefehle
 - `AGENTS.md`: Hinweise für zukünftige Coding-Sessions
+
+## Lizenz und Betrieb
+
+Der Regionfinder-Quellcode steht unter der [MIT-Lizenz](LICENSE). Regionfinder unter https://regionfinder.b42.io/ wird dauerhaft nichtkommerziell und kostenlos betrieben. Die MIT-Lizenz des Codes ist unabhängig von dieser Betriebszusage; für Daten, Karten und externe Dienste gelten deren eigene Lizenzen und Nutzungsbedingungen. Transitous erlaubt die öffentliche API für nichtkommerzielle Open-Source-Anwendungen. Bei höherem Aufkommen oder automatisierten Abfragen ist vorher eine Abstimmung mit Transitous erforderlich.

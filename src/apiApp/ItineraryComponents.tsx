@@ -60,6 +60,12 @@ export function RealtimeItineraryBlock({
           ))}
         </ol>
       ) : null}
+      {!loading && !error && response?.sourceAttribution && response.sourceAttributionUrl ? (
+        <p className="api-transit-attribution">
+          <a href={response.sourceAttributionUrl} target="_blank" rel="noreferrer">{response.sourceAttribution}</a>
+          {' · '}<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap-Mitwirkende</a>
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -122,6 +128,10 @@ function ItineraryAlternative({
         <span>ab {timeLabel(itinerary.actualFirstDepartureAt)}</span>
         <span>an {timeLabel(itinerary.arrivalAt)}</span>
         <span>Dauer: {compactMinutes(connectionDurationSeconds)}</span>
+        {itinerary.realtimeStatus ? <span>{
+          itinerary.realtimeStatus === 'realtime' ? 'Echtzeitdaten' :
+            itinerary.realtimeStatus === 'partial' ? 'Teilweise Echtzeitdaten' : 'Nur Fahrplandaten'
+        }</span> : null}
       </div>
       <ol className="api-leg-list">
         {itinerary.legs.map((leg) => (
@@ -133,10 +143,13 @@ function ItineraryAlternative({
               <small>
                 {timeLabel(leg.departureAt)}-{timeLabel(leg.arrivalAt)}
                 {leg.platformFrom ? ` · Gleis ${leg.platformFrom}` : ''}
-                {leg.departureDelaySeconds !== undefined ? ` · ${delayLabel(leg.departureDelaySeconds)}` : ''}
+                {leg.departureDelaySeconds != null ? ` · ${delayLabel(leg.departureDelaySeconds)}` : ''}
+                {leg.realtime === false ? ' · nur Fahrplan' : ''}
+                {leg.arrivalDelaySeconds != null && leg.arrivalDelaySeconds !== leg.departureDelaySeconds ? ` · Ankunft ${delayLabel(leg.arrivalDelaySeconds)}` : ''}
+                {leg.platformTo ? ` · Ankunftsgleis ${leg.platformTo}` : ''}
                 {leg.cancelled ? ' · fällt aus' : ''}
               </small>
-              {leg.remarks?.length ? <em>{leg.remarks.slice(0, 3).join(' · ')}</em> : null}
+              {leg.remarks?.length ? <em>{leg.remarks.join(' · ')}</em> : null}
             </span>
           </li>
         ))}

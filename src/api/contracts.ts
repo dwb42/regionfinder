@@ -132,6 +132,7 @@ export type ApiItineraryLeg = {
   departureDelaySeconds?: number | null
   arrivalDelaySeconds?: number | null
   cancelled?: boolean
+  realtime?: boolean
   remarks?: string[]
 }
 
@@ -155,9 +156,13 @@ export type ApiItinerary = {
   refreshToken?: string | null
   realtimeSource?: string | null
   realtimeFetchedAt?: string | null
+  realtimeStatus?: 'realtime' | 'partial' | 'scheduled'
 }
 
 export type ApiItineraryResponse = {
+  provider?: string
+  sourceAttribution?: string
+  sourceAttributionUrl?: string
   snapshotId: string
   requestedDeparture: string
   originId: string

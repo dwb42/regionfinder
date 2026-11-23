@@ -4,7 +4,8 @@ import { ZodError } from 'zod'
 import type { RegionfinderRepository } from './db/types'
 import { createDrivingRouteProvider } from './driving/createDrivingRouteProvider'
 import { DrivingRouteProviderError, type DrivingRouteProvider } from './driving/types'
-import { DbTransportRestProvider, RealtimeProviderError, type RealtimeItineraryProvider } from './realtime/dbTransportRestProvider'
+import { createRealtimeProvider } from './realtime/createRealtimeProvider'
+import { RealtimeProviderError, type RealtimeItineraryProvider } from './realtime/types'
 import {
   administrativeAreaLevelSchema,
   administrativeAreaStateSchema,
@@ -96,7 +97,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   const app = Fastify({
     logger: options.logger ?? true,
   })
-  const realtimeItineraryProvider = options.realtimeItineraryProvider ?? new DbTransportRestProvider()
+  const realtimeItineraryProvider = options.realtimeItineraryProvider ?? createRealtimeProvider()
   const drivingRouteProvider =
     options.drivingRouteProvider ?? createDrivingRouteProvider()
   const placeAdminEnabled = process.env.REGIONFINDER_ENABLE_PLACE_ADMIN === '1'
@@ -205,6 +206,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   })
 
   app.get('/api/v1/stops/:publicId/realtime-itineraries', async (request, reply) => {
+    reply.header('Cache-Control', 'no-store')
     const params = publicIdParamsSchema.parse(request.params)
     const query = itineraryQuerySchema.parse(request.query)
     const [stop, snapshot] = await Promise.all([

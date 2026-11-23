@@ -59,7 +59,7 @@ export function durationBetweenSeconds(start: string | null | undefined, end: st
 }
 
 export function timeLabel(value: string | null | undefined): string {
-  return value ? value.slice(11, 16) : 'n/a'
+  return value ? berlinTimeLabel(value) : 'n/a'
 }
 
 export function berlinTimeLabel(value: string): string {
@@ -99,6 +99,12 @@ export function delayLabel(value: number | null | undefined): string {
 
 export function realtimeErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
+    if (error.errorCode === 'realtime_rate_limited') {
+      return 'Die Verbindungsauskunft hat ihr Abfragelimit erreicht. Bitte später erneut versuchen.'
+    }
+    if (error.errorCode === 'realtime_stop_unmapped') {
+      return 'Keine passende Haltestelle für die Verbindungsauskunft gefunden.'
+    }
     if (error.errorCode === 'db_stop_unmapped') {
       return 'Keine passende DB-Haltestelle für diese Station gefunden.'
     }
@@ -108,7 +114,7 @@ export function realtimeErrorMessage(error: unknown): string {
     }
 
     if (error.errorCode === 'realtime_unavailable') {
-      return 'DB-Echtzeit ist aktuell nicht verfügbar.'
+      return 'Die Verbindungsauskunft ist aktuell nicht verfügbar.'
     }
 
     if (error.status === 404) {

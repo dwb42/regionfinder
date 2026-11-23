@@ -60,8 +60,7 @@ Der zunächst separat ausgelieferte Hotfix läuft aus
 `/docker/regionfinder/releases/routing-fix-20261123/source` mit einem Compose-Override.
 Seine Änderungen sind inzwischen in den regulären Quellcode übernommen und werden
 beim nächsten Aufruf von `/docker/regionfinder/deploy.sh` regulär gebaut.
-Die Produktions-`.env` setzt `REGIONFINDER_REALTIME_PROVIDER=bahn-web` und
-`REGIONFINDER_REALTIME_TIMEOUT_MS=12000`, sodass die Konfiguration erhalten bleibt.
+Die Produktions-`.env` ist für den nächsten Deploy auf `REGIONFINDER_REALTIME_PROVIDER=transitous` gesetzt. Der bisherige Wert `REGIONFINDER_REALTIME_TIMEOUT_MS=12000` betrifft nur den Legacy-Bahn-Provider; Transitous begrenzt jeden Upstream-Request auf 15 Sekunden.
 Vorherige Images und eine ausführbare Rollback-Anweisung liegen im selben Release-Verzeichnis.
 
 ## KFZ-Fahrzeiten mit Google Routes
@@ -126,15 +125,64 @@ und [EEA-Servicebedingungen, Abschnitt 20](https://cloud.google.com/terms/maps-p
 Für einen Vergleich mit Google Maps müssen Start, exaktes Ziel und Abrufzeit
 übereinstimmen; der Stadtteil Tonndorf ist ein anderes Ziel als der Bahnhof.
 
-## DB-Echtzeit
+## Bahnverbindungen mit Transitous
+
+Standard ist `REGIONFINDER_REALTIME_PROVIDER=transitous` (kein API-Key).
+Regionfinder ist öffentlich unter MIT lizenziert und bleibt als Dienst kostenlos
+und nichtkommerziell. Damit erfüllt dieser Betrieb die [Transitous-API-Bedingungen](https://transitous.org/api/).
+
+Nur `https://api.transitous.org/api/...` wird angesprochen: `/v6/stop` zur Prüfung
+exakter DELFI-IDs, `/v1/geocode` als räumlich begrenzter Suchfallback und `/v6/plan`
+für bis zu drei Verbindungen. Ursprung ist Hamburg Hbf (`de-DELFI_de:02000:10950_G`).
+Jeder Request enthält einen identifizierenden User-Agent mit Kontaktadresse;
+`REGIONFINDER_HTTP_USER_AGENT` kann diesen überschreiben und muss weiterhin
+Anwendungsname und erreichbare Kontaktinformation enthalten.
+
+- Abfragen erfolgen bei Stationsauswahl oder Änderung der Bahn-Startzeit, ohne Polling oder Batchläufe.
+- Ergebnis-Cache: 60 Sekunden, maximal 500 Einträge; identische laufende Abfragen werden geteilt.
+- Stationszuordnungen: sechs Stunden, maximal 1.000 Einträge. Exakte DELFI-IDs haben Vorrang vor geocodierten Sammelstationen.
+- Pro API-Prozess höchstens 700 Planversuche in 24 Stunden und 30 pro Minute, fehlgeschlagene Versuche zählen mit. Stationsabfragen sind zusätzliche HTTP-Requests.
+- Diese Grenzen liegen im Prozessspeicher und werden bei Neustart zurückgesetzt. Bei mehreren Instanzen, häufigen Neustarts oder erhöhtem Nutzungsaufkommen ist ein gemeinsames dauerhaftes Budget und Abstimmung mit Transitous nötig. Transitous verlangt insbesondere bei mehr als 720 Plan-Abfragen/24 Stunden, vielen Nutzern oder automatisierter Nutzung vorherige Koordination.
+- Upstream-429 respektiert `Retry-After`, mindestens 60 Sekunden Pause. Keine automatischen Wiederholungen. Lokale Limits und Upstream-429 liefern `429/realtime_rate_limited`.
+- Nicht zugeordnete Stationen liefern `404/realtime_stop_unmapped`; fehlerhafte Antworten und Timeouts `502/realtime_unavailable`. Leere gültige Ergebnisse bleiben von Fehlern unterscheidbar.
+- Der HTTP-Endpunkt setzt `Cache-Control: no-store`, damit Browser/Proxies keine zusätzliche Veraltung verursachen.
+
+Fahrplan und Echtzeit werden unterschieden, auch innerhalb einer Verbindung.
+Ohne Echtzeitinformation wird keine Verspätung von null und damit keine vermeintliche
+Pünktlichkeit angezeigt. Durchgehende Züge mit mehreren Legs zählen nicht automatisch
+als Umstieg. Ausfälle, Störungsmeldungen und geänderte Gleise bleiben erhalten.
+Quellen: [Transitous-Datenlieferanten](https://transitous.org/sources/) und
+[OpenStreetMap](https://www.openstreetmap.org/copyright), verlinkt im Bahn-Block.
+
+Live-Tests am 23.11.2026 lieferten für Tonndorf, Aumühle, Buxtehude, Lüneburg,
+Lübeck Hbf und Ohlstedt Verbindungen. Der integrierte Provider wurde auch in einem
+separaten Container auf dem VPS geprüft: alle sechs Ziele erfolgreich (78–174 ms
+pro Plan inklusive benötigter Stationsauflösung in dieser Stichprobe).
+Regional-/Fernzüge lieferten teilweise Echtzeit und Verspätungen, die S5 teilweise
+Echtzeit; S7 und U1 hatten in diesen Stichproben nur Fahrplandaten.
+Das ist eine Stichprobe und keine Zusage zur lückenlosen Echtzeitabdeckung.
+Hochbahn-Zugang ist zusätzlich beantragt; Bedingungen wurden per E-Mail akzeptiert,
+Zugangsdaten stehen noch aus. Eine Hochbahn-Anbindung ist nicht implementiert.
+
+Die Produktions-Umgebung ist ohne Neustart vorbereitet; Sicherungen von `.env`
+und Compose liegen unter `/docker/regionfinder/releases/transitous-20261123/`.
+Nach dem regulären Deploy:
+
+```bash
+curl -fsS "https://regionfinder.b42.io/api/v1/stops/de%3A02000%3A8006197/realtime-itineraries?date=$(TZ=Europe/Berlin date +%F)&time=08%3A00&profile=regular_tue_thu"
+```
+
+Erwartet: `provider: "transitous"`, Quellenlink und bis zu drei Alternativen.
+
+### Alternative Legacy-Bahn-Provider
 
 Der API-Prozess lädt Echtzeitverbindungen serverseitig. Relevante Variablen:
 
-- `REGIONFINDER_REALTIME_PROVIDER`: Default `bahn-web`; `db-transport-rest` erzwingt den Wrapper `v6.db.transport.rest`.
+- `REGIONFINDER_REALTIME_PROVIDER=bahn-web` wählt das bahn.de-Web-Backend; `db-transport-rest` den Wrapper `v6.db.transport.rest`. Beide sind optional und derzeit extern gestört.
 - `REGIONFINDER_ORIGIN_DB_STOP_ID`: Default `8002549` für Hamburg Hbf.
 - `DB_TRANSPORT_REST_BASE_URL`: Default `https://v6.db.transport.rest`.
 
-Der Standardpfad `bahn-web` nutzt einen kontrollierten `curl`-Fallback mit Cookie-Warmup. Deshalb muss `curl` im lokalen/API-Runtime-Umfeld verfügbar sein.
+Der Legacy-Pfad `bahn-web` nutzt einen kontrollierten `curl`-Fallback mit Cookie-Warmup. Deshalb muss `curl` im lokalen/API-Runtime-Umfeld verfügbar sein.
 
 Stand 2026-11-23: `v6.db.transport.rest` ist aus der lokalen Umgebung und vom
 Produktionsserver nicht per DNS auflösbar. Die direkte Bahn-Web-API liefert dort
@@ -142,8 +190,7 @@ HTTP 403 (`OPS_BLOCKED`); diese externe Sperre kann die Anwendung nicht beheben.
 `REGIONFINDER_REALTIME_PROVIDER=db-transport-rest` deshalb nicht als Workaround setzen.
 Der Client meldet eine Zugriffssperre als `realtime_blocked`, ohne sie erneut mit curl
 zu versuchen; HTTP-Fehler im curl-Pfad dürfen nicht als leere Verbindungsliste gelten.
-Im Detailpanel führt ein Link zur manuellen Bahnauskunft. Für eine Wiederherstellung
-der eingebetteten Bahnverbindungen ist wieder ein zugänglicher Bahn-Dienst nötig.
+Im Detailpanel führt ein Link zur manuellen Bahnauskunft. Die eingebettete Verbindungsauskunft nutzt deshalb standardmäßig Transitous.
 
 Bahnabfragen verwenden das heutige Datum in `Europe/Berlin`, inklusive Sommer-/Winterzeit.
 Die planmäßigen Direktverbindungsmetriken behalten den repräsentativen Fahrplantag
@@ -160,7 +207,7 @@ curl 'http://127.0.0.1:4001/api/v1/stops/de%3A01060%3A37985%3A1%3A8000526/realti
 
 Erwartung: `alternatives` enthält bis zu drei normalisierte Verbindungen ab Hamburg Hbf. Nicht gemappte DB-Ziele liefern `404` mit `error: "db_stop_unmapped"`; Upstream-Probleme liefern `502` mit `error: "realtime_unavailable"`.
 
-Der Standardpfad kann bahn.de-Web-Location-IDs im Format `A=...` verwenden. Der Provider akzeptiert sowohl reine EVA-/DB-IDs als auch solche vollständigen Web-Location-Referenzen.
+Der Legacy-Pfad kann bahn.de-Web-Location-IDs im Format `A=...` verwenden. Der Provider akzeptiert sowohl reine EVA-/DB-IDs als auch solche vollständigen Web-Location-Referenzen.
 
 Tagesgenaue Direktverbindungen werden über den normalen Metrikendpunkt geprüft:
 
