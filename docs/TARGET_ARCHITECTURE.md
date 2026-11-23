@@ -1,4 +1,6 @@
-# Zielarchitektur
+# Architektur
+
+Implementierter Stand: 2026-11-23. Noch nicht umgesetzte Wege sind ausdrücklich als vorbereitet oder optional markiert.
 
 ## Komponenten
 
@@ -8,7 +10,8 @@ React/MapLibre Frontend
      -> PostgreSQL/PostGIS
      -> pgRouting fuer OSM-Schienenrekonstruktion
      -> ItineraryProvider (MOTIS bevorzugt, R5-Fallback vorbereitet)
-     -> RealtimeItineraryProvider (DB-Echtzeitvergleich serverseitig)
+     -> RealtimeItineraryProvider (Transitous, serverseitig)
+     -> DrivingRouteProvider (Google Routes, serverseitig)
      -> Vector Tiles via ST_AsMVT
 
 Pipeline (Python)
@@ -43,34 +46,106 @@ Statuswerte stehen in `db/migrations/001_core_schema.sql`: `created`, `raw_valid
 
 - Batchmetriken: `motis_one_to_all` berechnet aktuell die Produktmetrik `fastestSeconds` als schnellste planmäßige Gesamtreisezeit zum exakten Ziel-StopPlace. Der Batch nutzt ein repräsentatives Werktagsprofil, 120 Minuten Maximaldauer, Transit und initialen Fußweg zum Einstieg, aber keinen finalen Fußweg zu Nachbarhaltestellen. R5/r5py bleibt Vergleichs- und Performance-Engine, blockiert aber keinen Snapshot, wenn MOTIS den Produktionslauf abgeschlossen hat.
 - Lokale Verbindungsauskunft: `ItineraryProvider`-Format ist über `src/api/contracts.ts` festgelegt. Die Produktions-API kann reale MOTIS-`/api/v5/plan`-Antworten aus dem lokalen Graph in das interne Antwortformat transformieren.
-- DB-Echtzeitvergleich: `RealtimeItineraryProvider` liefert dasselbe `ApiItineraryResponse`-Format über `GET /api/v1/stops/:publicId/realtime-itineraries`. Die Abfrage läuft serverseitig; der Client erhält nur normalisierte Alternativen und Fehlercodes. Die UI steuert die Startzeit im Detailpanel und bietet `Frühere`/`Spätere`-Navigation.
+- Externe Bahnverbindungen: `RealtimeItineraryProvider` liefert dasselbe `ApiItineraryResponse`-Format über `GET /api/v1/stops/:publicId/realtime-itineraries`. Die Abfrage läuft serverseitig; der Client erhält nur normalisierte Alternativen und Fehlercodes. Die UI steuert die Startzeit im Detailpanel und bietet `Frühere`/`Spätere`-Navigation.
 - Fixture-Provider: `server/db/fixtureRepository.ts` liefert lokale Testverbindungen ohne externe Fahrplanauskunft. Fixture-Modus wird nur explizit mit `REGIONFINDER_USE_FIXTURE_API=1` aktiviert; ohne `DATABASE_URL` darf der API-Start nicht still auf Fixtures fallen.
 
-## DB-Echtzeitprovider
+## Bahnprovider
 
-Implementierung: `server/realtime/dbTransportRestProvider.ts` als Provider-Orchestrator. Clients, Stop-Mapping, Journey-Mapping und TTL-Cache liegen in separaten Modulen unter `server/realtime/`.
+`server/realtime/createRealtimeProvider.ts` wählt anhand von
+`REGIONFINDER_REALTIME_PROVIDER` den Provider (Default `transitous`). Unbekannte
+Werte brechen die Initialisierung ab. Keine direkten Provider-Aufrufe aus React
+und keine stillschweigende Umschaltung auf Fixtures oder andere Provider.
 
-Konfiguration:
+Transitous ist in `server/realtime/transitous/` aufgeteilt:
 
-- `REGIONFINDER_ORIGIN_DB_STOP_ID`, Default `8002549` Hamburg Hbf.
-- `REGIONFINDER_REALTIME_PROVIDER`, Default `bahn-web`; Wert `db-transport-rest` erzwingt den Wrapper `v6.db.transport.rest`.
-- `DB_TRANSPORT_REST_BASE_URL`, Default `https://v6.db.transport.rest`.
+- `provider.ts`: öffentliche HTTP-API, Timeout, Limits, Cache und Zusammenführung laufender Abfragen.
+- `types.ts`: Zod-Schemas; fehlerhafte Payloads sind Fehler, keine leere Verbindungsliste.
+- `stopMapping.ts`: Stationsidentität und begrenztes Geocoding.
+- `journeyMapping.ts`: Normalisierung von Zeiten, Echtzeitstatus, Umstiegen, Ausfällen, Gleisen und Meldungen.
 
-Mapping-Regeln:
+Es werden ausschließlich `https://api.transitous.org/api/v6/stop`, `/api/v1/geocode`
+und `/api/v6/plan` verwendet, mit identifizierendem User-Agent und Kontaktadresse.
+Origin ist Hamburg Hbf (`de-DELFI_de:02000:10950_G`). Zuerst wird
+`de-DELFI_<DHID bzw. publicId>` gegen `/stop` und die Koordinate geprüft
+(maximal 1.000 Meter Abweichung). Nur bei fehlender Zuordnung folgt Geocoding:
+Typ `STOP`, maximal acht Treffer, normalisierter Name und höchstens 600 Meter
+Abstand. Dadurch haben genaue DELFI-IDs Vorrang vor ungenau zusammengeführten
+Nachbarstationen, etwa Bahn-/Fernbusstationen gleichen Namens.
 
-- direkte 7-stellige EVA-/DB-IDs aus PublicId, DHID und technischen Stop-IDs bevorzugen,
-- 8-stellige technische IDs mit fuehrender `1` auf 7-stellige EVA-ID kuerzen,
-- danach Wrapper-`/locations/nearby` mit Koordinaten und Namensscore,
-- danach Wrapper-`/locations` per Stationsname,
-- unaufloesbare Ziele als `404 db_stop_unmapped`.
+Plan-Aufrufe nutzen `numItineraries=3` **und** `maxItineraries=3`,
+`realtimeMode=REALTIME`, `transitModes=TRANSIT` und `joinInterlinedLegs=false`.
+Die Karten-Layerfilter beschränken diese Auskunft nicht; auch Bus-/Fußweg-Legs
+können in Alternativen vorkommen. Die `transfers`-Angabe des Providers ist
+maßgeblich, durchgehende Legs werden als „Im Fahrzeug bleiben“ gekennzeichnet.
 
-Cache-Regeln:
+| Zustand | Verhalten |
+| --- | --- |
+| Stationszuordnung | sechs Stunden Cache, maximal 1.000 Einträge |
+| Plan-Ergebnis | 60 Sekunden Cache, maximal 500 Einträge; Schlüssel aus Snapshot, Ziel-ID, Koordinate und Wunschzeit |
+| Gleiche laufende Planabfrage | ein geteilter Request |
+| Upstream-Request | 15 Sekunden Timeout, keine automatischen Wiederholungen |
+| Abfragebudget | 700 Planversuche/24 Stunden und 30/Minute pro Prozess; Speicherzustand, Neustart setzt zurück |
+| Upstream-429 | `Retry-After` beachten, mindestens 60 Sekunden Pause |
+| Unbekannte Station | `404/realtime_stop_unmapped` |
+| Lokales Limit/Upstream-429 | `429/realtime_rate_limited` |
+| Fehlerhafter Payload/Upstream/Timeout | `502/realtime_unavailable` |
 
-- Stop-ID-Mapping: 24 Stunden im API-Prozess.
-- Journey-Antworten: 60 Sekunden pro Ursprung, Ziel und Abfahrtsminute.
-- Upstream-/Timeoutfehler werden als `502 realtime_unavailable` abgebildet.
+Die HTTP-Antwort des Regionfinder-Endpunkts setzt `Cache-Control: no-store`,
+damit der begrenzte Servercache nicht durch Browser-/Proxy-Caches verlängert wird.
+Limits und Abstimmungspflichten für größere Nutzung: [OPERATIONS.md](OPERATIONS.md#bahnverbindungen-mit-transitous).
 
-Der aktuelle Standardpfad `bahn-web` nutzt die bahn.de-Web-API mit Cookie-Warmup und kontrolliertem `curl`-Fallback, weil Node-`fetch` dort in der lokalen Verifikation blockiert werden kann. Der Wrapperpfad bleibt fuer Tests und explizite Konfiguration erhalten.
+`bahn-web` und `db-transport-rest` bleiben explizite Legacy-Optionen unter
+`server/realtime/dbTransportRestProvider.ts` mit separaten Clients/Mappings.
+Nur für sie gelten `REGIONFINDER_ORIGIN_DB_STOP_ID` (Default `8002549`) und
+`DB_TRANSPORT_REST_BASE_URL`. Bekannte externe Sperren nicht durch einen
+unbemerkten Providerwechsel oder vorgetäuschte leere Ergebnisse verdecken.
+
+## KFZ-Provider
+
+`server/driving/createDrivingRouteProvider.ts` wählt standardmäßig `google-routes`.
+`GoogleRoutesDrivingRouteProvider` ruft ausschließlich serverseitig
+`directions/v2:computeRoutes` auf: `DRIVE`, `TRAFFIC_AWARE_OPTIMAL`, `BEST_GUESS`,
+keine Alternativrouten, Abfahrt jetzt durch Weglassen von `departureTime`.
+Start ist standardmäßig Hamburg Hbf (53.5527, 10.0064), Ziel die StopPlace-Koordinate.
+
+Der Field-Mask beschränkt den Inhalt auf Dauer, Distanz und Fallback-Status;
+keine Google-Routengeometrie oder Abbiegehinweise für die bestehende Karte.
+Ein Fallback ohne Verkehrsinformationen wird nicht als Live-Ergebnis akzeptiert.
+Fertige Ergebnisse dürfen weder gecacht noch in PostGIS persistiert werden;
+gleiche laufende Requests werden geteilt. Der HTTP-Endpunkt setzt `no-store`.
+Timeout: 10 Sekunden; lokales Limit: standardmäßig 60 Versuche/Minute/Prozess.
+`osrm` bleibt ein expliziter Modus ohne Live-Verkehr, kein Fehler-Fallback.
+
+Der Key (`REGIONFINDER_GOOGLE_ROUTES_API_KEY`) bleibt außerhalb von Browser,
+Repository und Docker-Build-Kontext. Upstream-Bodies oder Header mit Credentials
+werden nicht in Fehlermeldungen weitergereicht. Konfiguration und Fehlercodes:
+[OPERATIONS.md](OPERATIONS.md#kfz-fahrzeiten-mit-google-routes).
+
+## Datenvertraege fuer externe Verbindungen
+
+Gemeinsamer Vertrag: `src/api/contracts.ts`. Keine neue DB-Migration oder
+persistierte Live-Routentabelle; externe Ergebnisse verändern weder `od_metrics`
+noch den Fahrplansnapshot. Neue Felder sind optional, damit lokale und
+Legacy-Provider denselben Vertrag weiter verwenden können.
+
+| Typ / Feld | Bedeutung |
+| --- | --- |
+| `ApiItineraryResponse.provider?` | verwendeter Provider, bei Transitous `transitous` |
+| `sourceAttribution?`, `sourceAttributionUrl?` | Quellenangabe und Link auf Datenlieferanten |
+| `ApiItinerary.realtimeStatus?` | `realtime`: alle Transit-Legs mit Echtzeit; `partial`: einige; `scheduled`: keines |
+| `realtimeSource?`, `realtimeFetchedAt?` | Quelle und tatsächlicher Abrufzeitpunkt, auch bei gecachter Antwort erhalten |
+| `ApiItineraryLeg.realtime?` | Echtzeit für Abfahrt oder Ankunft dieses Transit-Legs; Fußwege bleiben ohne Flag |
+| `departureDelaySeconds?`, `arrivalDelaySeconds?` | getrennte Abweichungen zur Planzeit, nur mit belastbarer Echtzeit für das jeweilige Ereignis |
+| `plannedDepartureAt?`, `plannedArrivalAt?`, `cancelled?`, `remarks?` | Planzeiten, Ausfall und vollständige Hinweise; Gleisänderungen zusätzlich als Meldung |
+| `ApiDrivingRouteResponse.trafficAware?` | Google-Live-Verkehr explizit kenntlich machen |
+| `ApiDrivingRouteResponse.fetchedAt?` | Abrufzeit der Autofahrzeit |
+
+Transitous-Zeitgründe `NO_RT_DATA` und `INCONSISTENT_RT` erzeugen keine
+Verspätungszahl. `OBSERVED`, `PROPAGATED` und `PREDICTED` werden als Echtzeit
+gewertet; unbekannte neue Gründe nicht automatisch. Fehlende Distanzen bleiben
+`null`, nicht vermeintlich null Meter. Transitous liefert im normalisierten
+Vertrag keine Routengeometrie (`geometry: null`). Zeit- und Dauersemantik:
+[TRAVEL_TIME_SEMANTICS.md](TRAVEL_TIME_SEMANTICS.md).
 
 ## API
 
@@ -130,8 +205,13 @@ Aktueller API-Modus:
 - StopPlace-MVT-Features sind anklickbar und öffnen das Detailpanel.
 - Die frühere Sidebar-Suche und Suchtrefferliste ist im API-UI entfernt; der Suchendpunkt bleibt nur technische API-Oberfläche.
 - Basiskarten sind die OpenStreetMap-Straßenkarte über MapTiler (`openstreetmap`-Rasterstil, Schlüssel `VITE_MAPTILER_KEY`, 512px-Kacheln, mit integrierten Labels; ohne Schlüssel Fallback auf schlüsselloses Esri `World_Street_Map`) und Esri-Satellit mit Esri-Orts- und Grenzlabel-Overlay (nur im Satellitenmodus sichtbar).
-- Das Detailpanel rendert DB-Echtzeitverbindungen unter der Überschrift `DB Echtzeit`; lokale `/itineraries` werden dort nicht als eigener Block angezeigt.
+- Das Detailpanel rendert Bahnverbindungen unter `Bahn 🚂` und Autofahrzeit unter `KFZ 🚙`; lokale `/itineraries` werden dort nicht als eigener Block angezeigt.
 - Der Metrikblock zeigt `fastestSeconds` und eine tagesgenaue Direktverbindungszahl aus `directConnectionCount`, wenn `metrics` mit `date=YYYY-MM-DD` abgefragt wird.
+- `useSelectedStopDetails` lädt Stationsdetails, Metriken, Bahn und KFZ in unabhängigen Effects. Jeder Pfad besitzt einen AbortController und ignoriert veraltete Ergebnisse nach Auswahlwechsel. Eine langsame oder fehlerhafte Metrikabfrage darf Bahn und KFZ nicht blockieren.
+- Client-Timeouts: Details/Metriken/KFZ 30 Sekunden, Bahn 90 Sekunden für mehrstufiges Mapping und Planung. `src/data/api.ts` kombiniert Auswahl-Abbruch und Timeout; ein Timeout wird als `request_timeout` behandelt.
+- Bahn verwendet das heutige Berliner Datum plus UI-Uhrzeit, Metriken weiter den Referenztag. KFZ fragt bei Stationsauswahl Abfahrt jetzt ab; Bahn-Uhrzeitwechsel und Profilwechsel lösen keine KFZ-Abfrage aus. Kein Polling.
+- `src/api/time.ts` konvertiert Berliner Datum/Wunschzeit einschließlich Sommerzeit; die UI formatiert ISO-Zeiten mit `Europe/Berlin` statt String-Slicing.
+- Quellenangaben und der Unterschied zwischen Echtzeit, teilweiser Echtzeit und Fahrplan gehören zur fachlichen Anzeige. Fehlende Echtzeit darf nicht als Pünktlichkeit erscheinen.
 - Datenstand und technische StopPlace-Details sind einklappbar.
 - Route Patterns verwenden echte GTFS-Route-Farben aus `routes.color`, wenn vorhanden; sonst Fallbackfarben nach Modus.
 - Hochkonfidente OSM-Rekonstruktionen werden im Standardlayer angezeigt. Niedrigkonfidente Rekonstruktionen und Stopfolgen-Approximationen bleiben im Standardlayer ausgeblendet, bis ihre Qualität visuell belastbar ist.

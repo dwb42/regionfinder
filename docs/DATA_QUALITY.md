@@ -52,17 +52,33 @@ Aktuelle UI-Konvention:
 - `stop_sequence_approximation` ist im API-Modus standardmäßig ausgeschaltet.
 - Die Legende muss approximierte oder niedrigkonfidente Geometrien als solche kennzeichnen, sobald diese Layer sichtbar sind.
 
-## DB-Echtzeitqualität
+## Qualität externer Verbindungsauskünfte
 
-DB-Echtzeitdaten sind ein Vergleichs- und Nutzerkomfortsignal, nicht die kanonische Produktionsmetrik. Sie dürfen die MOTIS-/PostGIS-Metriken nicht überschreiben.
+Transitous-Bahnverbindungen und Google-KFZ-Fahrzeiten sind nutzerseitige
+Verbindungsauskünfte, keine kanonischen Produktionsmetriken. Sie dürfen die
+DELFI-/MOTIS-/PostGIS-Metriken nicht überschreiben.
 
-Qualitätsgrenzen:
+### Bahn
 
-- Stop-ID-Mapping ist heuristisch, wenn keine direkte EVA-/DB-ID aus PublicId, DHID oder technischen Stop-IDs extrahiert werden kann.
-- Nicht gemappte Ziele müssen kontrolliert als `404 db_stop_unmapped` erscheinen.
-- Upstream-Ausfälle, Timeouts oder Blockaden müssen als `502 realtime_unavailable` erscheinen.
-- Das Frontend muss diese Fehler lokal im DB-Echtzeitblock anzeigen und das Detailpanel weiter nutzbar lassen.
-- Realtime-Legs dürfen optionale Planzeiten, Ist-Zeiten, Verspätungen, Ausfallstatus und Remarks enthalten; fehlende Plattformen oder Zeiten sind zulässig.
+- Stationsidentität zuerst anhand verifizierter DELFI-ID und Koordinate prüfen. Geocoding ist nur ein begrenzter Fallback mit Namens-/Entfernungsprüfung; eine nahe Fernbusstation gleichen Namens darf nicht eine vorhandene exakte Bahn-ID verdrängen.
+- Nicht gemappte Ziele: `404/realtime_stop_unmapped`. Ungültige Payloads, Upstream-Ausfälle und Timeouts: `502/realtime_unavailable`. Limits: `429/realtime_rate_limited`. Diese Zustände sind von einer gültigen leeren Verbindungsliste zu unterscheiden.
+- Echtzeitabdeckung variiert nach Datenquelle und Fahrt. `realtimeStatus` unterscheidet volle, teilweise und fehlende Abdeckung der Transit-Legs; keine Aussage über Pünktlichkeit ableiten.
+- Verspätungen pro Abfahrt/Ankunft nur bei belastbarer Echtzeit ausweisen. `NO_RT_DATA`, `INCONSISTENT_RT` oder unbekannte Zeitgründe dürfen nicht als null Sekunden Verspätung interpretiert werden.
+- Ausfälle, Gleisänderungen und vollständige Meldungen erhalten. Mehrere Legs eines durchgehenden Fahrzeugs sind kein Umstieg; `transfers` des Providers verwenden.
+- Fehlende Distanzen bleiben `null`. Transitous-Routengeometrien werden derzeit nicht dargestellt; Kartenlinien bleiben unabhängig aus PostGIS/MVT.
+- Quellenlink und OSM-Attribution sichtbar halten. Cached Antworten behalten den ursprünglichen Abrufzeitpunkt; Ergebnis-TTL 60 Sekunden.
+- Fehler werden im Bahn-Block angezeigt. Stationsdetails, Metriken und KFZ bleiben unabhängig nutzbar; alte Antworten dürfen nach Auswahlwechsel nicht neuere Ergebnisse überschreiben.
+
+Legacy-Provider behalten eigene Codes wie `db_stop_unmapped` und
+`realtime_blocked`. Bekannte Zugriffssperren nicht mit leeren Ergebnissen kaschieren.
+
+### KFZ
+
+- Google Routes nutzt `TRAFFIC_AWARE_OPTIMAL` und `BEST_GUESS`, Abfahrt jetzt. Ein Upstream-Fallback ohne Verkehrsdaten wird als Fehler behandelt.
+- Abfahrtszeitpunkt, exakte Start-/Zielkoordinate und Abrufzeit müssen für Vergleiche übereinstimmen. Identische Ergebnisse zur Google-Maps-Oberfläche werden dennoch nicht zugesagt.
+- Ergebnisse weder dauerhaft speichern noch cachen; nur gleichzeitige identische Requests zusammenführen. `Cache-Control: no-store` und Google-Quellenangabe beibehalten.
+- Fehlender Key, Quota, keine Route und Upstream-Fehler bleiben unterscheidbar; Codes stehen in [OPERATIONS.md](OPERATIONS.md#kfz-fahrzeiten-mit-google-routes). Niemals Provider-Bodies oder Credentials in Nutzerfehlern offenlegen.
+- Keine automatische Umschaltung auf OSRM. Wer `osrm` ausdrücklich aktiviert, erhält eine als solche bezeichnete Schätzung ohne Live-Verkehr.
 
 ## Schulen-POI-Qualität
 
@@ -97,4 +113,4 @@ Qualitätsregeln:
 - ZHV-Vollintegration ist noch zugangsbeschränkt; die aktive Baseline nutzt DELFI-DHIDs und interne IDs für fehlende DHIDs.
 - Der aktuelle MOTIS-Produktionslauf begrenzt die fachliche Maximaldauer bewusst auf 120 Minuten. StopPlaces außerhalb dieses Fensters bleiben ohne `fastestSeconds`.
 - Regionale Fahrplandaten dürfen nicht ungeprüft als zweite Fahrplanwahrheit mit DELFI gemischt werden.
-- Der aktuelle Standard-Realtime-Pfad nutzt die bahn.de-Web-API mit `curl`-Fallback; das ist eine pragmatische serverseitige Integration und kein zertifiziertes DB-Marketplace-Produkt.
+- Transitous ist ein externer öffentlicher Dienst mit begrenzter Echtzeitabdeckung und ohne Verfügbarkeitszusage durch Regionfinder. Die lokalen Abfragelimits sind Prozessspeicher, keine instanzübergreifende dauerhafte Quota.

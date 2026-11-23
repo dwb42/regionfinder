@@ -54,14 +54,21 @@ CARTOs anonyme Rastertiles dürfen nicht als Fallback verwendet werden: Sie kön
 
 `Dockerfile.api` kopiert neben `server` und `src/api` auch `scripts/migrate-db.ts` und `db/migrations` in das Image, damit `npm run db:migrate` produktiv innerhalb eines Containers laufen kann (z.B. als `docker compose run --rm api npm run db:migrate` vor dem eigentlichen Start). Ein Deploy, der diesen Schritt ausläßt, hinterlässt den Code auf dem neuesten Stand, aber das Schema veraltet lautlos — Migrationen sollten bei jedem Deploy als eigener Schritt laufen, nicht nur bei Bedarf von Hand.
 
-### Routing-Hotfix vom 2026-11-23
+### Auslieferungsstand
 
-Der zunächst separat ausgelieferte Hotfix läuft aus
-`/docker/regionfinder/releases/routing-fix-20261123/source` mit einem Compose-Override.
-Seine Änderungen sind inzwischen in den regulären Quellcode übernommen und werden
-beim nächsten Aufruf von `/docker/regionfinder/deploy.sh` regulär gebaut.
-Die Produktions-`.env` ist für den nächsten Deploy auf `REGIONFINDER_REALTIME_PROVIDER=transitous` gesetzt. Der bisherige Wert `REGIONFINDER_REALTIME_TIMEOUT_MS=12000` betrifft nur den Legacy-Bahn-Provider; Transitous begrenzt jeden Upstream-Request auf 15 Sekunden.
-Vorherige Images und eine ausführbare Rollback-Anweisung liegen im selben Release-Verzeichnis.
+Am 23.11.2026 per SSH geprüft: Server-Checkout `/docker/regionfinder/repo` auf
+`ee72566`; der laufende Container `regionfinder-api-1` verwendet
+`REGIONFINDER_REALTIME_PROVIDER=transitous` und
+`REGIONFINDER_DRIVING_PROVIDER=google-routes`. Dies dokumentiert Checkout und
+laufende Konfiguration; Smoke-Tests sind bei künftigen Deploys erneut nötig.
+
+Die Produktions-`.env` setzt `REGIONFINDER_REALTIME_PROVIDER=transitous`.
+`REGIONFINDER_REALTIME_TIMEOUT_MS=12000` betrifft nur den Legacy-Bahn-Provider;
+Transitous begrenzt jeden Upstream-Request auf 15 Sekunden.
+Geschützte Konfigurationssicherungen liegen unter
+`/docker/regionfinder/releases/google-routes-20261123/` und
+`/docker/regionfinder/releases/transitous-20261123/`. Ältere Hotfix-/Rollback-Artefakte
+unter `releases/routing-fix-20261123/` sind keine aktuelle Deployment-Quelle.
 
 ## KFZ-Fahrzeiten mit Google Routes
 
@@ -93,8 +100,7 @@ und die IPv4-Adresse `76.13.153.215`. Bestehender Browser-/MapTiler-Key bleibt s
 Backups der vorherigen Compose- und Umgebungskonfiguration liegen geschützt unter
 `/docker/regionfinder/releases/google-routes-20261123/`.
 
-Die Serverkonfiguration ist vorbereitet; der laufende Dienst wurde dafür noch
-nicht neu gestartet. Regulärer Deploy nach Pull des neuen Commits:
+Regulärer Deploy für zukünftige Änderungen (das Skript führt Pull, Builds, Migration und Container-Start aus):
 
 ```bash
 ssh ubuntu@76.13.153.215 /docker/regionfinder/deploy.sh
@@ -104,7 +110,7 @@ curl -fsS https://regionfinder.b42.io/api/v1/stops/de%3A02000%3A8006197/driving-
 Erwartet: `provider: "google-routes"`, `trafficAware: true`, positive Fahrzeit und
 Distanz, `Cache-Control: no-store`. Ein isolierter Smoke-Test mit dem neuen
 Provider und dem Produktionsschlüssel war am 23.11.2026 vom VPS erfolgreich.
-Er benötigt keinen Neustart der laufenden App.
+Der laufende Produktionsprovider ist zusätzlich oben unter Auslieferungsstand dokumentiert.
 
 Google-Aufrufe brechen nach 10 Sekunden ab; Fehlerantworten enthalten keine
 Upstream-Bodies oder Schlüssel. Gleichzeitige Anfragen zum selben Ziel teilen
@@ -129,7 +135,7 @@ Für einen Vergleich mit Google Maps müssen Start, exaktes Ziel und Abrufzeit
 
 Standard ist `REGIONFINDER_REALTIME_PROVIDER=transitous` (kein API-Key).
 Regionfinder ist öffentlich unter MIT lizenziert und bleibt als Dienst kostenlos
-und nichtkommerziell. Damit erfüllt dieser Betrieb die [Transitous-API-Bedingungen](https://transitous.org/api/).
+und nichtkommerziell. Diese Nutzung richtet sich nach den [Transitous-API-Bedingungen](https://transitous.org/api/); Code-Lizenz und Dienstbedingungen bleiben getrennt.
 
 Nur `https://api.transitous.org/api/...` wird angesprochen: `/v6/stop` zur Prüfung
 exakter DELFI-IDs, `/v1/geocode` als räumlich begrenzter Suchfallback und `/v6/plan`
@@ -155,18 +161,14 @@ Quellen: [Transitous-Datenlieferanten](https://transitous.org/sources/) und
 [OpenStreetMap](https://www.openstreetmap.org/copyright), verlinkt im Bahn-Block.
 
 Live-Tests am 23.11.2026 lieferten für Tonndorf, Aumühle, Buxtehude, Lüneburg,
-Lübeck Hbf und Ohlstedt Verbindungen. Der integrierte Provider wurde auch in einem
-separaten Container auf dem VPS geprüft: alle sechs Ziele erfolgreich (78–174 ms
-pro Plan inklusive benötigter Stationsauflösung in dieser Stichprobe).
+Lübeck Hbf und Ohlstedt Verbindungen, auch aus einem separaten VPS-Container.
 Regional-/Fernzüge lieferten teilweise Echtzeit und Verspätungen, die S5 teilweise
 Echtzeit; S7 und U1 hatten in diesen Stichproben nur Fahrplandaten.
 Das ist eine Stichprobe und keine Zusage zur lückenlosen Echtzeitabdeckung.
 Hochbahn-Zugang ist zusätzlich beantragt; Bedingungen wurden per E-Mail akzeptiert,
 Zugangsdaten stehen noch aus. Eine Hochbahn-Anbindung ist nicht implementiert.
 
-Die Produktions-Umgebung ist ohne Neustart vorbereitet; Sicherungen von `.env`
-und Compose liegen unter `/docker/regionfinder/releases/transitous-20261123/`.
-Nach dem regulären Deploy:
+Smoke-Prüfung nach Deploy oder Provideränderung:
 
 ```bash
 curl -fsS "https://regionfinder.b42.io/api/v1/stops/de%3A02000%3A8006197/realtime-itineraries?date=$(TZ=Europe/Berlin date +%F)&time=08%3A00&profile=regular_tue_thu"
@@ -199,13 +201,11 @@ eine langsame Metrikabfrage darf die Routing-Ergebnisse nicht zurückhalten.
 Detailanfragen im Browser laufen nach 30 Sekunden aus, Bahn nach 90 Sekunden (mehrstufige
 Stationssuche/Fahrplanabfrage); veraltete Anfragen werden beim Auswahlwechsel abgebrochen.
 
-Live-Prüfung:
-
-```bash
-curl 'http://127.0.0.1:4001/api/v1/stops/de%3A01060%3A37985%3A1%3A8000526/realtime-itineraries?date=2026-09-15&time=08%3A00&profile=regular_tue_thu'
-```
-
-Erwartung: `alternatives` enthält bis zu drei normalisierte Verbindungen ab Hamburg Hbf. Nicht gemappte DB-Ziele liefern `404` mit `error: "db_stop_unmapped"`; Upstream-Probleme liefern `502` mit `error: "realtime_unavailable"`.
+Legacy-spezifische Fehlercodes sind `404/db_stop_unmapped` für nicht aufgelöste
+DB-Ziele, `502/realtime_unavailable` für Upstream-/Timeoutfehler und
+`502/realtime_blocked` für erkannte Zugriffssperren. Die reguläre Live-Prüfung
+steht beim Transitous-Provider oben; historische Testdaten sind kein sinnvoller
+Echtzeit-Smoke-Test.
 
 Der Legacy-Pfad kann bahn.de-Web-Location-IDs im Format `A=...` verwenden. Der Provider akzeptiert sowohl reine EVA-/DB-IDs als auch solche vollständigen Web-Location-Referenzen.
 

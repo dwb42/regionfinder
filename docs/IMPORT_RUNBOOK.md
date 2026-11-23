@@ -266,13 +266,29 @@ curl -o /tmp/stops.mvt \
   'http://127.0.0.1:4001/api/v1/tiles/stops/8/135/83.mvt?modes=ICE%2CIC%2CEC%2CRE%2CRB%2CRAIL%2CS%2CAKN%2CU&profile=regular_tue_thu'
 ```
 
-DB-Echtzeitprüfung:
+Externe Bahnverbindungen prüfen (heutiges Berliner Datum, Standard Transitous):
 
 ```bash
-curl 'http://127.0.0.1:4001/api/v1/stops/de%3A01060%3A37985%3A1%3A8000526/realtime-itineraries?date=2026-09-15&time=08%3A00&profile=regular_tue_thu'
+curl -fsS "http://127.0.0.1:4001/api/v1/stops/de%3A02000%3A8006197/realtime-itineraries?date=$(TZ=Europe/Berlin date +%F)&time=08%3A00&profile=regular_tue_thu"
 ```
 
-Erwartung: normalisierte `ApiItineraryResponse` mit bis zu drei Alternativen ab Hamburg Hbf. Fehlercodes sind `db_stop_unmapped` für nicht gemappte Ziele und `realtime_unavailable` für Upstream-/Timeoutprobleme.
+Erwartung: `ApiItineraryResponse` mit `provider: "transitous"`, Quellenlink und
+bis zu drei Alternativen. `realtimeStatus` unterscheidet Echtzeit, teilweise
+Echtzeit und Fahrplan. Auch eine gültige leere Liste ist möglich; Fehlercodes
+sind `realtime_stop_unmapped`, `realtime_rate_limited` und `realtime_unavailable`.
+Dieser Dienst prüft aktuelle Verbindungen, nicht die Qualität des importierten
+Referenzfahrplans. Keine großen automatisierten Testbatches gegen die öffentliche API.
+
+KFZ-Auskunft prüfen (erfordert serverseitigen Google-Routes-Key):
+
+```bash
+curl -fsS 'http://127.0.0.1:4001/api/v1/stops/de%3A02000%3A8006197/driving-route'
+```
+
+Erwartet werden `provider: "google-routes"`, `trafficAware: true`, Dauer, Distanz
+und Abrufzeit. Google-Abfragen verwenden Abfahrt jetzt; keine Verbindung zur
+Bahn-Uhrzeit oder zum Metrik-Referenztag. Grenzen und Fehlercodes siehe
+[OPERATIONS.md](OPERATIONS.md).
 
 Tagesgenaue Direktverbindungen im Metrikblock prüfen:
 

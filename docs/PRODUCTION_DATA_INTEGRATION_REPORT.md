@@ -1,6 +1,12 @@
 # Production Data Integration Report
 
-Stand: 2026-06-25
+Stand des dokumentierten Produktionsdatenlaufs: 2026-06-25
+
+> Historischer Laufnachweis für Import, Metriken und damalige API-/UI-Prüfungen.
+> Die unten dokumentierten DB-Provider, Testdaten und UI-Bezeichnungen sind keine
+> aktuelle Betriebsanleitung. Seit 23.11.2026 verwendet die Verbindungsauskunft
+> Transitous und der KFZ-Block Google Routes; aktueller Stand und Deploy siehe
+> [CURRENT_STATE.md](CURRENT_STATE.md) und [OPERATIONS.md](OPERATIONS.md).
 
 ## Ergebnis
 
@@ -212,7 +218,7 @@ Gepruefte Endpunkte:
 - `GET /api/v1/stops/search`: reale Ziele in Hamburg, Schleswig-Holstein und Niedersachsen gefunden; Mecklenburg-Vorpommern ist ueber DB-Zaehlung abgedeckt.
 - `GET /api/v1/stops/de:01002:49079/metrics?profile=regular_tue_thu&date=2026-09-15`: reale Kiel-Hbf-Metriken aus `motis_one_to_all` plus tagesgenaue Direktverbindungszahl.
 - `GET /api/v1/stops/de:01002:49079/itineraries?date=2026-09-15&time=08:00&profile=regular_tue_thu`: reale MOTIS-Verbindung Hamburg Hbf -> Kiel Hbf.
-- `GET /api/v1/stops/de:01060:37985:1:8000526/realtime-itineraries?date=2026-09-15&time=08:00&profile=regular_tue_thu`: DB-Echtzeitvergleich Hamburg Hbf -> Altengörs mit normalisierten Alternativen, sofern das externe Backend den Zielort auflösen kann.
+- `GET /api/v1/stops/de:01060:37985:1:8000526/realtime-itineraries?date=2026-09-15&time=08:00&profile=regular_tue_thu`: damaliger DB-Echtzeitvergleich Hamburg Hbf -> Altengörs mit normalisierten Alternativen, sofern das externe Backend den Zielort auflösen kann.
 - `GET /api/v1/route-patterns/723cebcb-90e7-4336-878f-bdb4bfc2f635`: reales Route Pattern mit offizieller GTFS-Shape.
 - `GET /api/v1/tiles/stops/8/135/83.mvt`: reale MVT-Kachel, 416.615 Bytes.
 - `GET /api/v1/tiles/stops/{z}/{x}/{y}.mvt?modes=...`: serverseitig nach Verkehrsmitteln gefilterte StopPlace-Kacheln.
@@ -239,7 +245,7 @@ Nachgezogene UI-/Kartenfunktionen:
 - Fehlt eine echte Farbe, nutzt das Frontend Modus-Fallbackfarben.
 - Route Pattern-Anzeigegeometrien kommen über `route_pattern_display_geometries`, sodass hochkonfidente OSM-Rekonstruktionen sichtbar werden können.
 - `osm_reconstructed_low_confidence` und `stop_sequence_approximation` bleiben im Standardlayer ausgeblendet; niedrigkonfidente OSM-Rekonstruktionen sind Diagnosematerial fuer gezielte Korridorarbeit.
-- Das Detailpanel zeigt `DB Echtzeit` als Verbindungsabschnitt und rendert bis zu drei Live-Alternativen mit Plattformen, Verspätungen, Ausfallstatus und Remarks.
+- Das damalige Detailpanel zeigte `DB Echtzeit` als Verbindungsabschnitt und renderte bis zu drei Live-Alternativen mit Plattformen, Verspätungen, Ausfallstatus und Remarks.
 - Reisezeitfenster und Stop-Kreise nutzen dieselbe 30/45/60/75/90-Farbskala.
 - Reisezeitfenster filtern sichtbare MVT-StopPlaces anhand von `fastest_seconds`.
 - Wohnregionen sind geschätzte Kreise um alle aktuell sichtbaren verfügbaren Ziele, mit Schätzfaktor `0,75 km/min` und 5/10/15/20-Minuten-Schaltflächen.

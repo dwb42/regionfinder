@@ -12,6 +12,12 @@ Projektbezogene Hinweise für zukünftige Coding-Sessions.
 - Playwright ist als Dev-Dependency installiert; lokale UI-Smoke-Tests brauchen einmalig `npx playwright install chromium`.
 - Große Produktionsdaten, Routinggraphen und Reports liegen unter `data/` und sind überwiegend per `.gitignore` ausgeschlossen.
 
+## Einstieg und Dokumentationspflege
+
+- `docs/CURRENT_STATE.md` ist der Einstieg für den aktuellen technischen Stand; `docs/TARGET_ARCHITECTURE.md` beschreibt Komponenten und API-Verträge, `docs/OPERATIONS.md` Konfiguration, Secrets und Deploy.
+- Historische Implementierungs-/Produktionsberichte bleiben Nachweise ihrer damaligen Läufe. Aktuelle Provider-/UX-Aussagen gehören in die genannten aktuellen Dokumente.
+- Repository-Stand, vorbereitete Konfiguration und tatsächlich laufender Produktionsstand sind getrennte Zustände. Deployment nur mit beobachteter Evidenz als erfolgt dokumentieren; Datum/Revision dazuschreiben.
+
 ## Standardprüfung
 
 Nach Codeänderungen ausführen:
@@ -125,6 +131,8 @@ Benannte Korridore stehen in `pipeline/rail_network.py`. Aktuell sind viele S-/R
 - Standard-Realtime-Backend ist `transitous`, ohne Key. Ursprung Hamburg Hbf (`de-DELFI_de:02000:10950_G`). Lokale Limits: 700 Plan-Abfragen/24 Stunden und 30/Minute pro API-Prozess, im Speicher (Neustart setzt sie zurück). Keine automatisierten Batch-Abfragen; bei Skalierung oder größerem Volumen vorher mit Transitous abstimmen. `bahn-web` und `db-transport-rest` bleiben explizit wählbare Legacy-Provider; nur dort gilt `REGIONFINDER_ORIGIN_DB_STOP_ID=8002549`. Regionfinder bleibt nichtkommerziell; Quellcode unter MIT.
 - Realtime-Fehlercodes im UI freundlich behandeln: `realtime_stop_unmapped`, `realtime_rate_limited`, `db_stop_unmapped` und `realtime_unavailable` dürfen das Detailpanel nicht zerstören.
 - KFZ-Fahrzeiten laufen serverseitig über Google Routes (`server/driving/googleRoutesDrivingRouteProvider.ts`, `DRIVE`/`TRAFFIC_AWARE_OPTIMAL`, Abfahrt jetzt). `REGIONFINDER_GOOGLE_ROUTES_API_KEY` niemals im Frontend/Repository ablegen. Google-Routen nicht cachen; nur laufende Requests zusammenführen. `REGIONFINDER_DRIVING_PROVIDER=osrm` ist ein expliziter Modus ohne Live-Verkehr, kein automatischer Fehler-Fallback. Produktionskonfiguration und Deployment stehen in `docs/OPERATIONS.md`.
+- Live-Routing erweitert nur optionale Antwortfelder in `src/api/contracts.ts`; keine neue Persistenz oder Überschreibung von `od_metrics`. `ApiItineraryLeg.realtime` und `ApiItinerary.realtimeStatus` müssen fehlende Echtzeit erhalten; `ApiItineraryResponse` trägt Provider/Quellenlink, KFZ `trafficAware`/`fetchedAt`. Details: `docs/TARGET_ARCHITECTURE.md`.
+- Transitous `transferCount` aus `itinerary.transfers` übernehmen, nicht aus Leg-Anzahl berechnen; durchgehende Fahrzeuge können mehrere Legs besitzen. Fehlende Distanzen bleiben `null`.
 - Der API-Modus darf nicht stillschweigend auf Fixture-Daten zurückfallen.
 - `PostgresRepository` ist nur Adapter auf das Repository-Interface. SQL gehört in fokussierte Module unter `server/db/queries/`.
 - API-Frontend-Code liegt unter `src/apiApp/`: Hooks, MapLibre-Canvas, Layerdefinitionen, Formatter und Detailpanel-Komponenten. `src/ApiApp.tsx` bleibt Layout/Verdrahtung.
@@ -146,6 +154,9 @@ API-Modus:
 - Basiskarten-Umschalter: OpenStreetMap-Straßenkarte über MapTiler (`openstreetmap`-Rasterstil, `VITE_MAPTILER_KEY`, 512px-Kacheln) und Esri-Satellit (`World_Imagery`) mit Esri-Orts-/Grenzlabel-Overlay (`Reference/World_Boundaries_and_Places`, nur im Satellitenmodus sichtbar). Ohne gesetzten `VITE_MAPTILER_KEY` fällt der Straßenmodus automatisch auf das schlüssellose Esri `World_Street_Map` zurück (siehe `src/apiApp/mapLayers.ts`).
 - Detailpanel-Überschrift für Verbindungen ist `Bahn 🚂`; der alte lokale `Unser System`-Block ist im API-Detailpanel entfernt.
 - Die Bahn-Startzeit sitzt im Detailpanel mit `Frühere`-/`Spätere`-Buttons. Die Sidebar enthält keine separate Abfahrtszeitsteuerung mehr.
+- `useSelectedStopDetails` lädt Details, Metriken, Bahn und KFZ unabhängig. AbortController und Verwerfen veralteter Antworten bei Auswahlwechsel beibehalten; kein gemeinsamer Ladeblock, der auf alle Ergebnisse wartet.
+- Bahn nutzt das heutige Berliner Datum plus gewählte Uhrzeit (initial `08:00`); Metriken/Direktverbindungszahl bleiben beim Referenztag `2026-09-15`. KFZ nutzt Abfahrt jetzt und reagiert nicht auf Änderungen der Bahn-Uhrzeit. Kein automatisches Polling.
+- Der Bahn-Block zeigt „Dauer“ ab Beginn der konkreten Alternative; API-`totalDurationSeconds` und Produktmetrik enthalten dagegen Wartezeit ab Wunschzeit. Siehe `docs/TRAVEL_TIME_SEMANTICS.md`.
 - Datenstand und technische StopPlace-Details sind einklappbar.
 - Bahn zeigt bis zu drei Alternativen mit Wunschzeit, erster Abfahrt, Ankunft, Dauer, Legs, Plattform, Verspätung, Ausfall und Remarks. Transitous-Quellenlink und OSM-Attribution anzeigen; fehlende Echtzeitdaten als Fahrplan kennzeichnen, niemals als pünktlich. Uhrzeiten in Europe/Berlin formatieren, auch wenn der Provider UTC liefert.
 - Reisezeitfenster und Station-Kreise nutzen dieselbe Farbskala: 30 grün, 45 teal, 60 ocker, 75 orange, 90 rot.

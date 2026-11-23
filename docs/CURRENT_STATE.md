@@ -1,10 +1,21 @@
 # Current State
 
-Stand: 2026-08-29 nach Regionfinder V2 Produktionsintegration, API-/MapLibre-UX-Nachzug, DB-Echtzeitintegration, OSM-Schienenkorridor-Matching, Schools-/Places-POIs, klickbaren Verwaltungsgebieten und persistenten Gemeindelisten.
+Stand: 2026-11-23 nach Transitous-Anbindung, Google-Routes-KFZ-Auskunft, unabhängigen Detailabfragen und Veröffentlichung der MIT-Lizenz.
 
 ## Produktstand
 
-Regionfinder besitzt einen produktiven V2-Pfad mit Fastify, PostgreSQL/PostGIS/pgRouting, MOTIS-Metriken, DB-Echtzeitvergleich, MapLibre und MVT-Kacheln. Der Browser lädt keine vollständigen Fahrplan-JSONs und führt keine kanonischen Fahrzeitberechnungen mehr aus.
+Regionfinder besitzt einen produktiven V2-Pfad mit Fastify, PostgreSQL/PostGIS/pgRouting, MOTIS-Metriken, Transitous-Bahnverbindungen, Google-Routes-KFZ-Fahrzeiten, MapLibre und MVT-Kacheln. Der Browser lädt keine vollständigen Fahrplan-JSONs und führt keine kanonischen Fahrzeitberechnungen mehr aus.
+
+Regionfinder bleibt dauerhaft kostenlos und nichtkommerziell. Der Quellcode steht
+unter [MIT](../LICENSE); Daten und externe Dienste behalten eigene Bedingungen.
+MIT selbst schränkt eine kommerzielle Weiterverwendung des Codes nicht ein.
+
+## Auslieferungsstand und offene Integration
+
+- Repository: `main`, Google/Detailpanel-Änderungen in `7dfc0c9`, Transitous/MIT in `ee72566`.
+- Am 23.11.2026 per SSH geprüft: Server-Checkout auf `ee72566`; der laufende API-Container setzt `REGIONFINDER_REALTIME_PROVIDER=transitous` und `REGIONFINDER_DRIVING_PROVIDER=google-routes`.
+- Google-Key liegt ausschließlich serverseitig außerhalb von Git und Build-Kontexten. Speicherort, Einschränkungen und Deploy-Verfahren: [OPERATIONS.md](OPERATIONS.md).
+- Hochbahn-Zugang wurde per E-Mail bei `api@hochbahn.de` beantragt und die angeforderten Bedingungen akzeptiert. Zugangsdaten stehen aus; eine Hochbahn-Anbindung ist nicht implementiert. Transitous ist davon unabhängig nutzbar.
 
 ## Aktiver Produktionssnapshot
 
@@ -141,10 +152,13 @@ Es können mehrere Vite-Server parallel laufen. Vor UI-Prüfungen den tatsächli
 Aktuelle UI-Funktionen im API-Modus:
 
 - Klick auf StopPlaces aus MapLibre-Vektor-Tiles lädt Detaildaten in das rechte Panel.
-- Detailpanel zeigt Metriken, DB-Echtzeitverbindungen, bedienende Linien, Datenstand und StopPlace-Details.
+- Detailpanel zeigt Metriken, Bahnverbindungen, KFZ-Fahrzeit, bedienende Linien, Datenstand und StopPlace-Details.
 - Datenstand und technische StopPlace-Details sind einklappbare Abschnitte, damit der Normalzustand mehr Raum fuer die Karte und die Verbindungsauskunft laesst.
-- Die Überschrift für Verbindungsauskunft lautet `DB Echtzeit`; der frühere lokale Block `Konkrete Verbindung`/`Unser System` wird im API-Detailpanel nicht mehr gerendert.
-- Die Startzeit fuer `DB Echtzeit` sitzt im Detailpanel. `Frühere` und `Spätere` setzen die Startzeit relativ zu den aktuell geladenen Alternativen; die linke Sidebar enthält keine separate Abfahrtszeitsteuerung mehr.
+- Die Überschrift für Verbindungsauskunft lautet `Bahn 🚂`; der frühere lokale Block `Konkrete Verbindung`/`Unser System` wird im API-Detailpanel nicht mehr gerendert.
+- Die Startzeit für Bahnverbindungen sitzt im Detailpanel. `Frühere` und `Spätere` setzen die Startzeit relativ zu den aktuell geladenen Alternativen; die linke Sidebar enthält keine separate Abfahrtszeitsteuerung mehr.
+- Stationsdetails, Metriken, Bahn und KFZ laden unabhängig; eine langsame Metrikabfrage blockiert keine Verbindungsauskunft. Auswahlwechsel brechen veraltete Requests ab; Fehler bleiben lokal im betroffenen Bereich.
+- Bahn zeigt `Echtzeitdaten`, `Teilweise Echtzeitdaten` oder `Nur Fahrplandaten`. Ohne Echtzeit wird keine Pünktlichkeit behauptet. Zeiten werden in `Europe/Berlin` formatiert.
+- KFZ zeigt Abfahrt jetzt und Abrufzeit; Änderungen der Bahn-Uhrzeit lösen keine KFZ-Abfrage aus. Es gibt kein kontinuierliches Live-Polling.
 - Basiskarten-Umschalter:
   - OpenStreetMap-Straßenkarte über MapTiler (`openstreetmap`-Rasterstil, Schlüssel `VITE_MAPTILER_KEY`, 512px-Kacheln, mit integrierten Labels). Ohne gesetzten Schlüssel automatischer Fallback auf schlüsselloses Esri `World_Street_Map`.
   - Esri-Satellit (`World_Imagery`) plus Esri-Orts- und Grenzlabel-Overlay (`Reference/World_Boundaries_and_Places`), nur im Satellitenmodus sichtbar.
@@ -178,25 +192,64 @@ Aktuelle UI-Funktionen im API-Modus:
 - `Gemeindelisten` ist der letzte reguläre Sidebar-Block. Listen und Mitgliedschaften werden global in PostGIS gespeichert, während aktive Listen-Checkboxen im Browser verbleiben. Im Gemeinde-Detailpanel sind Mehrfachzuordnungen möglich; die farbigen Highlight-MVTs werden unabhängig vom Schalter `Gemeinden` ab Zoom 6 geladen.
 - Das interne Place-Admin-Formular erscheint nur mit `VITE_REGIONFINDER_ENABLE_PLACE_ADMIN=1` und erlaubt Anlegen, Bearbeiten und Soft-Delete von Places.
 
-## DB-Echtzeitverbindungen und Direktverbindungen
+## Bahnverbindungen, KFZ und Direktverbindungen
 
-Der Endpunkt `GET /api/v1/stops/:publicId/realtime-itineraries?date=YYYY-MM-DD&time=HH:mm&profile=...` liefert bis zu drei Live-Alternativen ab Hamburg Hbf zur ausgewählten Station. Die Abfrage verwendet die UI-Abfahrtszeit, nicht `now`.
+Die drei Auskünfte haben getrennte Datenquellen und Zeitbezüge:
 
-Der Metrikendpunkt `GET /api/v1/stops/:publicId/metrics?profile=...&date=YYYY-MM-DD` liefert `fastestSeconds` und zusätzlich `directConnectionCount`: die fahrplanmäßige Anzahl direkter Trips ohne Umstieg am angegebenen Datum. Das ersetzt im Detailpanel die frühere Hochrechnung aus `directConnectionRatio * reachableSampleCount`.
+| Auskunft | Datenquelle | Zeitbezug |
+| --- | --- | --- |
+| Schnellste Gesamtreisezeit und Direktverbindungszahl | lokales DELFI/PostGIS/MOTIS | Profil `regular_tue_thu`, Referenztag `2026-09-15` |
+| Bahnverbindungen | öffentliche Transitous-API | heutiges Datum in `Europe/Berlin` plus gewählte Uhrzeit (initial `08:00`) |
+| KFZ-Fahrzeit | Google Routes | Abfahrt jetzt, aktuelle Verkehrslage |
 
-Technische Entscheidungen:
+`GET /api/v1/stops/:publicId/realtime-itineraries?date=YYYY-MM-DD&time=HH:mm&profile=...`
+liefert bis zu drei normalisierte Alternativen ab Hamburg Hbf. Standard ist
+`REGIONFINDER_REALTIME_PROVIDER=transitous`, ohne API-Key. Die Factory in
+`server/realtime/createRealtimeProvider.ts` wählt den Provider; `server/realtime/transitous/`
+enthält Transport/Cache, validierte Schemas, Stationsauflösung und Journey-Mapping.
+Exakte DELFI-Stations-IDs werden vor einer räumlich und nach Namen begrenzten
+Geocoding-Suche geprüft. `bahn-web` und `db-transport-rest` bleiben ausdrücklich
+wählbare Legacy-Provider; ihre externen Zugangsstörungen waren Anlass für den Wechsel.
 
-- Die Realtime-Abfrage läuft ausschließlich serverseitig; der React-Client ruft nur die Regionfinder-API auf.
-- Der Provider-Orchestrator sitzt in `server/realtime/dbTransportRestProvider.ts`; Clients, Stop-Mapping, Journey-Mapping und TTL-Cache liegen in separaten Modulen unter `server/realtime/`.
-- Standard-Backend ist aktuell `bahn-web`, weil `v6.db.transport.rest` in der Live-Prüfung instabil war und direkte Node-Requests an bahn.de geblockt werden können. Das Backend nutzt kontrolliert `curl` mit Cookie-Warmup als Fallback.
-- `REGIONFINDER_REALTIME_PROVIDER=db-transport-rest` schaltet explizit auf den Wrapper `v6.db.transport.rest`; `DB_TRANSPORT_REST_BASE_URL` konfiguriert dessen Basis-URL.
-- Ursprung ist per Default Hamburg Hbf über `REGIONFINDER_ORIGIN_DB_STOP_ID=8002549`.
-- Stop-Mapping nutzt direkte 7-/8-stellige DB/EVA-Kandidaten aus PublicId/DHID/technischen Stops, danach `/locations/nearby`, danach `/locations`.
-- Mapping wird 24 Stunden im Prozess gecacht; Journey-Antworten werden 60 Sekunden pro Ursprung, Ziel und Abfahrtsminute gecacht.
-- Nicht auflösbare Ziele liefern `404 db_stop_unmapped`; Upstream-/Timeoutfehler liefern `502 realtime_unavailable`.
-- Für alte DHID-ähnliche PublicIds wird serverseitig ein Alias unterstützt: `de:01060:37985:18000526` kann auf `de:01060:37985:1:8000526` aufgelöst werden.
+Transitous liefert abhängig von Quelle und Fahrt Echtzeit oder nur Fahrplan.
+Die UI zeigt diesen Unterschied pro Verbindung und Leg, erhält Ausfälle,
+Gleisänderungen und Meldungen und zählt durchgehende Züge nicht als Umstieg.
+Quellenlink zu Transitous und OSM-Attribution gehören zur Anzeige.
+Ergebnisse werden 60 Sekunden gecacht; gleichzeitige identische Abfragen werden
+zusammengeführt. Limits von 700 Planversuchen/24 Stunden und 30/Minute gelten
+pro Prozess und gehen bei Neustart verloren. Keine automatisierten Batch-Abfragen;
+Skalierung oder höheres Aufkommen erfordert vorherige Abstimmung mit Transitous.
+Details und Fehlercodes: [Architektur](TARGET_ARCHITECTURE.md#bahnprovider) und
+[Betrieb](OPERATIONS.md#bahnverbindungen-mit-transitous).
 
-Die API-Typen in `src/api/contracts.ts` enthalten optionale Live-Felder auf Legs: Planzeiten, Verspätungen, Ausfallstatus und Remarks. `ApiItinerary` enthält optional `refreshToken`, `realtimeSource` und `realtimeFetchedAt`; `ApiMetrics` ist bewusst schlank und enthält nur `snapshotId`, `profileId`, `metricDefinitionVersion`, `fastestSeconds` und optional `directConnectionCount`.
+`GET /api/v1/stops/:publicId/driving-route` verwendet standardmäßig
+`REGIONFINDER_DRIVING_PROVIDER=google-routes` mit `DRIVE`, `TRAFFIC_AWARE_OPTIMAL`
+und `BEST_GUESS`. Start ist Hamburg Hbf, Ziel die Koordinate des ausgewählten
+StopPlace. Google-Ergebnisse werden weder dauerhaft gespeichert noch gecacht;
+nur laufende identische Anfragen werden zusammengeführt. Die UI zeigt Google Maps
+als Quelle, „Abfahrt jetzt“ und den Abrufzeitpunkt. `osrm` ist ein expliziter
+Alternativmodus ohne Live-Verkehr, kein automatischer Fehler-Fallback. Ein
+identisches Ergebnis zur Google-Maps-Oberfläche wird nicht garantiert, insbesondere
+bei anderen Start-/Zielpunkten oder Abrufzeiten.
+
+Der Metrikendpunkt `/metrics?profile=...&date=YYYY-MM-DD` zählt mit
+`directConnectionCount` planmäßige direkte Trips am angegebenen Tag. Externe
+Verbindungsabfragen überschreiben weder diese Werte noch `fastestSeconds`.
+Der serverseitige Alias für ältere PublicIds (z.B. `de:01060:37985:18000526` →
+`de:01060:37985:1:8000526`) bleibt erhalten.
+
+## Datenverträge der Verbindungsauskunft
+
+Die Integration benötigt keine neue Datenbanktabelle oder Migration und keinen
+neuen GTFS-Import. Änderungen betreffen die API-Typen in `src/api/contracts.ts`:
+
+- `ApiItineraryLeg.realtime?` unterscheidet vorhandene Echtzeit von reinem Fahrplan; fehlende Verspätungen bedeuten unbekannt, nicht null Sekunden.
+- `ApiItinerary.realtimeStatus?`: `realtime`, `partial` oder `scheduled`; `realtimeSource` und `realtimeFetchedAt` bleiben erhalten.
+- `ApiItineraryResponse` erhält optionale `provider`, `sourceAttribution` und `sourceAttributionUrl`.
+- `ApiDrivingRouteResponse` enthält optional `trafficAware` und `fetchedAt` neben Dauer, Distanz, Provider und Quellenangabe.
+
+Die Felder bleiben für lokale/Legacy-Provider optional. Verbindliche Semantik und
+Cache-Grenzen stehen in [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md#datenvertraege-fuer-externe-verbindungen).
 
 ## OSM-Schienenrekonstruktion
 
@@ -242,7 +295,7 @@ Wichtige Einschränkung: Viele S-/Regional-Patterns sind zwar OSM-geroutet, erre
 - Schreibende Places-Endpunkte sind interne Pflegeoberfläche und werden serverseitig über `REGIONFINDER_ENABLE_PLACE_ADMIN=1` freigeschaltet.
 - Fastify-CORS erlaubt neben `GET`/`POST` ausdrücklich `PUT`, `PATCH`, `DELETE` und `OPTIONS`, damit Mitgliedschafts- und Admin-Mutationen aus einem separat laufenden Vite-Frontend die Browser-Preflight-Prüfung bestehen.
 - Stop-Metriken akzeptieren zusätzlich `?date=YYYY-MM-DD`, wenn eine tagesgenaue Direktverbindungszahl gebraucht wird.
-- Aktueller Default-Referenztag im API-Frontend ist `2026-09-15`, passend zum Produktions-Metrikprofil.
+- Der Metrik-Referenztag im API-Frontend bleibt `2026-09-15`; Bahn nutzt dagegen das heutige Berliner Datum. Diese beiden Zeitbezüge nicht zusammenlegen.
 - Route-Tiles liefern `route_color`, normalisiert auf `#RRGGBB`, wenn eine echte GTFS-Farbe existiert.
 - `npm run rail:reconstruct` filtert OSM-Schienen, lädt sie mit osm2pgsql in `staging_osm_rail_*`, baut `rail_edges`/`rail_vertices`, snappt StopPlaces und erzeugt `route_pattern_rail_matches`.
 - Match-Nachläufe werden bevorzugt mit `--corridor`/`--routes` gefahren; große `RAIL`- oder Norddeutschland-Komplettläufe sind lokal weiterhin zu teuer.
@@ -343,13 +396,14 @@ Die Mitgliedschaftsmutationen sind idempotent. Unbekannte Listen oder Gemeinden 
 
 ## Verifikation
 
-Nach den letzten Änderungen liefen erfolgreich:
+Für den Routing-Stand `ee72566` am 23.11.2026 erfolgreich: Build, 123 Vitest-Tests, Lint und gezielte TypeScript-Prüfung des neuen Providers. Die sechs Live-Testziele Tonndorf, Aumühle, Buxtehude, Lüneburg, Lübeck Hbf und Ohlstedt wurden auch aus einem separaten VPS-Container erfolgreich abgefragt. Das ist eine Stichprobe, keine Zusage vollständiger Echtzeitabdeckung.
+
+Standardprüfung nach Codeänderungen:
 
 ```bash
 npm run build
 npm run test
 npm run lint
-python3 -m unittest pipeline.test_ferienhof_research pipeline.test_places
 ```
 
 Produktions-Readiness:

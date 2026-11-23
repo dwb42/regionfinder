@@ -28,7 +28,12 @@ Der Test liegt in `src/domain/__tests__/travelTimeStatistics.test.ts`.
 
 ## Umstiege
 
-Umstiege sind `Anzahl Transit-Legs - 1`. Fußwege zählen nicht als Umstieg.
+Umstiege sind tatsächliche Fahrzeugwechsel. Fußwege zählen nicht selbst als
+Umstieg; mehrere Legs desselben durchgehenden Fahrzeugs ebenfalls nicht.
+Transitous liefert dafür `itinerary.transfers`; dieser Wert wird unverändert als
+`transferCount` übernommen. `interlineWithPreviousLeg` erzeugt den Hinweis, im
+Fahrzeug zu bleiben. `Anzahl Transit-Legs - 1` ist nur für Provider geeignet,
+deren Legs tatsächlich jeweils getrennte Fahrzeuge repräsentieren.
 
 ## Produktmetrik
 
@@ -53,3 +58,34 @@ Die Tabelle `od_metrics` enthält alte Spalten aus Schema-Kompatibilität weiter
 ## Direktverbindungen
 
 Direktverbindungen werden nicht aus MOTIS-Samples abgeleitet. Die API zählt für `GET /api/v1/stops/:publicId/metrics?profile=...&date=YYYY-MM-DD` tagesgenau, wie viele fahrplanmäßige Trips am angegebenen Datum ohne Umstieg vom Origin-StopPlace zum Ziel-StopPlace fahren.
+
+## Zeitbezug und Anzeige externer Verbindungen
+
+Die statische Produktmetrik, konkrete Bahnverbindungen und KFZ-Fahrzeiten sind
+unterschiedliche Auskünfte und dürfen nicht zu einer gemeinsamen Live-Metrik
+vermischt werden:
+
+- Metrik und Direktverbindungszahl im aktuellen UI beziehen sich auf `2026-09-15`.
+- Bahn nutzt bei jeder ausgelösten Anfrage das heutige Datum in `Europe/Berlin` plus gewählte Uhrzeit, initial `08:00`. Die Uhrzeitnavigation ist uhrzeitbasiert; ein eigener Tageswechsel/Datumspicker ist nicht implementiert.
+- KFZ nutzt Abfahrt jetzt bei Google. Die Bahn-Uhrzeit ändert diesen Zeitpunkt nicht.
+
+ISO-Zeitstempel behalten ihren Offset beziehungsweise UTC-Bezug. Darstellung in
+`Europe/Berlin` berücksichtigt Sommer-/Winterzeit; einfaches Ausschneiden der
+Uhrzeit aus einem UTC-String ist falsch.
+
+`ApiItinerary.totalDurationSeconds` bleibt Ankunft minus Wunschzeit einschließlich
+anfänglicher Wartezeit. Der Bahn-Block zeigt als „Dauer“ dagegen Ankunft minus
+`actualFirstDepartureAt`, also die Dauer ab Beginn der konkreten Alternative.
+Bei Transitous ist dieser Beginn `itinerary.startTime` und kann einen initialen
+Fußweg umfassen. Beispiel Wunschzeit 08:00, Beginn 08:10, Ankunft 08:40:
+API-Gesamtreisezeit 40 Minuten, angezeigte Verbindungsdauer 30 Minuten. Das ändert
+nicht die Semantik von `fastestSeconds`.
+
+Echtzeit gilt ereignisbezogen: Abfahrt und Ankunft können unterschiedlich gut
+abgedeckt sein. Fehlende/unzuverlässige Echtzeit erzeugt keine Verspätungszahl;
+„unbekannt“ darf nicht zu „pünktlich“ werden. Der Status einer Verbindung fasst
+die Echtzeitabdeckung ihrer Transit-Legs zusammen, nicht ihre Pünktlichkeit.
+
+KFZ-Dauer und Distanz gelten für die Koordinate der ausgewählten Station.
+Ein Stadtteil als Google-Maps-Ziel ist ein anderer Endpunkt. Auch bei gleichen
+Koordinaten sind identische Werte zur Google-Maps-Oberfläche nicht garantiert.

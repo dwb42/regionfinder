@@ -157,6 +157,25 @@ Der aktuelle lokale Ferienhof-Import nutzt `source_id = ferienhoefe_web_research
 
 Für OSM-gestützte Ferienhof-Recherche kann aus der großen Deutschland-PBF ein kleinerer Norddeutschland-Ausschnitt unter `data/processed/osm/` genutzt werden. Diese PBF-Artefakte sind generierte Rohdaten und werden nicht committed.
 
+## Externe Verbindungsauskünfte
+
+Diese Dienste werden bei Nutzeranfragen vom API-Server angesprochen. Sie ersetzen
+keinen DELFI-Import und liefern keine neuen kanonischen Batchmetriken.
+
+| Dienst | Rolle und Zugang | Datenhaltung / Bedingungen |
+| --- | --- | --- |
+| [Transitous](https://transitous.org/api/) | Standard für Bahn-/ÖPNV-Verbindungen, ohne API-Key | öffentliche API für nichtkommerzielle Open-Source-Anwendungen; identifizierender User-Agent; Quellenlink auf [Datenlieferanten](https://transitous.org/sources/) und OSM-Attribution |
+| Google Routes | Standard für KFZ-Dauer/-Distanz mit Verkehr, serverseitiger Routes-API-Key | Google-Quellenangabe; keine Speicherung fertiger Routenergebnisse; nur Dauer, Distanz und Fallback-Status anfordern |
+| [Hochbahn/hvv](https://www.hvv.de/de/fahrplaene/abruf-fahrplaninfos/datenabruf) | optionale spätere Alternative für regionale Verbindungsauskunft | Zugang per E-Mail bei `api@hochbahn.de` beantragt, Bedingungen akzeptiert; noch keine Zugangsdaten oder implementierte Integration |
+| bahn.de / db.transport.rest | explizit wählbare Legacy-Provider | bekannte Zugriffssperren bzw. Nichterreichbarkeit; kein automatischer Fallback |
+
+Regionfinder bleibt dauerhaft kostenlos und nichtkommerziell; der eigene Code
+ist unter [MIT](../LICENSE) veröffentlicht. Die Code-Lizenz überträgt keine
+Nutzungsrechte an Daten oder Drittanbieter-Diensten. Größeres Aufkommen oder
+automatisierte Transitous-Nutzung vorab abstimmen; lokale Budgets sind keine
+Erweiterung der Nutzungsbedingungen. Aktuelle Betriebsregeln, Google-Projekt und
+Secrets-Ablage: [OPERATIONS.md](OPERATIONS.md).
+
 ## Quellenmetadaten
 
 `data_sources` und `data_snapshots` speichern Anbieter, Lizenz, Attribution, Hash, Gültigkeit, Status, Format und Qualitätsbericht.

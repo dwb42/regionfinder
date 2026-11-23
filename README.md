@@ -2,7 +2,7 @@
 
 Regionfinder ist eine API-first-Anwendung:
 
-- **Produktionsmodus**: React 19, Vite, TypeScript, MapLibre, Fastify, PostgreSQL/PostGIS/pgRouting, MOTIS-Metriken, Transitous-Verbindungsauskunft und Mapbox Vector Tiles.
+- **Produktionsmodus**: React 19, Vite, TypeScript, MapLibre, Fastify, PostgreSQL/PostGIS/pgRouting, MOTIS-Metriken, Transitous-Verbindungsauskunft, Google-Routes-KFZ-Fahrzeiten und Mapbox Vector Tiles.
 
 Der produktive Pfad nutzt den aktiven DELFI-Snapshot `delfi-bb69c7e2c8d5` aus PostGIS. Der Browser lädt keine vollständigen Fahrplan-JSONs und führt keine kanonischen Routing- oder Metrikberechnungen aus.
 
@@ -156,6 +156,12 @@ Die Places-Schreibendpunkte sind nur für interne Pflege gedacht und liefern ohn
 
 Der Realtime-Endpunkt lädt serverseitig Verbindungen über [Transitous](https://transitous.org/api/) ohne API-Key. Standard ist `REGIONFINDER_REALTIME_PROVIDER=transitous`, Ursprung Hamburg Hbf. Die API liefert Fahrplandaten und, je nach Quelle und Fahrt, Echtzeitdaten. Die Oberfläche unterscheidet diese ausdrücklich. Stations-IDs werden gegen DELFI geprüft; Abfragen teilen laufende Requests und nutzen einen 60-Sekunden-Cache. Betriebsgrenzen und alternative Provider stehen in [OPERATIONS.md](docs/OPERATIONS.md#bahnverbindungen-mit-transitous).
 
+KFZ-Fahrzeiten werden serverseitig über Google Routes mit aktueller Verkehrslage
+für Abfahrt jetzt berechnet. Dafür wird `REGIONFINDER_GOOGLE_ROUTES_API_KEY`
+benötigt; niemals als `VITE_`-Variable oder im Repository ablegen. Ein fehlender Key führt zu einer verständlichen Fehlermeldung im KFZ-Block; es gibt
+keinen automatischen OSRM-Fallback. Konfiguration und Deploy:
+[OPERATIONS.md](docs/OPERATIONS.md#kfz-fahrzeiten-mit-google-routes).
+
 ## Frontend
 
 `src/ApiApp.tsx` ist das Layout und die Verdrahtung des produktiven API-Frontends.
@@ -171,6 +177,8 @@ Wichtige UX-Entscheidungen:
 - StopPlaces und Route Patterns werden als MVTs geladen, nicht als vollständige JSON-Dateien.
 - Stationen aus Vektor-Tiles sind anklickbar und öffnen rechts StopPlace-Details, Metriken, Bahnverbindungen und Linien.
 - Das Detailpanel zeigt unter `Bahn 🚂` bis zu drei Verbindungsalternativen ab der Detailpanel-Startzeit. Die Startzeit besitzt `Frühere`-/`Spätere`-Navigation; lokale `/itineraries` werden dort nicht mehr als eigener Vergleichsblock gerendert.
+- Details, Metriken, Bahn und KFZ laden unabhängig; Auswahlwechsel brechen alte Anfragen ab. Bahn kennzeichnet reine Fahrplandaten ausdrücklich und zeigt Quellenangaben.
+- Bahn nutzt das heutige Berliner Datum mit gewählter Uhrzeit, Metriken den Referenztag `2026-09-15`, KFZ Abfahrt jetzt. Der KFZ-Block zeigt Google Maps und Abrufzeit; keine kontinuierliche Aktualisierung.
 - Datenstand und technische StopPlace-Details sind im Detailpanel als einklappbare Abschnitte untergebracht.
 - Verkehrsmittel-Layer:
   - `Regional/Fern`
@@ -205,7 +213,10 @@ Große Rohdaten, Routinggraphen, Reports und generierte Metriken liegen unter `d
 ## Dokumentation
 
 - `docs/CURRENT_STATE.md`: aktueller technischer Stand
-- `docs/TARGET_ARCHITECTURE.md`: Zielarchitektur und aktive V2-Architektur
+- `docs/TARGET_ARCHITECTURE.md`: implementierte Architektur, Provider und API-Datenverträge
+- `docs/OPERATIONS.md`: Betrieb, Secrets, Limits und Deployment
+- `docs/DATA_SOURCES.md`: Datenquellen und externe Dienste
+- `docs/DATA_QUALITY.md`: Qualitätsregeln und Grenzen der Auskünfte
 - `docs/PRODUCTION_DATA_INTEGRATION_REPORT.md`: Produktionsdaten, Hashes, Metriklauf
 - `docs/TRAVEL_TIME_SEMANTICS.md`: Fahrzeitdefinitionen
 - `docs/IMPORT_RUNBOOK.md`: Import-, API- und Metrikbefehle
